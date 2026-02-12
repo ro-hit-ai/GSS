@@ -33,7 +33,7 @@ ob_start();
                     <option value="completed">Completed</option>
                 </select>
                 <input id="vrCasesListSearch" type="text" placeholder="Search name / email / app id / status" style="font-size:13px; padding:6px 8px; border-radius:10px; border:1px solid #cbd5e1;">
-                <button class="btn btn-sm" id="vrCasesListRefreshBtn" type="button" style="border-radius:10px;">Refresh</button>
+                <!-- <button class="btn btn-sm" id="vrCasesListRefreshBtn" type="button" style="border-radius:10px;">Refresh</button> -->
             </div>
 
             <div style="margin-left:auto; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">

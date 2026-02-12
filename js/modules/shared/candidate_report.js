@@ -1,6 +1,7 @@
 (function () {
     var REPORT_PAYLOAD = null;
     var CURRENT_APP_ID = '';
+    var CURRENT_SECTION_KEY = '';
     var TL_CACHE = [];
     var TL_ACTIVE_FILTER = 'all';
 
@@ -276,7 +277,7 @@
     }
 
     function sectionLabel(section) {
-        section = String(section || '').toLowerCase().trim();
+        section = normSection(section);
         if (section === 'basic') return 'Basic';
         if (section === 'id') return 'Identification';
         if (section === 'education') return 'Education';
@@ -303,29 +304,27 @@
         section = String(section || '').toLowerCase().trim();
         if (!section || section === 'timeline') return false;
         var role = getRole();
-        if (!(role === 'verifier' || role === 'validator' || role === 'db_verifier')) return false;
+        if (!(role === 'verifier' || role === 'validator' || role === 'db_verifier' || role === 'qa' || role === 'team_lead')) return false;
         // Only for real components (skip reports/contact if you later remove them)
         return true;
     }
 
     function componentToolbarHtml(section) {
         return '' +
-            '<div class="cr-comp-tools" style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:space-between; margin-top:10px; border:1px solid rgba(148,163,184,0.22); border-radius:10px; padding:10px; background:#fff;">' +
-                '<div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">' +
-                    '<button type="button" class="cr-action-btn cr-dark" data-comp-action="hold">Hold</button>' +
-                    '<button type="button" class="cr-action-btn cr-danger" data-comp-action="reject">Reject</button>' +
-                    '<button type="button" class="cr-action-btn cr-ok" data-comp-action="approve">Approve</button>' +
+            '<div class="cr-comp-tools">' +
+                '<div class="cr-comp-tools-top">' +
+                    '<div class="cr-comp-tools-title">Evidence / Uploaded Documents</div>' +
                 '</div>' +
-                '<div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">' +
-                    '<div style="font-size:11px; font-weight:900; color:#475569;">Evidence Document</div>' +
-                    '<input type="file" data-comp-file accept=".pdf,image/*" style="max-width:260px;">' +
+                '<div class="cr-comp-evidence">' +
+                    '<div data-comp-docs style="margin-top:8px;"></div>' +
+                '</div>' +
+                '<div class="cr-comp-upload-row">' +
+                    '<div class="cr-comp-upload-label">Evidence Document</div>' +
+                    '<input type="file" class="cr-comp-file" data-comp-file accept=".pdf,image/*">' +
                     '<button type="button" class="btn" data-comp-upload>Upload</button>' +
                 '</div>' +
             '</div>' +
-            '<div class="cr-comp-evidence" style="margin-top:10px;">' +
-                '<div style="font-size:11px; font-weight:950; letter-spacing:.08em; text-transform:uppercase; color:#0f172a;">Evidence / Uploaded Documents</div>' +
-                '<div data-comp-docs style="margin-top:8px;"></div>' +
-            '</div>';
+            '';
     }
 
     async function loadUploadedDocsForComponent(applicationId, docType, hostEl) {
@@ -357,7 +356,7 @@
                         '<div style="font-size:12px; font-weight:900; color:#0f172a; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + esc(label) + '</div>' +
                         '<div style="font-size:11px; color:#64748b; margin-top:2px;">' + (by ? ('By: ' + esc(by) + ' · ') : '') + esc(created) + '</div>' +
                     '</div>' +
-                    '<a href="' + esc(href) + '" target="_blank" style="text-decoration:none; color:#2563eb; font-weight:900; white-space:nowrap;">View</a>' +
+                    '<a href="' + esc(href) + '" class="js-cv-doc-view" data-doc-label="' + esc(label) + '" style="text-decoration:none; color:#2563eb; font-weight:900; white-space:nowrap;">View</a>' +
                 '</div>';
             }).join('');
         } catch (_e) {
@@ -404,12 +403,21 @@
         }
 
         panel.dataset.compToolsBound = '1';
-        var secbar = panel.querySelector('.cr-secbar');
-        if (!secbar) return;
-
         var wrap = document.createElement('div');
         wrap.innerHTML = componentToolbarHtml(section);
-        secbar.insertAdjacentElement('afterend', wrap);
+
+        // Keep evidence/upload block at bottom of the left content column when chat layout exists.
+        var leftCol = panel.querySelector('.cr-comp-left');
+        var hostForInsert = leftCol || panel;
+        var firstRemarks = hostForInsert.querySelector('.cr-remarks');
+        var remarksRow = firstRemarks && firstRemarks.closest ? firstRemarks.closest('.form-control') : null;
+        if (remarksRow && remarksRow.parentElement) {
+            remarksRow.parentElement.insertBefore(wrap, remarksRow);
+        } else if (firstRemarks && firstRemarks.parentElement) {
+            firstRemarks.parentElement.insertBefore(wrap, firstRemarks);
+        } else {
+            hostForInsert.appendChild(wrap);
+        }
 
         var docsHost2 = panel.querySelector('[data-comp-docs]');
         if (docsHost2) {
@@ -419,14 +427,6 @@
         wrap.addEventListener('click', function (e) {
             var t = e && e.target ? e.target : null;
             if (!t) return;
-            var actBtn = t.closest ? t.closest('[data-comp-action]') : null;
-            if (actBtn) {
-                var action = String(actBtn.getAttribute('data-comp-action') || '').toLowerCase();
-                if (window.__CR_RUN_ACTION) {
-                    window.__CR_RUN_ACTION(action, action.charAt(0).toUpperCase() + action.slice(1));
-                }
-                return;
-            }
 
             var upBtn = t.closest ? t.closest('[data-comp-upload]') : null;
             if (upBtn) {
@@ -503,6 +503,7 @@
         var out = {};
         list.forEach(function (r) {
             var k = (r && r.component_key) ? String(r.component_key).toLowerCase().trim() : '';
+            k = normSection(k);
             if (k) out[k] = true;
         });
         // Common sections always visible
@@ -515,6 +516,8 @@
         s = String(s || '').toLowerCase().trim();
         if (!s) return '';
         if (s === 'identification') return 'id';
+        if (s === 'address') return 'contact';
+        if (s === 'references') return 'reference';
         if (s === 'general') return '';
         return s;
     }
@@ -697,11 +700,10 @@
                 var activeBtn = document.querySelector('.list-group-item[data-section].active');
                 var activeSec = activeBtn ? (activeBtn.getAttribute('data-section') || '') : '';
                 renderRemarksPanel(activeSec);
-            } catch (_e) {
-            }
-
-            try {
-                refreshRemarksUi();
+                if (activeSec) {
+                    var activePanel = document.getElementById('section-' + String(activeSec).toLowerCase());
+                    if (activePanel) ensureComponentChat(activePanel, activeSec);
+                }
             } catch (_e) {
             }
 
@@ -802,10 +804,23 @@
             layout.style.display = 'grid';
             layout.style.gridTemplateColumns = '1fr 340px';
             layout.style.gap = '12px';
-            layout.style.marginTop = '10px';
+            layout.style.marginTop = '0';
 
             var left = document.createElement('div');
             left.className = 'cr-comp-left';
+
+            var rightCol = document.createElement('div');
+            rightCol.className = 'cr-comp-right';
+            rightCol.style.display = 'flex';
+            rightCol.style.flexDirection = 'column';
+            rightCol.style.gap = '8px';
+
+            var actions = document.createElement('div');
+            actions.className = 'cr-comp-actions-host';
+            actions.innerHTML = '' +
+                '<button type="button" class="cr-action-btn cr-dark" data-comp-action="hold">Hold</button>' +
+                '<button type="button" class="cr-action-btn cr-danger" data-comp-action="reject">Reject</button>' +
+                '<button type="button" class="cr-action-btn cr-ok" data-comp-action="approve">Approve</button>';
 
             var right = document.createElement('div');
             right.className = 'cr-comp-chat';
@@ -828,9 +843,23 @@
                 left.appendChild(node);
             });
 
+            rightCol.appendChild(actions);
+            rightCol.appendChild(right);
             layout.appendChild(left);
-            layout.appendChild(right);
+            layout.appendChild(rightCol);
             secbar.insertAdjacentElement('afterend', layout);
+
+            actions.addEventListener('click', function (e) {
+                var t = e && e.target ? e.target : null;
+                var actBtn = t && t.closest ? t.closest('[data-comp-action]') : null;
+                if (actBtn) {
+                    var action = String(actBtn.getAttribute('data-comp-action') || '').toLowerCase();
+                    if (window.__CR_RUN_ACTION) {
+                        window.__CR_RUN_ACTION(action, action.charAt(0).toUpperCase() + action.slice(1));
+                    }
+                    return;
+                }
+            });
 
             right.addEventListener('click', function (e) {
                 var t = e && e.target ? e.target : null;
@@ -977,126 +1006,6 @@
                         sidebarBtn.click();
                     }
                 }
-            });
-        }
-    }
-
-    function remarksHtml(items) {
-        var list = Array.isArray(items) ? items.filter(isRemarkItem) : [];
-        if (!list.length) {
-            return '<div style="color:#6b7280; font-size:13px;">No remarks yet.</div>';
-        }
-        return '<div style="display:flex; flex-direction:column; gap:10px;">' + list.map(function (it) {
-            var actorName = ((it.first_name || '') + ' ' + (it.last_name || '')).trim();
-            var actorUser = (it.username || '') ? String(it.username) : '';
-            var role = it.actor_role || '';
-            var actor = actorName || actorUser || (role ? String(role).toUpperCase() : '') || 'System';
-            var ts = '';
-            try {
-                ts = it.created_at ? window.GSS_DATE.formatDbDateTime(it.created_at) : '';
-            } catch (_e) {
-                ts = it.created_at ? String(it.created_at) : '';
-            }
-            var section = it.section_key || '';
-            var badges = [];
-            if (section) badges.push('<span class="badge bg-light text-dark" style="margin-right:6px; border:1px solid rgba(148,163,184,0.35);">' + esc(section) + '</span>');
-            if (role) badges.push('<span class="badge bg-light text-dark" style="border:1px solid rgba(148,163,184,0.35);">' + esc(role) + '</span>');
-            return (
-                '<div style="border:1px solid rgba(148,163,184,0.25); border-radius:14px; padding:10px; background:linear-gradient(180deg,#ffffff,#f8fafc);">' +
-                    '<div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">' +
-                        '<div style="min-width:0;">' +
-                            '<div style="font-weight:900; color:#0f172a; font-size:13px;">' + esc(actor) + '</div>' +
-                            (badges.length ? ('<div style="margin-top:6px;">' + badges.join('') + '</div>') : '') +
-                        '</div>' +
-                        '<div style="color:#64748b; font-size:12px; white-space:nowrap;">' + esc(ts) + '</div>' +
-                    '</div>' +
-                    '<div style="margin-top:8px; color:#0f172a; font-size:13px; white-space:pre-wrap;">' + esc(it.message || '') + '</div>' +
-                '</div>'
-            );
-        }).join('') + '</div>';
-    }
-
-    function refreshRemarksUi() {
-        var list = Array.isArray(TL_CACHE) ? TL_CACHE.filter(isRemarkItem) : [];
-
-        var countEl = document.getElementById('cvRemarksCount');
-        if (countEl) {
-            countEl.className = 'badge bg-secondary';
-            countEl.textContent = String(list.length);
-        }
-
-        var badge = document.getElementById('cvRemarksBadge');
-        if (badge) {
-            badge.textContent = String(list.length);
-            badge.style.display = list.length ? 'inline-flex' : 'none';
-        }
-
-        var host = document.getElementById('cvRemarksList');
-        if (host) {
-            host.innerHTML = remarksHtml(list);
-        }
-    }
-
-    function initRemarksModal(applicationId) {
-        var openBtn = document.getElementById('cvOpenRemarksModal');
-        if (openBtn && !openBtn.dataset.bound) {
-            openBtn.dataset.bound = '1';
-            openBtn.addEventListener('click', function () {
-                try {
-                    refreshRemarksUi();
-                } catch (_e) {
-                }
-                openBsModal('cvRemarksModal');
-            });
-        }
-
-        var saveBtn = document.getElementById('cvRemarksSaveBtn');
-        var ta = document.getElementById('cvRemarksText');
-        if (saveBtn && ta && !saveBtn.dataset.bound) {
-            saveBtn.dataset.bound = '1';
-            saveBtn.addEventListener('click', function () {
-                var appId = applicationId || qs('application_id') || '';
-                var msg = (ta.value || '').trim();
-                if (!appId) return;
-                if (!msg) {
-                    setBoxMessage('cvRemarksMessage', 'Remark is required.', 'danger');
-                    return;
-                }
-
-                setBoxMessage('cvRemarksMessage', '', '');
-                saveBtn.disabled = true;
-
-                var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-                fetch(base + '/api/shared/case_timeline_add.php', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'same-origin',
-                    body: JSON.stringify({
-                        application_id: appId,
-                        event_type: 'comment',
-                        section_key: 'remarks',
-                        message: msg
-                    })
-                })
-                    .then(function (res) { return res.json().catch(function () { return { status: 0, message: 'Invalid server response.' }; }); })
-                    .then(function (data) {
-                        if (!data || data.status !== 1) {
-                            setBoxMessage('cvRemarksMessage', (data && data.message) ? data.message : 'Failed to save remark.', 'danger');
-                            return;
-                        }
-                        ta.value = '';
-                        setBoxMessage('cvRemarksMessage', 'Saved.', 'success');
-                        try {
-                            if (appId) loadTimeline(appId);
-                        } catch (_e) {
-                        }
-                    })
-                    .catch(function () {
-                        setBoxMessage('cvRemarksMessage', 'Network error. Please try again.', 'danger');
-                    })
-                    .finally(function () {
-                        saveBtn.disabled = false;
-                    });
             });
         }
     }
@@ -1330,6 +1239,7 @@
                             if (out) out.textContent = (data && data.message) ? data.message : 'Failed to save remarks.';
                             return;
                         }
+                        ta.value = '';
                         if (out) out.textContent = 'Saved.';
                         try {
                             var appId = qs('application_id') || '';
@@ -1379,7 +1289,7 @@
             });
         }
 
-        initRemarksModal(applicationId);
+        // Remarks modal flow removed; remarks are handled via right sidebar only.
     }
 
     function esc(str) {
@@ -1523,7 +1433,7 @@
         var href = fileUrlForField(fieldKey, v);
         if (!href) return esc(v);
 
-        return '<a href="' + esc(href) + '" target="_blank" style="text-decoration:none; color:#2563eb; font-weight:600;">View</a>' +
+        return '<a href="' + esc(href) + '" class="js-cv-doc-view" data-doc-label="' + esc(v) + '" style="text-decoration:none; color:#2563eb; font-weight:600;">View</a>' +
             '<div style="color:#64748b; font-size:12px; margin-top:2px;">' + esc(v) + '</div>';
     }
 
@@ -1550,18 +1460,42 @@
         return v != null && String(v).trim() !== '';
     }
 
+    function computeComponentStageLabel(stages) {
+        var cand = String(stages && stages.candidate ? stages.candidate : '').toLowerCase().trim();
+        var val = String(stages && stages.validator ? stages.validator : '').toLowerCase().trim();
+        var ver = String(stages && stages.verifier ? stages.verifier : '').toLowerCase().trim();
+        var qa = String(stages && stages.qa ? stages.qa : '').toLowerCase().trim();
+        if (qa === 'approved') return 'Completed';
+        if (ver === 'approved') return 'Pending QA';
+        if (val === 'approved') return 'Pending Verifier';
+        if (cand === 'approved') return 'Pending Validator';
+        return '';
+    }
+
     function getWorkflowStageLabel(d, componentKey) {
         try {
-            componentKey = String(componentKey || '').toLowerCase().trim();
+            componentKey = normSection(componentKey);
             if (!componentKey) return '';
 
             var list = Array.isArray(d && d.assigned_components) ? d.assigned_components : [];
             for (var i = 0; i < list.length; i++) {
                 var r = list[i] || {};
-                var k = r.component_key ? String(r.component_key).toLowerCase().trim() : '';
+                var k = r.component_key ? normSection(r.component_key) : '';
                 if (k === componentKey) {
                     return r.current_stage ? String(r.current_stage) : '';
                 }
+            }
+
+            var cw = d && d.component_workflow ? d.component_workflow : null;
+            var byComp = cw && typeof cw === 'object' ? (cw[componentKey] || null) : null;
+            if (byComp && typeof byComp === 'object') {
+                var stSimple = {
+                    candidate: byComp.candidate && byComp.candidate.status ? String(byComp.candidate.status) : '',
+                    validator: byComp.validator && byComp.validator.status ? String(byComp.validator.status) : '',
+                    verifier: byComp.verifier && byComp.verifier.status ? String(byComp.verifier.status) : '',
+                    qa: byComp.qa && byComp.qa.status ? String(byComp.qa.status) : ''
+                };
+                return computeComponentStageLabel(stSimple);
             }
             return '';
         } catch (e) {
@@ -1872,46 +1806,24 @@
         }
 
         rows = rows.map(window.GSS_DATE.formatRowDates);
-
-        var role = getRole();
-        var isPrint = String(qs('print') || '') === '1';
-        var useSimple = !isPrint && (role === 'verifier' || role === 'validator' || role === 'db_verifier');
-        if (useSimple) {
-            var html = rows.map(function (r, idx) {
-                var body = columns.map(function (c) {
-                    var key = c && c.key ? String(c.key) : '';
-                    var label = c && c.label ? String(c.label) : key;
-                    var v = r ? r[key] : '';
-                    var href = fileUrlForField(key, v);
-                    var valHtml = href ? fileCellHtml(key, v) : ('<span style="font-weight:800; color:#0f172a;">' + esc(v) + '</span>');
-                    return '<div style="display:grid; grid-template-columns: 200px 1fr; gap:12px; padding:8px 0; border-bottom:1px solid rgba(148,163,184,0.18);">' +
-                        '<div style="font-size:11px; font-weight:900; color:#475569;">' + esc(label) + '</div>' +
-                        '<div style="font-size:13px;">' + valHtml + '</div>' +
-                    '</div>';
-                }).join('');
-
-                return '<div style="border:1px solid rgba(148,163,184,0.22); border-radius:10px; padding:10px; background:#fff; margin-bottom:10px;">' +
-                    '<div style="font-size:12px; font-weight:950; color:#0f172a; margin-bottom:6px;">Item ' + esc(String(idx + 1)) + '</div>' +
-                    '<div>' + body + '</div>' +
+        host.innerHTML = rows.map(function (r, idx) {
+            var body = columns.map(function (c) {
+                var key = c && c.key ? String(c.key) : '';
+                var label = c && c.label ? String(c.label) : key;
+                var v = r ? r[key] : '';
+                var href = fileUrlForField(key, v);
+                var valHtml = href ? fileCellHtml(key, v) : ('<span style="font-weight:800; color:#0f172a;">' + esc(v) + '</span>');
+                return '<div class="cr-kv2-cell">' +
+                    '<div class="cr-kv2-k">' + esc(label) + '</div>' +
+                    '<div class="cr-kv2-v">' + valHtml + '</div>' +
                 '</div>';
             }).join('');
 
-            host.innerHTML = html;
-            return;
-        }
-
-        var thead = '<tr>' + columns.map(function (c) { return '<th>' + esc(c.label) + '</th>'; }).join('') + '</tr>';
-        var tbody = rows.map(function (r) {
-            return '<tr>' + columns.map(function (c) {
-                var v = r ? r[c.key] : '';
-                var key = c && c.key ? String(c.key) : '';
-                var href = fileUrlForField(key, v);
-                if (href) return '<td>' + fileCellHtml(key, v) + '</td>';
-                return '<td>' + esc(v) + '</td>';
-            }).join('') + '</tr>';
+            return '<div class="cr-kv2-wrap">' +
+                '<div style="font-size:12px; font-weight:950; color:#0f172a; margin-bottom:4px;">Item ' + esc(String(idx + 1)) + '</div>' +
+                '<div class="cr-kv2-grid">' + body + '</div>' +
+            '</div>';
         }).join('');
-
-        host.innerHTML = '<div class="table-scroll"><table class="table"><thead>' + thead + '</thead><tbody>' + tbody + '</tbody></table></div>';
     }
 
     function toTitle(key) {
@@ -2171,12 +2083,12 @@
 
         function getAssignedRowForComponent(d, componentKey) {
             try {
-                componentKey = String(componentKey || '').toLowerCase().trim();
+                componentKey = normSection(componentKey);
                 if (!componentKey) return null;
                 var list = Array.isArray(d && d.assigned_components) ? d.assigned_components : [];
                 for (var i = 0; i < list.length; i++) {
                     var r = list[i] || {};
-                    var k = r.component_key ? String(r.component_key).toLowerCase().trim() : '';
+                    var k = r.component_key ? normSection(r.component_key) : '';
                     if (k === componentKey) return r;
                 }
                 return null;
@@ -2228,13 +2140,14 @@
         }
 
         function currentSectionKey() {
+            if (CURRENT_SECTION_KEY) return normSection(CURRENT_SECTION_KEY);
             var active = document.querySelector('.list-group-item[data-section].active');
             var sec = active ? (active.getAttribute('data-section') || '') : '';
-            sec = String(sec || '').toLowerCase().trim();
+            sec = normSection(sec);
             if (!sec) {
                 var activePanel = document.querySelector('.candidate-section.cr-active');
                 if (activePanel && activePanel.id) {
-                    sec = String(activePanel.id).replace(/^section-/, '').toLowerCase().trim();
+                    sec = normSection(String(activePanel.id).replace(/^section-/, ''));
                 }
             }
             return sec;
@@ -2306,10 +2219,24 @@
                     var componentKey2 = currentSectionKey();
                     var stage2 = roleToStage(role);
                     var row2 = getAssignedRowForComponent(REPORT_PAYLOAD || {}, componentKey2);
-                    if (row2) {
-                        if (!row2.workflow || typeof row2.workflow !== 'object') row2.workflow = {};
-                        row2.workflow[stage2] = (action === 'approve') ? 'approved' : ((action === 'reject') ? 'rejected' : 'hold');
+                    if (!row2) {
+                        if (!REPORT_PAYLOAD.assigned_components || !Array.isArray(REPORT_PAYLOAD.assigned_components)) {
+                            REPORT_PAYLOAD.assigned_components = [];
+                        }
+                        row2 = { component_key: componentKey2, workflow: {} };
+                        REPORT_PAYLOAD.assigned_components.push(row2);
                     }
+                    if (!row2.workflow || typeof row2.workflow !== 'object') row2.workflow = {};
+                    row2.workflow[stage2] = (action === 'approve') ? 'approved' : ((action === 'reject') ? 'rejected' : 'hold');
+                    row2.current_stage = computeComponentStageLabel(row2.workflow);
+
+                    if (!REPORT_PAYLOAD.component_workflow || typeof REPORT_PAYLOAD.component_workflow !== 'object') {
+                        REPORT_PAYLOAD.component_workflow = {};
+                    }
+                    if (!REPORT_PAYLOAD.component_workflow[componentKey2] || typeof REPORT_PAYLOAD.component_workflow[componentKey2] !== 'object') {
+                        REPORT_PAYLOAD.component_workflow[componentKey2] = {};
+                    }
+                    REPORT_PAYLOAD.component_workflow[componentKey2][stage2] = { status: row2.workflow[stage2] };
                     try {
                         updateSectionBadges(REPORT_PAYLOAD || {});
                     } catch (_e) {
@@ -2394,8 +2321,9 @@
         }
 
         function show(section) {
-            section = String(section || '').toLowerCase();
+            section = normSection(section);
             if (!section) return;
+            CURRENT_SECTION_KEY = section;
 
             if (section === 'timeline') {
                 openBsModal('cvTimelineModal');
@@ -2472,6 +2400,106 @@
         if (!btn) return;
 
         var role = getRole();
+        if (role === 'qa' || role === 'team_lead') {
+            btn.addEventListener('click', function () {
+                var payload = getPayload ? getPayload() : null;
+                var caseId = payload && payload.case && payload.case.case_id ? parseInt(payload.case.case_id, 10) : 0;
+                var clientId = payload && payload.case && payload.case.client_id ? parseInt(payload.case.client_id, 10) : 0;
+                var appId = payload && payload.case && payload.case.application_id ? String(payload.case.application_id) : (qs('application_id') || '');
+
+                if (!appId) {
+                    var msg = document.getElementById('cvTopMessage');
+                    if (msg) msg.textContent = 'Application ID not found.';
+                    return;
+                }
+
+                btn.disabled = true;
+                var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
+                var approvalWarning = '';
+
+                fetch(base + '/api/shared/case_action.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({
+                        application_id: appId,
+                        action: 'approve',
+                        case_id: caseId || null,
+                        group: null
+                    })
+                })
+                    .then(function (res) {
+                        return res.json().catch(function () { return { status: 0, message: 'Invalid server response.' }; });
+                    })
+                    .then(function (data) {
+                        if (!data || data.status !== 1) {
+                            approvalWarning = (data && data.message) ? String(data.message) : 'Failed to complete.';
+                        }
+
+                        var nextUrl = base + '/api/qa/cases_list.php?view=ready';
+                        if (clientId > 0) {
+                            nextUrl += '&client_id=' + encodeURIComponent(String(clientId));
+                        }
+
+                        return fetch(nextUrl, { credentials: 'same-origin' })
+                            .then(function (res) {
+                                return res.json().catch(function () { return { status: 0, message: 'Invalid server response.' }; });
+                            })
+                            .then(function (nextData) {
+                                if (!nextData || nextData.status !== 1 || !Array.isArray(nextData.data)) {
+                                    var msg = document.getElementById('cvTopMessage');
+                                    if (msg) msg.textContent = (nextData && nextData.message) ? nextData.message : 'Completed. No next case.';
+                                    return;
+                                }
+
+                                var next = null;
+                                for (var i = 0; i < nextData.data.length; i++) {
+                                    var row = nextData.data[i] || {};
+                                    var nextApp = String(row.application_id || '').trim();
+                                    if (nextApp && nextApp !== appId) {
+                                        next = row;
+                                        break;
+                                    }
+                                }
+
+                                if (!next) {
+                                    var msg = document.getElementById('cvTopMessage');
+                                    if (msg) {
+                                        msg.textContent = approvalWarning
+                                            ? ('No next case. Approval warning: ' + approvalWarning)
+                                            : 'Completed. No next case.';
+                                    }
+                                    return;
+                                }
+
+                                var target = base + '/modules/qa/case_review.php?application_id=' + encodeURIComponent(String(next.application_id || ''));
+                                var nextClientId = parseInt(next.client_id, 10);
+                                if (isFinite(nextClientId) && nextClientId > 0) {
+                                    target += '&client_id=' + encodeURIComponent(String(nextClientId));
+                                }
+
+                                // In QA case-review embed mode, redirect parent.
+                                try {
+                                    if (window.parent && window.parent !== window) {
+                                        window.parent.location.href = target;
+                                        return;
+                                    }
+                                } catch (_e) {
+                                }
+                                window.location.href = target;
+                            });
+                    })
+                    .catch(function () {
+                        var msg = document.getElementById('cvTopMessage');
+                        if (msg) msg.textContent = 'Network error. Please try again.';
+                    })
+                    .finally(function () {
+                        btn.disabled = false;
+                    });
+            });
+            return;
+        }
+
         if (role === 'validator') {
             btn.addEventListener('click', function () {
                 var payload = getPayload ? getPayload() : null;
@@ -2606,6 +2634,61 @@
         });
     }
 
+    function openDocInModal(href, label) {
+        href = String(href || '').trim();
+        if (!href || href === '#') return;
+
+        var body = document.getElementById('cvViewDocModalBody');
+        if (!body) {
+            // Fallback to opening in new tab if modal is not present
+            try { window.open(href, '_blank'); } catch (_e) {}
+            return;
+        }
+
+        var safeLabel = esc(label || href);
+        var lower = href.toLowerCase();
+        var isImg = lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png') || lower.endsWith('.gif') || lower.endsWith('.webp');
+        var isPdf = lower.endsWith('.pdf');
+        var html;
+
+        if (isImg) {
+            html = '<img src="' + esc(href) + '" alt="' + safeLabel + '" style="width:100%; max-height:65vh; object-fit:contain; background:#000;" />';
+        } else if (isPdf) {
+            html = '<iframe src="' + esc(href) + '" title="' + safeLabel + '" style="width:100%; height:65vh; border:0;"></iframe>';
+        } else {
+            html = '<div style="padding:10px; color:#0f172a; font-size:13px;">' +
+                '<div style="font-weight:900; margin-bottom:6px;">Preview not available</div>' +
+                '<a href="' + esc(href) + '" target="_blank" style="text-decoration:none; color:#2563eb; font-weight:800;">Open in new tab</a>' +
+                '</div>';
+        }
+
+        body.innerHTML = html;
+        openBsModal('cvViewDocModal');
+    }
+
+    function initDocViewModal() {
+        if (document.body && document.body.dataset && document.body.dataset.cvDocModalBound === '1') {
+            return;
+        }
+        if (document.body && document.body.dataset) {
+            document.body.dataset.cvDocModalBound = '1';
+        }
+
+        document.addEventListener('click', function (e) {
+            var t = e && e.target ? e.target : null;
+            if (!t || !t.closest) return;
+            var link = t.closest('a.js-cv-doc-view');
+            if (!link) return;
+
+            var href = link.getAttribute('href') || '';
+            if (!href || href === '#') return;
+
+            e.preventDefault();
+            var label = link.getAttribute('data-doc-label') || link.textContent || 'Document';
+            openDocInModal(href, label);
+        });
+    }
+
     function renderUploadedDocs(rows) {
         var host = document.getElementById('cvUploadedDocs');
         if (!host) return;
@@ -2615,16 +2698,14 @@
             return;
         }
 
-        var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-
         host.innerHTML = '<div class="table-scroll"><table class="table">' +
             '<thead><tr><th>Type</th><th>File</th><th>Uploaded By</th><th>Created</th></tr></thead>' +
             '<tbody>' + rows.map(function (r) {
-                var href = r && r.file_path ? (base + String(r.file_path)) : '#';
+                var href = docHref(r);
                 var label = (r && (r.original_name || r.file_path)) ? String(r.original_name || r.file_path) : '';
                 return '<tr>' +
                     '<td>' + esc(r.doc_type || '') + '</td>' +
-                    '<td><a href="' + esc(href) + '" target="_blank" style="text-decoration:none; color:#2563eb;">' + esc(label) + '</a></td>' +
+                    '<td><a href="' + esc(href || '#') + '" class="js-cv-doc-view" data-doc-label="' + esc(label || '') + '" style="text-decoration:none; color:#2563eb;">' + esc(label) + '</a></td>' +
                     '<td>' + esc(r.uploaded_by_role || '') + '</td>' +
                     '<td>' + esc(r.created_at || '') + '</td>' +
                 '</tr>';
@@ -2908,6 +2989,34 @@
         setVal('cv_basic_nationality', basic.nationality || '');
         setVal('cv_basic_marital_status', basic.marital_status || '');
 
+        renderTable('cv_basic_table', [{
+            first_name: basic.first_name || cs.candidate_first_name || '',
+            last_name: basic.last_name || cs.candidate_last_name || '',
+            dob: window.GSS_DATE.formatDbDateTime(basic.dob || ''),
+            mobile: basic.mobile || cs.candidate_mobile || '',
+            email: basic.email || cs.candidate_email || '',
+            gender: basic.gender || '',
+            father_name: basic.father_name || '',
+            mother_name: basic.mother_name || '',
+            country: basic.country || '',
+            state: basic.state || '',
+            nationality: basic.nationality || '',
+            marital_status: basic.marital_status || ''
+        }], [
+            { key: 'first_name', label: 'First Name' },
+            { key: 'last_name', label: 'Last Name' },
+            { key: 'dob', label: 'DOB' },
+            { key: 'mobile', label: 'Mobile' },
+            { key: 'email', label: 'Email' },
+            { key: 'gender', label: 'Gender' },
+            { key: 'father_name', label: 'Father Name' },
+            { key: 'mother_name', label: 'Mother Name' },
+            { key: 'country', label: 'Country' },
+            { key: 'state', label: 'State' },
+            { key: 'nationality', label: 'Nationality' },
+            { key: 'marital_status', label: 'Marital Status' }
+        ]);
+
         setVal('cv_contact_current_address', [contact.address1, contact.address2, contact.city, contact.state, contact.country, contact.postal_code].filter(Boolean).join(', '));
         setVal('cv_contact_permanent_address', [contact.permanent_address1, contact.permanent_address2, contact.permanent_city, contact.permanent_state, contact.permanent_country, contact.permanent_postal_code].filter(Boolean).join(', '));
         setVal('cv_contact_proof_type', contact.proof_type || '');
@@ -2983,6 +3092,14 @@
             });
         }
 
+        // Initial section (usually Basic) renders before app id is ready; re-apply section UI after data load.
+        try {
+            var activeBtn = document.querySelector('.list-group-item[data-section].active');
+            var activeSection = activeBtn ? String(activeBtn.getAttribute('data-section') || '').toLowerCase() : 'basic';
+            if (activeSection) ensureComponentToolbar(activeSection);
+        } catch (_e) {
+        }
+
         return d;
     }
 
@@ -2990,6 +3107,7 @@
         initSectionNav();
         initUploadPicker();
         initValidatorRemarks();
+        initDocViewModal();
         loadReport().then(function (payload) {
             initVerifierCompleteNext(function () { return payload; });
         }).catch(function (e) {

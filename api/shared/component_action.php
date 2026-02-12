@@ -67,6 +67,55 @@ function prev_stage(string $stage): string {
     return '';
 }
 
+function bootstrap_prev_stage_if_completed(PDO $pdo, int $caseId, string $applicationId, string $componentKey, string $prevStage): bool {
+    $prevStage = strtolower(trim($prevStage));
+    if ($caseId <= 0 || $applicationId === '' || $componentKey === '' || $prevStage === '') return false;
+
+    try {
+        if ($prevStage === 'validator') {
+            $q = $pdo->prepare('SELECT 1 FROM Vati_Payfiller_Validator_Queue WHERE case_id = ? AND completed_at IS NOT NULL LIMIT 1');
+            $q->execute([$caseId]);
+            $ok = (bool)$q->fetchColumn();
+            if (!$ok) return false;
+
+            $ins = $pdo->prepare(
+                'INSERT INTO Vati_Payfiller_Case_Component_Workflow (case_id, application_id, component_key, stage, status, updated_by_user_id, updated_by_role, completed_at) '
+                . 'VALUES (?, ?, ?, \'validator\', \'approved\', NULL, \'validator\', NOW()) '
+                . 'ON DUPLICATE KEY UPDATE status = \'approved\', completed_at = COALESCE(completed_at, NOW()), updated_at = NOW()'
+            );
+            $ins->execute([$caseId, $applicationId, $componentKey]);
+            return true;
+        }
+
+        if ($prevStage === 'verifier') {
+            $q = $pdo->prepare(
+                "SELECT\n"
+                . "  SUM(CASE WHEN completed_at IS NULL THEN 1 ELSE 0 END) AS open_items,\n"
+                . "  COUNT(*) AS total_items\n"
+                . "FROM Vati_Payfiller_Verifier_Group_Queue\n"
+                . "WHERE case_id = ?"
+            );
+            $q->execute([$caseId]);
+            $r = $q->fetch(PDO::FETCH_ASSOC) ?: [];
+            $open = (int)($r['open_items'] ?? 0);
+            $total = (int)($r['total_items'] ?? 0);
+            if ($total < 2 || $open > 0) return false;
+
+            $ins = $pdo->prepare(
+                'INSERT INTO Vati_Payfiller_Case_Component_Workflow (case_id, application_id, component_key, stage, status, updated_by_user_id, updated_by_role, completed_at) '
+                . 'VALUES (?, ?, ?, \'verifier\', \'approved\', NULL, \'verifier\', NOW()) '
+                . 'ON DUPLICATE KEY UPDATE status = \'approved\', completed_at = COALESCE(completed_at, NOW()), updated_at = NOW()'
+            );
+            $ins->execute([$caseId, $applicationId, $componentKey]);
+            return true;
+        }
+    } catch (Throwable $e) {
+        return false;
+    }
+
+    return false;
+}
+
 function session_allowed_sections(): array {
     if (session_status() === PHP_SESSION_NONE) {
         @session_start();
@@ -191,6 +240,17 @@ try {
 
     // Stage-order enforcement (workflow table only)
     if ($useWorkflow) {
+        // Seed candidate stage first so validator can pass prev-stage gate.
+        try {
+            $insCand = $pdo->prepare(
+                'INSERT INTO Vati_Payfiller_Case_Component_Workflow (case_id, application_id, component_key, stage, status, updated_by_user_id, updated_by_role, completed_at) '
+                . 'VALUES (?, ?, ?, \'candidate\', \'approved\', NULL, \'candidate\', NOW()) '
+                . 'ON DUPLICATE KEY UPDATE stage = stage'
+            );
+            $insCand->execute([$caseId, $applicationId, $componentKey]);
+        } catch (Throwable $e) {
+        }
+
         // Lock: do not allow changing final stage decisions
         try {
             $cs = $pdo->prepare(
@@ -217,6 +277,14 @@ try {
                 $ps->execute([$caseId, $componentKey, $prev]);
                 $prevStatus = strtolower(trim((string)($ps->fetchColumn() ?: '')));
                 if ($prevStatus !== 'approved') {
+                    // Backward compatibility: bootstrap missing previous-stage workflow rows
+                    // from existing queue completion markers (validator/verifier).
+                    if (bootstrap_prev_stage_if_completed($pdo, $caseId, $applicationId, $componentKey, $prev)) {
+                        $ps->execute([$caseId, $componentKey, $prev]);
+                        $prevStatus = strtolower(trim((string)($ps->fetchColumn() ?: '')));
+                    }
+                }
+                if ($prevStatus !== 'approved') {
                     http_response_code(400);
                     echo json_encode(['status' => 0, 'message' => 'Previous stage pending: ' . $prev]);
                     exit;
@@ -226,17 +294,6 @@ try {
                 echo json_encode(['status' => 0, 'message' => 'Workflow check failed']);
                 exit;
             }
-        }
-
-        // Ensure candidate stage exists once the workflow table is in use.
-        try {
-            $insCand = $pdo->prepare(
-                'INSERT INTO Vati_Payfiller_Case_Component_Workflow (case_id, application_id, component_key, stage, status, updated_by_user_id, updated_by_role, completed_at) '
-                . 'VALUES (?, ?, ?, \'candidate\', \'approved\', NULL, \'candidate\', NOW()) '
-                . 'ON DUPLICATE KEY UPDATE stage = stage'
-            );
-            $insCand->execute([$caseId, $applicationId, $componentKey]);
-        } catch (Throwable $e) {
         }
     }
 

@@ -112,6 +112,22 @@ function enforce_client_admin_application_scope(PDO $pdo, string $applicationId)
     }
 }
 
+function fetch_case_status(PDO $pdo, string $applicationId): string {
+    try {
+        $st = $pdo->prepare('SELECT case_status FROM Vati_Payfiller_Cases WHERE application_id = ? LIMIT 1');
+        $st->execute([$applicationId]);
+        return trim((string)($st->fetchColumn() ?: ''));
+    } catch (Throwable $e) {
+        return '';
+    }
+}
+
+function is_completed_case_status(string $status): bool {
+    $s = strtoupper(trim($status));
+    if ($s === '') return false;
+    return in_array($s, ['APPROVED', 'VERIFIED', 'COMPLETED', 'CLEAR'], true);
+}
+
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         http_response_code(405);
@@ -155,13 +171,47 @@ try {
 
     enforce_qa_workflow_gate($pdo, $applicationId);
 
-    $stmt = $pdo->prepare('CALL SP_Vati_Payfiller_CaseAction(?, ?, ?)');
-    $stmt->execute([$applicationId, $action, $userId]);
-    $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
-    $stmt->closeCursor();
+    // Idempotent success for approve when case is already completed.
+    if ($action === 'approve') {
+        $existing = fetch_case_status($pdo, $applicationId);
+        if (is_completed_case_status($existing)) {
+            $caseStatus = $existing;
+            $appStatus = $existing;
+        }
+    }
 
-    $caseStatus = (string)($row['case_status'] ?? '');
-    $appStatus = isset($row['application_status']) ? $row['application_status'] : null;
+    if ($caseStatus === '') {
+        try {
+            $stmt = $pdo->prepare('CALL SP_Vati_Payfiller_CaseAction(?, ?, ?)');
+            $stmt->execute([$applicationId, $action, $userId]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+            $stmt->closeCursor();
+
+            $caseStatus = (string)($row['case_status'] ?? '');
+            $appStatus = isset($row['application_status']) ? $row['application_status'] : null;
+        } catch (PDOException $e) {
+            // If approve failed but case is already completed, treat as success.
+            if ($action === 'approve') {
+                $existing = fetch_case_status($pdo, $applicationId);
+                if (is_completed_case_status($existing)) {
+                    $caseStatus = $existing;
+                    $appStatus = $existing;
+                } else {
+                    http_response_code(409);
+                    $driverMsg = is_array($e->errorInfo ?? null) ? (string)($e->errorInfo[2] ?? '') : '';
+                    $msg = $driverMsg !== '' ? $driverMsg : ('Approve failed: ' . $e->getMessage());
+                    echo json_encode(['status' => 0, 'message' => $msg]);
+                    exit;
+                }
+            } else {
+                http_response_code(500);
+                $driverMsg = is_array($e->errorInfo ?? null) ? (string)($e->errorInfo[2] ?? '') : '';
+                $msg = $driverMsg !== '' ? $driverMsg : ('Database error: ' . $e->getMessage());
+                echo json_encode(['status' => 0, 'message' => $msg]);
+                exit;
+            }
+        }
+    }
 
     // If action is performed by verifier on a claimed queue item, sync queue status as well.
     // - hold => followup
@@ -225,7 +275,9 @@ try {
 
 } catch (PDOException $e) {
     http_response_code(500);
-    echo json_encode(['status' => 0, 'message' => 'Database error. Please try again.']);
+    $driverMsg = is_array($e->errorInfo ?? null) ? (string)($e->errorInfo[2] ?? '') : '';
+    $msg = $driverMsg !== '' ? $driverMsg : ('Database error: ' . $e->getMessage());
+    echo json_encode(['status' => 0, 'message' => $msg]);
 } catch (Throwable $e) {
     http_response_code(400);
     echo json_encode(['status' => 0, 'message' => $e->getMessage()]);

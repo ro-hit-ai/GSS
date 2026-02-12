@@ -25,7 +25,7 @@ if ($applicationId === '' && $caseId <= 0) {
     exit;
 }
 
-$target = '../shared/candidate_report.php?role=validator';
+$target = '../shared/candidate_report.php?role=validator&fullscreen=0';
 if ($applicationId !== '') {
     $target .= '&application_id=' . urlencode($applicationId);
 } elseif ($caseId > 0) {

@@ -15,49 +15,49 @@ $roleLabel = $isTeamLead ? 'Team Lead' : 'QA';
 ob_start();
 ?>
 <div class="card">
-    <h3>QA Dashboard</h3>
-    <p>Live workload, users, and active case handling.</p>
+    <h3 style="margin-bottom:4px;">QA Dashboard</h3>
+    <p class="card-subtitle" style="margin-bottom:0; color:#64748b;">Live workload, users, and active case handling.</p>
 </div>
 
 <div class="card" id="qaDashMessage" style="display:none; margin-bottom:10px;"></div>
 
-<div class="card" style="padding:14px;">
-    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+<div class="card qa-dash-main">
+    <div class="qa-dash-head">
         <div>
-            <div style="font-weight:900; color:#0f172a;">Live Dashboard</div>
-            <div style="font-size:12px; color:#64748b;">Auto-refresh shows current open workload and assignments.</div>
+            <div class="qa-dash-title">Live Dashboard</div>
+            <div class="qa-dash-subtitle">Auto-refresh shows current open workload and assignments.</div>
         </div>
-        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-            <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:#334155;">
+        <div class="qa-dash-controls">
+            <label class="qa-dash-autorefresh">
                 <input type="checkbox" id="qaDashAutoRefresh" checked>
-                Auto refresh (15s)
+                <span>Auto refresh (15s)</span>
             </label>
-            <button class="btn btn-sm" id="qaDashRefreshBtn" type="button" style="border-radius:10px;">Refresh</button>
+            <button class="btn btn-sm qa-dash-refresh-btn" id="qaDashRefreshBtn" type="button">Refresh</button>
         </div>
     </div>
 
-    <div style="display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap:10px; margin-top:14px;">
-        <div style="border:1px solid rgba(148,163,184,0.25); border-radius:14px; padding:12px; background:#fff;">
-            <div style="font-size:11px; color:#64748b; font-weight:800;">ACTIVE USERS</div>
-            <div id="qaKpiUsersTotal" style="font-size:22px; font-weight:900; color:#0f172a; margin-top:4px;">-</div>
+    <div class="qa-kpi-grid">
+        <div class="qa-kpi-card">
+            <div class="qa-kpi-label">ACTIVE USERS</div>
+            <div id="qaKpiUsersTotal" class="qa-kpi-value">-</div>
         </div>
-        <div style="border:1px solid rgba(148,163,184,0.25); border-radius:14px; padding:12px; background:#fff;">
-            <div style="font-size:11px; color:#64748b; font-weight:800;">QA USERS</div>
-            <div id="qaKpiQaUsers" style="font-size:22px; font-weight:900; color:#0f172a; margin-top:4px;">-</div>
+        <div class="qa-kpi-card">
+            <div class="qa-kpi-label">QA USERS</div>
+            <div id="qaKpiQaUsers" class="qa-kpi-value">-</div>
         </div>
-        <div style="border:1px solid rgba(148,163,184,0.25); border-radius:14px; padding:12px; background:#fff;">
-            <div style="font-size:11px; color:#64748b; font-weight:800;">VR OPEN ITEMS</div>
-            <div id="qaKpiVrOpen" style="font-size:22px; font-weight:900; color:#0f172a; margin-top:4px;">-</div>
+        <div class="qa-kpi-card">
+            <div class="qa-kpi-label">VR OPEN ITEMS</div>
+            <div id="qaKpiVrOpen" class="qa-kpi-value">-</div>
         </div>
-        <div style="border:1px solid rgba(148,163,184,0.25); border-radius:14px; padding:12px; background:#fff;">
-            <div style="font-size:11px; color:#64748b; font-weight:800;">DBV OPEN CASES</div>
-            <div id="qaKpiDbvOpen" style="font-size:22px; font-weight:900; color:#0f172a; margin-top:4px;">-</div>
+        <div class="qa-kpi-card">
+            <div class="qa-kpi-label">DBV OPEN CASES</div>
+            <div id="qaKpiDbvOpen" class="qa-kpi-value">-</div>
         </div>
     </div>
 
-    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-top:14px;">
-        <div style="border:1px solid rgba(148,163,184,0.25); border-radius:14px; padding:12px; background:#fff;">
-            <div style="font-weight:900; color:#0f172a; margin-bottom:8px;">Verifier workload (VR Group Queue)</div>
+    <div class="qa-workload-grid">
+        <div class="qa-panel-card">
+            <div class="qa-panel-title">Verifier workload (VR Group Queue)</div>
             <div class="table-scroll">
                 <table class="table">
                     <thead><tr><th>User</th><th>Open</th><th>State</th></tr></thead>
@@ -65,8 +65,8 @@ ob_start();
                 </table>
             </div>
         </div>
-        <div style="border:1px solid rgba(148,163,184,0.25); border-radius:14px; padding:12px; background:#fff;">
-            <div style="font-weight:900; color:#0f172a; margin-bottom:8px;">DB Verifier workload (DBV)</div>
+        <div class="qa-panel-card">
+            <div class="qa-panel-title">DB Verifier workload (DBV)</div>
             <div class="table-scroll">
                 <table class="table">
                     <thead><tr><th>User</th><th>Open</th><th>State</th></tr></thead>
@@ -76,14 +76,14 @@ ob_start();
         </div>
     </div>
 
-    <div style="margin-top:14px; border:1px solid rgba(148,163,184,0.25); border-radius:14px; padding:12px; background:#fff;">
-        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+    <div class="qa-assignments-card">
+        <div class="qa-assignments-head">
             <div>
-                <div style="font-weight:900; color:#0f172a;">Who is handling which case (live)</div>
-                <div style="font-size:12px; color:#64748b;">Shows active claims (VR queue + DBV).</div>
+                <div class="qa-panel-title">Who is handling which case (live)</div>
+                <div class="qa-panel-subtitle">Shows active claims (VR queue + DBV).</div>
             </div>
         </div>
-        <div class="table-scroll" style="margin-top:8px;">
+        <div class="table-scroll qa-assignments-table">
             <table class="table">
                 <thead>
                 <tr>
@@ -102,10 +102,123 @@ ob_start();
 </div>
 
 <style>
+    .qa-dash-main{
+        padding:14px;
+    }
+    .qa-dash-head{
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+        gap:12px;
+        flex-wrap:wrap;
+    }
+    .qa-dash-title{
+        font-weight:900;
+        color:#0f172a;
+    }
+    .qa-dash-subtitle{
+        font-size:12px;
+        color:#64748b;
+    }
+    .qa-dash-controls{
+        display:flex;
+        align-items:center;
+        gap:10px;
+        flex-wrap:wrap;
+    }
+    .qa-dash-autorefresh{
+        display:flex;
+        align-items:center;
+        gap:8px;
+        font-size:13px;
+        color:#334155;
+        margin:0;
+    }
+    .qa-dash-autorefresh input[type="checkbox"]{
+        margin:0;
+    }
+    .qa-dash-refresh-btn{
+        border-radius:10px;
+        font-weight:800;
+    }
+
+    /* KPI grid */
+    .qa-kpi-grid{
+        display:grid;
+        grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));
+        gap:10px;
+        margin-top:14px;
+    }
+    .qa-kpi-card{
+        border:1px solid rgba(148,163,184,0.25);
+        border-radius:14px;
+        padding:12px;
+        background:#fff;
+    }
+    .qa-kpi-label{
+        font-size:11px;
+        color:#64748b;
+        font-weight:800;
+        letter-spacing:.08em;
+        text-transform:uppercase;
+    }
+    .qa-kpi-value{
+        font-size:22px;
+        font-weight:900;
+        color:#0f172a;
+        margin-top:4px;
+    }
+
+    /* Workload + assignments cards */
+    .qa-workload-grid{
+        display:grid;
+        grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));
+        gap:12px;
+        margin-top:14px;
+    }
+    .qa-panel-card,
+    .qa-assignments-card{
+        border:1px solid rgba(148,163,184,0.25);
+        border-radius:14px;
+        padding:12px;
+        background:#fff;
+    }
+    .qa-panel-title{
+        font-weight:900;
+        color:#0f172a;
+        margin-bottom:8px;
+        font-size:13px;
+    }
+    .qa-panel-subtitle{
+        font-size:12px;
+        color:#64748b;
+    }
+    .qa-assignments-table{
+        margin-top:8px;
+    }
+
+    /* Responsive behaviour */
     @media (max-width: 1100px){
-        #qaKpiUsersTotal,#qaKpiQaUsers,#qaKpiVrOpen,#qaKpiDbvOpen{font-size:18px !important;}
-        .card [style*="grid-template-columns: repeat(4"]{grid-template-columns: repeat(2, minmax(0, 1fr)) !important;}
-        .card [style*="grid-template-columns: 1fr 1fr"]{grid-template-columns: 1fr !important;}
+        .qa-kpi-value{
+            font-size:18px;
+        }
+    }
+    @media (max-width: 768px){
+        .qa-kpi-grid{
+            grid-template-columns:repeat(2, minmax(0, 1fr));
+        }
+    }
+    @media (max-width: 520px){
+        .qa-kpi-grid{
+            grid-template-columns:1fr;
+        }
+        .qa-dash-head{
+            align-items:flex-start;
+        }
+        .qa-dash-controls{
+            width:100%;
+            justify-content:flex-start;
+        }
     }
 </style>
 <?php
