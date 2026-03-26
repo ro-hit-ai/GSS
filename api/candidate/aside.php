@@ -1,45 +1,48 @@
 <?php
 ?>
 <aside class="sidebar" id="mainSidebar">
+    <!-- <div class="sidebar-section sidebar-title">Navigation</div> -->
+    <div class="sidebar-section" style="font-size:12px; color:#9ca3af; margin-bottom:6px;">
+    </div>
     <nav class="sidebar-nav">
 
-        <a href="#" data-page="basic-details" class="sidebar-item">
+        <a href="#" data-page="basic-details">
             <i class="fas fa-user"></i>
             <span class="sidebar-label">Basic Details</span>
         </a>
 
-        <a href="#" data-page="identification" class="sidebar-item">
+        <a href="#" data-page="identification">
             <i class="fas fa-id-card"></i>
             <span class="sidebar-label">Identification</span>
         </a>
 
-        <a href="#" data-page="contact" class="sidebar-item">
+        <a href="#" data-page="contact">
             <i class="fas fa-address-book"></i>
             <span class="sidebar-label">Address</span>
         </a>
 
-                <a href="#" data-page="social" class="sidebar-item">
+        <a href="#" data-page="social">
             <i class="fas fa-users"></i>
             <span class="sidebar-label">Social Media</span>
         </a>
 
-         <a href="#" data-page="ecourt" class="sidebar-item">
+        <a href="#" data-page="ecourt">
             <i class="fas fa-gavel"></i>
             <span class="sidebar-label">E-Court</span>
         </a>
 
 
-        <a href="#" data-page="education" class="sidebar-item">
+        <a href="#" data-page="education">
             <i class="fas fa-graduation-cap"></i>
             <span class="sidebar-label">Education</span>
         </a>
 
-        <a href="#" data-page="employment" class="sidebar-item">
+        <a href="#" data-page="employment">
             <i class="fas fa-briefcase"></i>
             <span class="sidebar-label">Employment</span>
         </a>
 
-        <a href="#" data-page="reference" class="sidebar-item">
+        <a href="#" data-page="reference">
             <i class="fas fa-users"></i>
             <span class="sidebar-label">Reference</span>
 </a>
@@ -72,7 +75,7 @@ document.addEventListener("DOMContentLoaded", () => {
         overlay.classList.remove("show");
     });
 
-    document.querySelectorAll(".sidebar-item").forEach(item => {
+    document.querySelectorAll(".sidebar-nav a").forEach(item => {
 
         item.addEventListener("click", (e) => {
             e.preventDefault();

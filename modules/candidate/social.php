@@ -34,7 +34,7 @@ $consent_bgv        = $social['consent_bgv'] ?? 0;
     <form id="socialForm">
 
         <!-- REQUIRED PROFILES -->
-        <div class="form-grid compact-grid mb-3">
+        <div class="form-row-2 compact-row mb-2">
             <!-- LinkedIn (Required) -->
             <div class="form-field">
                 <div class="form-control double-border compact-control">
@@ -60,7 +60,9 @@ $consent_bgv        = $social['consent_bgv'] ?? 0;
                            required>
                 </div>
             </div>
+        </div>
 
+        <div class="form-row-2 compact-row mb-3">
             <!-- Twitter (Optional) -->
             <div class="form-field">
                 <div class="form-control double-border compact-control">
@@ -84,28 +86,27 @@ $consent_bgv        = $social['consent_bgv'] ?? 0;
                            value="<?= htmlspecialchars($instagram_url) ?>">
                 </div>
             </div>
+        </div>
 
-            <!-- Other URL (Optional) -->
+        <!-- OTHER + ADDITIONAL INFORMATION -->
+        <div class="form-row-2 compact-row mb-3">
             <div class="form-field">
                 <div class="form-control double-border compact-control">
                     <label class="compact-label">Other Profile/Portfolio</label>
-                    <input type="url"
-                           name="other_url"
-                           class="compact-input"
-                           placeholder="GitHub, Portfolio, Blog, etc."
-                           value="<?= htmlspecialchars($other_url) ?>">
+                   <textarea
+                    name="other_url" 
+                    rows="1"
+                    class="compact-textarea"
+                     placeholder="GitHub, Portfolio, Blog, etc.">
+                     <?= htmlspecialchars($other_url) ?></textarea>
                 </div>
             </div>
-        </div>
-
-        <!-- ADDITIONAL INFORMATION -->
-        <div class="form-row-full compact-row mb-3">
             <div class="form-field">
                 <div class="form-control double-border compact-control">
                     <label class="compact-label">Additional Information</label>
                     <textarea
                         name="content"
-                        rows="3"
+                        rows="1"
                         class="compact-textarea"
                         placeholder="Any notes about your social media profiles..."
                     ><?= htmlspecialchars($content) ?></textarea>
@@ -165,7 +166,6 @@ $socialData = [
 ];
 ?>
 
-<script>
-/* ================= PASS DATA TO JS ================= */
-window.SOCIAL_DATA = <?= json_encode($socialData) ?>;
-</script>
+<div id="socialData"
+     data-social='<?= htmlspecialchars(json_encode($socialData), ENT_QUOTES, 'UTF-8') ?>'
+     style="display:none"></div>

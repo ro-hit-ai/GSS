@@ -3,6 +3,13 @@ require_once __DIR__ . '/../../includes/layout.php';
 require_once __DIR__ . '/../../includes/menus.php';
 require_once __DIR__ . '/../../includes/auth.php';
 
+$candidateReportJsVersion = '1';
+try {
+    $candidateReportJsVersion = (string)filemtime(__DIR__ . '/../../js/modules/shared/candidate_report.js');
+} catch (Throwable $e) {
+    $candidateReportJsVersion = '1';
+}
+
 $isPrint = isset($_GET['print']) && (string)$_GET['print'] === '1';
 $isEmbed = isset($_GET['embed']) && (string)$_GET['embed'] === '1';
 $role = strtolower(trim((string)($_GET['role'] ?? 'client_admin'))) ?: 'client_admin';
@@ -39,6 +46,22 @@ auth_session_start();
 $allowedSections = '';
 if (!empty($_SESSION['auth_allowed_sections'])) {
     $allowedSections = (string)$_SESSION['auth_allowed_sections'];
+}
+// Keep UI scope in sync with latest admin assignment (avoid stale session values).
+try {
+    if ($role === 'verifier' || $role === 'validator' || $role === 'db_verifier') {
+        require_once __DIR__ . '/../../config/db.php';
+        $uid = (int)($_SESSION['auth_user_id'] ?? 0);
+        if ($uid > 0) {
+            $pdo = getDB();
+            $st = $pdo->prepare('SELECT allowed_sections FROM Vati_Payfiller_Users WHERE user_id = ? LIMIT 1');
+            $st->execute([$uid]);
+            $dbAllowed = (string)($st->fetchColumn() ?: '');
+            $allowedSections = $dbAllowed;
+            $_SESSION['auth_allowed_sections'] = $dbAllowed;
+        }
+    }
+} catch (Throwable $e) {
 }
 if ($role === 'qa') {
     $allowedSections = '*';
@@ -195,6 +218,17 @@ if ($role === 'company_recruiter') {
     }
 }
 
+$backToListHref = '';
+if ($role === 'verifier') {
+    $backToListHref = '../verifier/candidates_list.php';
+} elseif ($role === 'validator') {
+    $backToListHref = '../validator/candidates_list.php';
+} elseif ($role === 'gss_admin') {
+    $backToListHref = '../gss_admin/candidates_list.php';
+} elseif ($role === 'client_admin') {
+    $backToListHref = '../client_admin/candidates_list.php';
+}
+
 ob_start();
 ?>
 <style>
@@ -336,15 +370,9 @@ ob_start();
     .cr-report-root.cr-role-validator .cr-compnav-btn,
     .cr-report-root.cr-role-db_verifier .cr-compnav-btn{border-radius:6px; padding:6px 10px; font-size:12px;}
 
-    .cr-report-root.cr-role-verifier #cvActionHold,
-    .cr-report-root.cr-role-verifier #cvActionReject,
-    .cr-report-root.cr-role-verifier #cvActionApprove,
-    .cr-report-root.cr-role-validator #cvActionHold,
-    .cr-report-root.cr-role-validator #cvActionReject,
-    .cr-report-root.cr-role-validator #cvActionApprove,
-    .cr-report-root.cr-role-db_verifier #cvActionHold,
-    .cr-report-root.cr-role-db_verifier #cvActionReject,
-    .cr-report-root.cr-role-db_verifier #cvActionApprove{display:none !important;}
+    .cr-case-actions-card{border:1px solid rgba(148,163,184,0.24); border-radius:12px; background:linear-gradient(180deg,#ffffff,#f8fafc); padding:10px; margin-bottom:10px;}
+    .cr-case-actions-head{font-size:11px; font-weight:950; letter-spacing:.10em; text-transform:uppercase; color:#64748b; margin-bottom:8px;}
+    .cr-case-actions-row{display:flex; gap:8px; flex-wrap:wrap;}
 
     .cr-report-root.cr-role-verifier .cr-upload-inline,
     .cr-report-root.cr-role-validator .cr-upload-inline,
@@ -361,6 +389,61 @@ ob_start();
     .cr-report-root.cr-role-verifier .cr-shell,
     .cr-report-root.cr-role-validator .cr-shell,
     .cr-report-root.cr-role-db_verifier .cr-shell{gap:12px;}
+
+    /* Validator: fixed sidebar + stable content flow */
+    /* Validator layout: internal scrolling only */
+    .cr-report-root.cr-role-validator{
+        height:100vh;
+        overflow:hidden;
+        display:flex;
+        flex-direction:column;
+    }
+    .cr-report-root.cr-role-validator .cr-hero{flex-shrink:0;}
+    .cr-report-root.cr-role-validator .cr-shell{
+        flex:1;
+        min-height:0;
+        display:flex;
+        gap:12px;
+        overflow:hidden;
+    }
+    .cr-report-root.cr-role-validator .cr-sidebar{
+        width:250px;
+        flex-shrink:0;
+        overflow-y:auto;
+        height:fit-content;
+        max-height:100%;
+    }
+    .cr-report-root.cr-role-validator .cr-main{
+        flex:1;
+        min-width:0;
+        display:flex;
+        flex-direction:column;
+        overflow:hidden;
+    }
+    .cr-report-root.cr-role-validator .cr-upload-inline{flex-shrink:0;}
+    .cr-report-root.cr-role-validator .cr-sections-scroll{
+        flex:1;
+        overflow-y:auto;
+        padding-right:6px;
+        max-height:none;
+    }
+    body.cr-fullscreen-validator .cr-report-root.cr-role-validator .cr-sidebar{
+        top:12px;
+        height:calc(100vh - 24px);
+    }
+    .cr-report-root.cr-role-validator .cr-main{
+        min-width:0;
+    }
+    .cr-report-root.cr-role-validator{
+        position:relative;
+        height:auto;
+        overflow:visible;
+    }
+    .cr-report-root.cr-role-validator .cr-sections-scroll{
+        max-height:none;
+        overflow:visible;
+        padding-right:0;
+    }
 
     .cr-remarksbar{width:320px; padding:12px; border:1px solid rgba(148,163,184,0.22); border-radius:10px; background:#fff; position:sticky; top:76px; height:fit-content;}
     .cr-remarksbar-title{font-size:11px; font-weight:950; letter-spacing:.10em; text-transform:uppercase; color:#64748b; margin-bottom:10px; display:flex; align-items:center; justify-content:space-between; gap:10px;}
@@ -471,9 +554,55 @@ ob_start();
     .cr-main .table{margin-bottom:0;}
     .cr-main .table thead th{font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:#64748b;}
     .cr-main .table tbody td{font-size:13px; color:#0f172a;}
+
+    /* Prevent first-paint sidebar/section flicker: reveal after JS finalizes assigned-component view */
+    .cr-report-root[data-ui-ready="0"] .cr-sidebar,
+    .cr-report-root[data-ui-ready="0"] #cvComponentNav,
+    .cr-report-root[data-ui-ready="0"] #crSectionsScroll{
+        visibility:hidden;
+    }
     .candidate-section .form-grid{gap:10px !important; margin-top:8px !important;}
     .candidate-section .form-control label{margin-bottom:4px; font-size:11px;}
     .candidate-section .form-control input,.candidate-section .form-control select,.candidate-section .form-control textarea{padding:8px 10px; border-radius:12px;}
+
+    /* Stable layout for admin/client roles (non workflow modes) */
+    .cr-report-root:not(.cr-role-verifier):not(.cr-role-validator):not(.cr-role-db_verifier) .candidate-section .form-grid{
+        display:grid;
+        grid-template-columns:repeat(2, minmax(0, 1fr));
+        gap:10px !important;
+        align-items:start;
+    }
+    .cr-report-root:not(.cr-role-verifier):not(.cr-role-validator):not(.cr-role-db_verifier) .candidate-section .form-grid > .form-control{
+        display:flex;
+        flex-direction:column;
+        min-width:0;
+        margin:0;
+        padding:10px !important;
+        border:1px solid rgba(148,163,184,0.24);
+        border-radius:12px;
+        background:#fff;
+        box-shadow:none;
+    }
+    .cr-report-root:not(.cr-role-verifier):not(.cr-role-validator):not(.cr-role-db_verifier) .candidate-section .form-grid > .form-control label{
+        margin:0 0 4px;
+        font-size:11px;
+        font-weight:800;
+        color:#475569;
+    }
+    .cr-report-root:not(.cr-role-verifier):not(.cr-role-validator):not(.cr-role-db_verifier) .candidate-section .form-grid > .form-control input,
+    .cr-report-root:not(.cr-role-verifier):not(.cr-role-validator):not(.cr-role-db_verifier) .candidate-section .form-grid > .form-control textarea,
+    .cr-report-root:not(.cr-role-verifier):not(.cr-role-validator):not(.cr-role-db_verifier) .candidate-section .form-grid > .form-control select{
+        width:100%;
+        min-width:0;
+        border:1px solid rgba(148,163,184,0.28);
+        background:#f8fafc;
+        box-shadow:none;
+    }
+    @media (max-width: 900px){
+        .cr-report-root:not(.cr-role-verifier):not(.cr-role-validator):not(.cr-role-db_verifier) .candidate-section .form-grid{
+            grid-template-columns:1fr;
+        }
+    }
 
     /* Match Basic/Contact-style sections to the same iOS-like key/value look used by table sections */
     .cr-report-root.cr-role-verifier .candidate-section .form-grid,
@@ -564,6 +693,19 @@ ob_start();
     .cr-kv2-k{font-size:11px; font-weight:900; color:#475569; margin-bottom:1px;}
     .cr-kv2-v{font-size:13px; color:#0f172a;}
 
+    /* Education details: keep sequential order for validator */
+    .cr-report-root.cr-role-validator #section-education .cr-kv2-grid{
+        grid-template-columns:1fr;
+    }
+
+    /* Force modal backdrop cleanup - prevents unclickable screen */
+    .modal-backdrop{display:none !important;}
+    .modal-backdrop.fade{display:none !important;}
+    .modal-backdrop.show{display:none !important;}
+    body.modal-open{overflow:auto !important; padding-right:0 !important;}
+    body.modal-open .modal{overflow-y:auto !important;}
+    html.modal-open{overflow:auto !important; padding-right:0 !important;}
+
     .cr-report-root.cr-role-verifier #section-reference .form-grid,
     .cr-report-root.cr-role-validator #section-reference .form-grid,
     .cr-report-root.cr-role-db_verifier #section-reference .form-grid{
@@ -639,6 +781,13 @@ ob_start();
         .cr-docbar{width:auto; position:relative; top:auto;}
         .cr-upload-grid{grid-template-columns:1fr;}
         .cr-sections-scroll{max-height:none; overflow:visible;}
+        .cr-report-root.cr-role-validator .cr-shell{padding-left:0;}
+        .cr-report-root.cr-role-validator .cr-sidebar{
+            position:relative;
+            top:auto;
+            height:auto;
+            overflow:visible;
+        }
     }
 
     .cr-print .cr-sidebar{display:none;}
@@ -902,6 +1051,7 @@ ob_start();
 .qa-case-review-mode .cr-shell{
     display:flex;
     flex-direction:row;
+    flex-wrap:nowrap;
     align-items:flex-start;
     gap:12px;
 }
@@ -945,7 +1095,7 @@ ob_start();
 }
 
 /* Mobile fallback */
-@media (max-width: 900px){
+@media (max-width: 700px){
     .qa-case-review-mode .cr-shell{
         flex-direction:column !important;
     }
@@ -1046,11 +1196,11 @@ ob_start();
 
 
 </style>
-<div class="card cr-report-root cr-role-<?php echo htmlspecialchars($role); ?><?php echo $isPrint ? ' cr-print' : ''; ?>">
+<div class="card cr-report-root cr-role-<?php echo htmlspecialchars($role); ?><?php echo $isPrint ? ' cr-print' : ''; ?>" data-ui-ready="<?php echo $isPrint ? '1' : '0'; ?>">
     <!-- <h3>Candidate Report</h3>
     <p class="card-subtitle">Individual candidate report with quick navigation across all verification sections.</p> -->
 
-    <div id="cvTopMessage" style="font-size:13px; color:#dc2626; margin-top:10px;"></div>
+    <div id="cvTopMessage" style="display:none; margin-top:10px;"></div>
 
 <?php if ($role === 'verifier' && !$isPrint && !$isEmbed): ?>
     <div class="modal fade" id="cvMailModal" tabindex="-1" aria-hidden="true">
@@ -1105,6 +1255,9 @@ ob_start();
                 </div>
             </div>
             <div class="cr-actions">
+                <?php if ($backToListHref !== '' && !$isPrint && !$isEmbed): ?>
+                    <a href="<?= htmlspecialchars($backToListHref) ?>" class="cr-action-btn">Back To List</a>
+                <?php endif; ?>
                 <?php if ($role !== 'validator' && $role !== 'client_admin'): ?>
                     <!-- <button type="button" class="cr-action-btn" id="cvOpenUploadModal">Upload Docs</button> -->
                 <?php endif; ?>
@@ -1118,15 +1271,6 @@ ob_start();
                         <path d="M12 7v5l3 2" />
                     </svg>
                 </button>
-                <button type="button" class="cr-action-btn cr-danger" id="cvActionStopBgv">Stop BGV</button>
-                <?php if ($role !== 'client_admin'): ?>
-                    <button type="button" class="cr-action-btn cr-dark" id="cvActionHold">Hold</button>
-                    <button type="button" class="cr-action-btn cr-danger" id="cvActionReject">Reject</button>
-                    <button type="button" class="cr-action-btn cr-ok" id="cvActionApprove">Approve</button>
-                <?php endif; ?>
-                <?php if ($role === 'verifier' || $role === 'validator' || $role === 'qa' || $role === 'team_lead'): ?>
-                    <button type="button" class="cr-action-btn cr-ok" id="cvCompleteGroupBtn" style="margin-left:8px;">Complete and Next</button>
-                <?php endif; ?>
             </div>
         </div>
         <div class="cr-stat-row">
@@ -1197,6 +1341,10 @@ ob_start();
                     </span>
                     <span class="badge bg-secondary" id="cvNavBadgeEmployment">-</span>
                 </button>
+
+
+                
+
                 <button type="button" class="list-group-item" data-section="reference" style="text-align:left;">
                     <span class="cr-nav-label">
                         <svg class="cr-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1207,6 +1355,27 @@ ob_start();
                         <span>Reference</span>
                     </span>
                     <span class="badge bg-secondary" id="cvNavBadgeReference">-</span>
+                </button>
+                <button type="button" class="list-group-item" data-section="socialmedia" style="text-align:left;">
+                    <span class="cr-nav-label">
+                        <svg class="cr-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <circle cx="12" cy="12" r="9" />
+                            <path d="M8 12h8" />
+                            <path d="M12 8v8" />
+                        </svg>
+                        <span>Social Media</span>
+                    </span>
+                    <span class="badge bg-secondary" id="cvNavBadgeSocialmedia">-</span>
+                </button>
+                <button type="button" class="list-group-item" data-section="ecourt" style="text-align:left;">
+                    <span class="cr-nav-label">
+                        <svg class="cr-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7l8-4z" />
+                            <path d="M9 12h6" />
+                        </svg>
+                        <span>E-Court</span>
+                    </span>
+                    <span class="badge bg-secondary" id="cvNavBadgeEcourt">-</span>
                 </button>
                 <button type="button" class="list-group-item" data-section="reports" style="text-align:left;">
                     <span class="cr-nav-label">
@@ -1219,16 +1388,6 @@ ob_start();
                         <span>Reports</span>
                     </span>
                     <span class="badge bg-secondary" id="cvNavBadgeReports">-</span>
-                </button>
-                <button type="button" class="list-group-item" data-section="timeline" style="text-align:left;">
-                    <span class="cr-nav-label">
-                        <svg class="cr-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <path d="M3 12a9 9 0 1 0 9-9" />
-                            <path d="M12 7v5l3 2" />
-                        </svg>
-                        <span>Timeline</span>
-                    </span>
-                    <span class="badge bg-secondary" id="cvNavBadgeTimeline">-</span>
                 </button>
             </div>
         </aside>
@@ -1251,6 +1410,8 @@ ob_start();
                                 <option value="education">Education</option>
                                 <option value="employment">Employment</option>
                                 <option value="reference">Reference</option>
+                                <option value="socialmedia">Social Media</option>
+                                <option value="ecourt">E-Court</option>
                                 <option value="reports">Reports</option>
                             </select>
                             <div class="cr-upload-help" id="cvUploadHelp">Allowed: PDF, JPG, JPEG, PNG, WEBP (max 10MB each).</div>
@@ -1445,6 +1606,84 @@ ob_start();
                     </div>
                 </div>
 
+                <div class="card candidate-section cr-panel" id="section-socialmedia" style="margin-top:12px; display:none;">
+                    <div class="cr-secbar">
+                        <div class="cr-secbar-title">Social Media</div>
+                        <div class="cr-secbar-meta" id="cvSectionTatSocialmedia"></div>
+                    </div>
+                    <div class="form-grid" style="margin-top:10px;">
+                        <div class="form-control">
+                            <label>LinkedIn</label>
+                            <input type="text" id="cv_social_linkedin_url" value="" disabled>
+                        </div>
+                        <div class="form-control">
+                            <label>Facebook</label>
+                            <input type="text" id="cv_social_facebook_url" value="" disabled>
+                        </div>
+                        <div class="form-control">
+                            <label>Instagram</label>
+                            <input type="text" id="cv_social_instagram_url" value="" disabled>
+                        </div>
+                        <div class="form-control">
+                            <label>Twitter</label>
+                            <input type="text" id="cv_social_twitter_url" value="" disabled>
+                        </div>
+                        <div class="form-control">
+                            <label>Other URL</label>
+                            <input type="text" id="cv_social_other_url" value="" disabled>
+                        </div>
+                        <div class="form-control">
+                            <label>Consent</label>
+                            <input type="text" id="cv_social_consent_bgv" value="" disabled>
+                        </div>
+                        <div class="form-control">
+                            <label>Content</label>
+                            <input type="text" id="cv_social_content" value="" disabled>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card candidate-section cr-panel" id="section-ecourt" style="margin-top:12px; display:none;">
+                    <div class="cr-secbar">
+                        <div class="cr-secbar-title">E-Court</div>
+                        <div class="cr-secbar-meta" id="cvSectionTatEcourt"></div>
+                    </div>
+                    <div class="form-grid" style="margin-top:10px;">
+                        <div class="form-control">
+                            <label>Current Address</label>
+                            <input type="text" id="cv_ecourt_current_address" value="" disabled>
+                        </div>
+                        <div class="form-control">
+                            <label>Permanent Address</label>
+                            <input type="text" id="cv_ecourt_permanent_address" value="" disabled>
+                        </div>
+                        <div class="form-control">
+                            <label>Evidence Document</label>
+                            <input type="text" id="cv_ecourt_evidence_document" value="" disabled>
+                        </div>
+                        <div class="form-control">
+                            <label>Period From</label>
+                            <input type="text" id="cv_ecourt_period_from_date" value="" disabled>
+                        </div>
+                        <div class="form-control">
+                            <label>Period To</label>
+                            <input type="text" id="cv_ecourt_period_to_date" value="" disabled>
+                        </div>
+                        <div class="form-control">
+                            <label>Duration (Years)</label>
+                            <input type="text" id="cv_ecourt_period_duration_years" value="" disabled>
+                        </div>
+                        <div class="form-control">
+                            <label>Date Of Birth</label>
+                            <input type="text" id="cv_ecourt_dob" value="" disabled>
+                        </div>
+                        <div class="form-control">
+                            <label>Comments</label>
+                            <input type="text" id="cv_ecourt_comments" value="" disabled>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="card candidate-section cr-panel" id="section-reports" style="margin-top:12px; display:none;">
                     <div class="cr-secbar">
                         <div class="cr-secbar-title">Reports</div>
@@ -1553,6 +1792,8 @@ ob_start();
                                         <option value="education">Education</option>
                                         <option value="employment">Employment</option>
                                         <option value="reference">Reference</option>
+                                        <option value="socialmedia">Social Media</option>
+                                        <option value="ecourt">E-Court</option>
                                         <option value="reports">Reports</option>
                                     </select>
                                     <div class="cr-upload-help" id="cvUploadHelp">Allowed: PDF, JPG, JPEG, PNG, WEBP (max 10MB each).</div>
@@ -1597,6 +1838,15 @@ ob_start();
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
+                    <div class="cr-case-actions-card" id="cvCaseActionsCard">
+                        <div class="cr-case-actions-head">Case Actions</div>
+                        <div class="cr-case-actions-row">
+                            <button type="button" class="cr-action-btn cr-dark" id="cvActionHold">Hold</button>
+                            <button type="button" class="cr-action-btn cr-danger" id="cvActionReject">Reject</button>
+                            <button type="button" class="cr-action-btn cr-ok" id="cvActionApprove">Approve</button>
+                            <button type="button" class="cr-action-btn cr-danger" id="cvActionStopBgv">Stop BGV</button>
+                        </div>
+                    </div>
                     <div class="cr-tl-filters" id="cvMiniTimelineFilters" style="display:flex; flex-wrap:wrap; gap:6px;">
                         <button type="button" class="cr-tl-pill active" data-tl-section="all">All</button>
                         <button type="button" class="cr-tl-pill" data-tl-section="basic">Basic</button>
@@ -1626,6 +1876,50 @@ ob_start();
             </div>
         </div>
     </div>
+
+    <?php if (!$isPrint): ?>
+    <?php if (!$isPrint): ?>
+    <div class="modal fade" id="cvActionConfirmModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content" style="border-radius:14px; overflow:hidden;">
+                <div class="modal-header" style="border-bottom:1px solid rgba(148,163,184,0.25);">
+                    <h5 class="modal-title" id="cvActionConfirmTitle" style="font-size:14px; font-weight:900;">Confirm Action</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="cvActionConfirmText" style="font-size:13px; color:#334155;">Are you sure?</div>
+                </div>
+                <div class="modal-footer" style="border-top:1px solid rgba(148,163,184,0.20);">
+                    <button type="button" class="btn btn-sm" id="cvActionConfirmNo" data-bs-dismiss="modal">No</button>
+                    <button type="button" class="btn btn-sm btn-danger" id="cvActionConfirmYes">Yes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+    <?php endif; ?>
+
+    <?php if (!$isPrint): ?>
+    <div class="modal fade" id="cvVerifierOverrideModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content" style="border-radius:14px; overflow:hidden;">
+                <div class="modal-header" style="border-bottom:1px solid rgba(148,163,184,0.25);">
+                    <h5 class="modal-title" id="cvVerifierOverrideTitle" style="font-size:14px; font-weight:900;">Reason Required</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <label for="cvVerifierOverrideText" style="font-size:12px; font-weight:700; color:#334155; margin-bottom:6px;">Reason</label>
+                    <textarea id="cvVerifierOverrideText" rows="4" placeholder="Enter reason..." style="width:100%; resize:vertical; border:1px solid rgba(148,163,184,0.30); border-radius:10px; padding:8px 10px;"></textarea>
+                    <div id="cvVerifierOverrideError" style="display:none; margin-top:8px; font-size:12px; color:#b91c1c;"></div>
+                </div>
+                <div class="modal-footer" style="border-top:1px solid rgba(148,163,184,0.20);">
+                    <button type="button" class="btn btn-sm" id="cvVerifierOverrideCancel" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-sm btn-primary" id="cvVerifierOverrideSubmit">Submit</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <?php if ($isPrint): ?>
         <div class="cr-pdf" id="cvPdfRoot" style="margin-top:10px;">
@@ -1760,12 +2054,13 @@ if ($isEmbed) {
         window.APP_BASE_URL = <?php echo json_encode(app_base_url()); ?>;
         window.VR_GROUP = <?php echo json_encode($group); ?>;
         window.ALLOWED_SECTIONS = <?php echo json_encode($allowedSections); ?>;
+        window.CURRENT_ROLE = <?php echo json_encode($role); ?>;
     </script>
     <?php echo $content; ?>
     <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
     <script src="<?php echo htmlspecialchars(app_url('/js/includes/date_utils.js')); ?>"></script>
-    <script src="<?php echo htmlspecialchars(app_url('/js/modules/shared/candidate_report.js')); ?>"></script>
+    <script src="<?php echo htmlspecialchars(app_url('/js/modules/shared/candidate_report.js?v=' . $candidateReportJsVersion)); ?>"></script>
     </body>
     </html>
     <?php
@@ -1777,6 +2072,7 @@ render_layout('Candidate Report', $roleLabel, $menu, $content);
 <script>
     window.APP_BASE_URL = <?php echo json_encode(app_base_url()); ?>;
     window.ALLOWED_SECTIONS = <?php echo json_encode($allowedSections); ?>;
+    window.CURRENT_ROLE = <?php echo json_encode($role); ?>;
 </script>
 
 <script>

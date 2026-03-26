@@ -66,6 +66,48 @@ try {
     ");
     $upd->execute([$application_id]);
 
+    // Keep case/application stage aligned for validator queue.
+    try {
+        $caseStmt = $pdo->prepare('SELECT case_id FROM Vati_Payfiller_Cases WHERE application_id = ? LIMIT 1');
+        $caseStmt->execute([$application_id]);
+        $caseId = (int)($caseStmt->fetchColumn() ?: 0);
+        if ($caseId > 0) {
+            $pdo->prepare(
+                "UPDATE Vati_Payfiller_Cases
+                 SET case_status = 'PENDING_VALIDATOR'
+                 WHERE case_id = ?
+                   AND UPPER(TRIM(COALESCE(case_status,''))) NOT IN ('REJECTED','STOP_BGV','APPROVED','COMPLETED','CLEAR')"
+            )->execute([$caseId]);
+        }
+        $pdo->prepare(
+            "UPDATE Vati_Payfiller_Candidate_Applications
+             SET status = 'PENDING_VALIDATOR'
+             WHERE application_id = ?
+               AND UPPER(TRIM(COALESCE(status,''))) NOT IN ('REJECTED','STOP_BGV','APPROVED','COMPLETED','CLEAR')"
+        )->execute([$application_id]);
+
+        if ($caseId > 0) {
+            try {
+                $pdo->prepare(
+                    "INSERT INTO Vati_Payfiller_Case_Component_Workflow
+                        (case_id, application_id, component_key, stage, status, updated_by_user_id, updated_by_role, completed_at)
+                     SELECT c.case_id, c.application_id, LOWER(TRIM(c.component_key)), 'candidate', 'approved', NULL, 'candidate', NOW()
+                     FROM Vati_Payfiller_Case_Components c
+                     WHERE c.case_id = ?
+                       AND c.is_required = 1
+                     ON DUPLICATE KEY UPDATE
+                        status = 'approved',
+                        completed_at = COALESCE(completed_at, NOW()),
+                        updated_at = NOW()"
+                )->execute([$caseId]);
+            } catch (Throwable $e) {
+                // ignore
+            }
+        }
+    } catch (Throwable $e) {
+        // ignore
+    }
+
     echo json_encode([
         "success" => true,
         "message" => "Application submitted successfully."

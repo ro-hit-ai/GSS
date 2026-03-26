@@ -121,6 +121,8 @@ $current_address = !empty($ecourt_row['current_address'])
 $permanent_address = !empty($ecourt_row['permanent_address']) 
     ? $ecourt_row['permanent_address'] 
     : $permanent_address_from_contact;
+
+$adultDobMax = date('Y-m-d', strtotime('-18 years'));
 ?>
 
 <div class="candidate-form compact-form">
@@ -177,12 +179,10 @@ $permanent_address = !empty($ecourt_row['permanent_address'])
             <div class="form-field">
                 <div class="form-control double-border compact-control">
                     <label class="compact-label">Evidence Document <span class="required">*</span></label>
-                    <div class="upload-box compact-upload">
-                        <input type="file" name="evidence_document" accept=".pdf,.jpg,.jpeg,.png" class="compact-file" required>
-                        <p class="upload-hint compact-hint">
-                            Court documents, judgments, or evidence (Max 5MB)
-                        </p>
-                    </div>
+                    <input type="file" name="evidence_document" accept=".pdf,.jpg,.jpeg,image/jpeg,application/pdf" class="compact-file" required>
+                    <p class="upload-hint compact-hint">
+                        Court documents, judgments, or evidence (PDF/JPG/JPEG, Max 5MB)
+                    </p>
 
                     <div id="evidenceDocumentPreview" class="mt-2">
                         <?php if (!empty($ecourt_row['evidence_document'])): 
@@ -209,7 +209,7 @@ $permanent_address = !empty($ecourt_row['permanent_address'])
         </div>
 
         <!-- PERIOD & DATE INFORMATION -->
-        <div class="form-grid compact-grid mb-3">
+        <div class="form-grid-4 compact-row mb-3">
             <!-- From Date -->
             <div class="form-field">
                 <div class="form-control double-border compact-control">
@@ -241,7 +241,7 @@ $permanent_address = !empty($ecourt_row['permanent_address'])
             <div class="form-field">
                 <div class="form-control double-border compact-control">
                     <label class="compact-label">Date of Birth <span class="required">*</span></label>
-                    <input type="date" name="dob" required class="compact-input"
+                    <input type="date" name="dob" required class="compact-input" max="<?= htmlspecialchars($adultDobMax) ?>"
                            value="<?= htmlspecialchars($ecourt_row['dob'] ?? '') ?>">
                 </div>
             </div>
@@ -282,38 +282,7 @@ $ecourtData = [
 ];
 ?>
 
-<script>
-// Pass the data to JavaScript
-window.ECOURT_DATA = <?php echo json_encode($ecourtData); ?>;
-
-// Add CSS for file preview pill
-document.head.insertAdjacentHTML('beforeend', `
-    <style>
-        .file-preview-pill {
-            display: inline-flex;
-            align-items: center;
-            background: #e9ecef;
-            padding: 2px 8px;
-            border-radius: 50px;
-            font-size: 11px;
-            margin-top: 4px;
-        }
-        
-        .file-preview-pill i {
-            font-size: 10px;
-        }
-        
-        .checkbox-group {
-            display: flex;
-            gap: 20px;
-        }
-        
-        @media (max-width: 768px) {
-            .checkbox-group {
-                flex-direction: column;
-                gap: 8px;
-            }
-        }
-    </style>
-`);
-</script>
+<div id="ecourtData"
+     data-ecourt='<?= htmlspecialchars(json_encode($ecourtData), ENT_QUOTES, "UTF-8") ?>'
+     data-dob-max="<?= htmlspecialchars($adultDobMax) ?>"
+     style="display:none"></div>

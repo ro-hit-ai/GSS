@@ -25,11 +25,38 @@
         }
 
         function getSelectedView() {
-            if (!viewSelect) return 'mine';
-            var v = String(viewSelect.value || 'mine').toLowerCase();
+            if (!viewSelect) return 'available';
+            var v = String(viewSelect.value || 'available').toLowerCase();
             if (v === 'available') return 'available';
             if (v === 'completed') return 'completed';
             return 'mine';
+        }
+
+        function statusLabelForValidator(row) {
+            row = row || {};
+            var raw = String(row.status || '').trim();
+            var caseStatus = String(row.case_status || '').trim();
+            var appStatus = String(row.__app_status || '').toLowerCase().trim();
+
+            var lowRaw = raw.toLowerCase();
+            var lowCase = caseStatus.toLowerCase();
+
+            if (lowRaw === 'pending_candidate' || lowRaw === 'candidate_pending' || lowRaw === 'pending candidate') {
+                if (appStatus === 'submitted') return 'Pending Validator';
+            }
+            if (lowCase === 'pending_candidate' || lowCase === 'candidate_pending' || lowCase === 'pending candidate') {
+                if (appStatus === 'submitted') return 'Pending Validator';
+            }
+            if ((lowRaw === 'pending' || lowRaw === '') && (lowCase === 'pending_candidate' || lowCase === 'candidate_pending') && appStatus === 'submitted') {
+                return 'Pending Validator';
+            }
+
+            if (lowRaw === 'in_progress') return 'In Progress';
+            if (lowRaw === 'completed') return 'Completed';
+            if (lowRaw === 'followup') return 'Follow Up';
+            if (lowRaw === 'stop_bgv' || lowCase === 'stop_bgv') return 'Stopped BGV';
+
+            return raw || caseStatus || '-';
         }
 
         function buildReportHref(applicationId, caseId) {
@@ -173,7 +200,12 @@
                     },
                     { data: 'candidate_email', defaultContent: '' },
                     { data: 'candidate_mobile', defaultContent: '' },
-                    { data: 'status', defaultContent: '' },
+                    {
+                        data: null,
+                        render: function (_d, _t, row) {
+                            return escapeHtml(statusLabelForValidator(row));
+                        }
+                    },
                     {
                         data: 'created_at',
                         render: function (d) {

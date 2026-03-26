@@ -1,5 +1,8 @@
 <?php
 header('Content-Type: application/json');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: 0');
 
 require_once __DIR__ . '/../../config/db.php';
 
@@ -24,6 +27,7 @@ function workflow_table_available(PDO $pdo): bool {
 function norm_component_key(string $k): string {
     $k = strtolower(trim($k));
     if ($k === 'identification') return 'id';
+    if ($k === 'social_media' || $k === 'social-media') return 'socialmedia';
     if ($k === 'driving' || $k === 'driving_license') return 'driving_licence';
     return $k;
 }
@@ -34,32 +38,66 @@ function compute_component_stage_label(array $stages): string {
     $ver = strtolower(trim((string)($stages['verifier'] ?? '')));
     $qa = strtolower(trim((string)($stages['qa'] ?? '')));
 
+    if ($qa === 'rejected') return 'QA Rejected';
     if ($qa === 'approved') return 'Completed';
+    if ($ver === 'rejected') return 'Verifier Rejected';
+    if ($val === 'rejected') return 'Validator Rejected';
+    if ($cand === 'rejected') return 'Candidate Rejected';
+
     if ($ver === 'approved') return 'Pending QA';
     if ($val === 'approved') return 'Pending Verifier';
     if ($cand === 'approved') return 'Pending Validator';
     return 'Pending Candidate';
 }
 
-function session_allowed_sections(): array {
-    if (session_status() === PHP_SESSION_NONE) session_start();
-    $raw = isset($_SESSION['auth_allowed_sections']) ? (string)$_SESSION['auth_allowed_sections'] : '';
+function parse_allowed_sections(string $raw): array {
     $raw = strtolower(trim($raw));
-    if ($raw === '' || $raw === '*') return ['*' => true];
+    if ($raw === '*') return ['*' => true];
+    if ($raw === '') return [];
     $parts = preg_split('/[\s,|]+/', $raw) ?: [];
     $out = [];
     foreach ($parts as $p) {
-        $k = strtolower(trim((string)$p));
+        $k = norm_component_key((string)$p);
         if ($k === '') continue;
         $out[$k] = true;
     }
     return $out;
 }
 
+function session_allowed_sections(?PDO $pdo = null): array {
+    if (session_status() === PHP_SESSION_NONE) session_start();
+    $raw = isset($_SESSION['auth_allowed_sections']) ? (string)$_SESSION['auth_allowed_sections'] : '';
+
+    // Prefer latest DB value (avoids stale session after admin updates).
+    if ($pdo) {
+        try {
+            $uid = isset($_SESSION['auth_user_id']) ? (int)$_SESSION['auth_user_id'] : 0;
+            if ($uid > 0) {
+                $st = $pdo->prepare('SELECT allowed_sections FROM Vati_Payfiller_Users WHERE user_id = ? LIMIT 1');
+                $st->execute([$uid]);
+                $dbRaw = (string)($st->fetchColumn() ?: '');
+                $raw = $dbRaw;
+                $_SESSION['auth_allowed_sections'] = $dbRaw;
+            }
+        } catch (Throwable $e) {
+            // keep session fallback
+        }
+    }
+    return parse_allowed_sections($raw);
+}
+
 function can_section(array $allowedSet, string $key): bool {
     if (isset($allowedSet['*'])) return true;
     $k = strtolower(trim($key));
     return $k !== '' && isset($allowedSet[$k]);
+}
+
+function group_components(string $groupKey): array {
+    $g = strtoupper(trim($groupKey));
+    if ($g === 'BASIC') return ['basic', 'id', 'contact'];
+    if ($g === 'EDUCATION') return ['education', 'employment', 'reference'];
+    if ($g === 'ADDITIONAL') return ['socialmedia', 'ecourt'];
+    return [];
 }
 
 function str_contains_ci(string $haystack, string $needle): bool {
@@ -97,22 +135,33 @@ function map_verification_type_to_components(string $typeName, string $typeCateg
     }
 
     if (
+        str_contains_ci($hay, 'social')
+        || str_contains_ci($hay, 'linkedin')
+        || str_contains_ci($hay, 'facebook')
+        || str_contains_ci($hay, 'instagram')
+        || str_contains_ci($hay, 'twitter')
+        || str_contains_ci($hay, 'world check')
+        || str_contains_ci($hay, 'worldcheck')
+    ) {
+        $out[] = 'socialmedia';
+    }
+
+    if (
         str_contains_ci($hay, 'ecourt')
         || str_contains_ci($hay, 'e-court')
         || str_contains_ci($hay, 'court')
         || str_contains_ci($hay, 'litigation')
+        || str_contains_ci($hay, 'judis')
+        || str_contains_ci($hay, 'judicial')
+        || str_contains_ci($hay, 'manupatra')
     ) {
         $out[] = 'ecourt';
     }
 
-    // Database checks handled by db_verifier (judis/manupatra/worldcheck)
+    // Backward compatibility for older role assignment setups.
+    // UI sections are ecourt/socialmedia; keep database tag only when explicitly tagged.
     if (
-        str_contains_ci($hay, 'judis')
-        || str_contains_ci($hay, 'judicial')
-        || str_contains_ci($hay, 'manupatra')
-        || str_contains_ci($hay, 'world check')
-        || str_contains_ci($hay, 'worldcheck')
-        || str_contains_ci($hay, 'database')
+        str_contains_ci($hay, 'database')
     ) {
         $out[] = 'database';
     }
@@ -138,6 +187,13 @@ function get_str(string $key, string $default = ''): string {
     return trim((string)($_GET[$key] ?? $default));
 }
 
+function session_role_norm(): string {
+    if (session_status() === PHP_SESSION_NONE) session_start();
+    $role = isset($_SESSION['auth_moduleAccess']) ? strtolower(trim((string)$_SESSION['auth_moduleAccess'])) : '';
+    if ($role === 'customer_admin') $role = 'client_admin';
+    return $role;
+}
+
 function resolve_client_id(): int {
     if (session_status() === PHP_SESSION_NONE) session_start();
     $cid = isset($_SESSION['auth_client_id']) ? (int)$_SESSION['auth_client_id'] : 0;
@@ -146,6 +202,9 @@ function resolve_client_id(): int {
     $role = strtolower(get_str('role', ''));
     if ($role === 'customer_admin') {
         $role = 'client_admin';
+    }
+    if ($role === '') {
+        $role = session_role_norm();
     }
 
     if ($role === 'client_admin') {
@@ -201,6 +260,9 @@ try {
     if ($role === 'customer_admin') {
         $role = 'client_admin';
     }
+    if ($role === '') {
+        $role = session_role_norm();
+    }
     if (session_status() === PHP_SESSION_NONE) session_start();
     $userId = isset($_SESSION['auth_user_id']) ? (int)$_SESSION['auth_user_id'] : 0;
     $clientId = resolve_client_id();
@@ -254,6 +316,19 @@ try {
 
     $uploadedDocs = sp_fetch_all($bundle);
     sp_drain($bundle);
+
+    $socialMedia = null;
+    $ecourt = null;
+    try {
+        $socialMedia = sp_call_one($pdo, 'CALL SP_Vati_Payfiller_get_social_media_details(?)', [$applicationId]);
+    } catch (Throwable $e) {
+        $socialMedia = null;
+    }
+    try {
+        $ecourt = sp_call_one($pdo, 'CALL SP_Vati_Payfiller_get_ecourt_details(?)', [$applicationId]);
+    } catch (Throwable $e) {
+        $ecourt = null;
+    }
 
     try {
         if (!$application || !is_array($application)) {
@@ -330,13 +405,13 @@ try {
 
     $requiredComponents = array_values(array_unique($requiredComponents));
 
-    $allowedSet = session_allowed_sections();
+    $allowedSet = session_allowed_sections($pdo);
 
     // If staff role, also include any components from allowed_sections so UI shows what user can work on
     // even when job role -> verification type mapping doesn't detect them.
     if ($role === 'verifier' || $role === 'db_verifier' || $role === 'validator') {
         if (!isset($allowedSet['*']) && count($allowedSet) > 0) {
-            $known = ['basic', 'id', 'education', 'employment', 'reference', 'ecourt', 'database', 'driving_licence', 'reports', 'contact'];
+            $known = ['basic', 'id', 'education', 'employment', 'reference', 'socialmedia', 'ecourt', 'database', 'driving_licence', 'reports', 'contact'];
             foreach ($known as $k) {
                 if (can_section($allowedSet, $k)) {
                     $requiredComponents[] = $k;
@@ -445,10 +520,30 @@ try {
             'verifier' => isset($st['verifier']['status']) ? (string)$st['verifier']['status'] : '',
             'qa' => isset($st['qa']['status']) ? (string)$st['qa']['status'] : '',
         ];
+        // Fallback: when workflow row is missing but component row is rejected,
+        // treat it as validator rejection for verifier-facing status.
+        if ($role === 'verifier') {
+            $componentStatus = strtolower(trim((string)($it['status'] ?? '')));
+            if ($stSimple['validator'] === '' && $componentStatus === 'rejected') {
+                $stSimple['validator'] = 'rejected';
+            }
+        }
         $it['workflow'] = $stSimple;
         $it['current_stage'] = compute_component_stage_label($stSimple);
     }
     unset($it);
+
+    // Staff views should respect allowed section scope in assigned components payload.
+    // Action APIs still enforce assignment/rejection rules.
+    $visibleAssigned = $outAssigned;
+    if ($role === 'verifier' || $role === 'db_verifier' || $role === 'validator') {
+        $visibleAssigned = array_values(array_filter($outAssigned, function ($it) use ($allowedSet) {
+            $k = norm_component_key((string)($it['component_key'] ?? ''));
+            if ($k === '') return false;
+            if (!can_section($allowedSet, $k)) return false;
+            return true;
+        }));
+    }
 
     // If staff role has no allowed sections configured, block completely
     if (($role === 'verifier' || $role === 'db_verifier' || $role === 'validator') && !isset($allowedSet['*']) && count($allowedSet) === 0) {
@@ -484,7 +579,7 @@ try {
         }
 
         if (!$hasComponentAssignment) {
-            if (!in_array($groupKey, ['BASIC', 'EDUCATION'], true)) {
+            if (!in_array($groupKey, ['BASIC', 'EDUCATION', 'ADDITIONAL'], true)) {
                 http_response_code(400);
                 echo json_encode(['status' => 0, 'message' => 'Valid group is required']);
                 exit;
@@ -562,8 +657,47 @@ try {
         if (!can_section($allowedSet, 'reference')) {
             $reference = null;
         }
+        if (!can_section($allowedSet, 'socialmedia')) {
+            $socialMedia = null;
+        }
+        if (!can_section($allowedSet, 'ecourt')) {
+            $ecourt = null;
+        }
         if (!can_section($allowedSet, 'reports')) {
             $authorization = null;
+        }
+    }
+
+    // Verifier section payload follows the same visibleAssigned set.
+    if ($role === 'verifier') {
+        $visibleMap = [];
+        foreach ($visibleAssigned as $it) {
+            $k = norm_component_key((string)($it['component_key'] ?? ''));
+            if ($k !== '') $visibleMap[$k] = true;
+        }
+        if (!isset($visibleMap['basic'])) {
+            $basic = null;
+        }
+        if (!isset($visibleMap['id'])) {
+            $identification = [];
+        }
+        if (!isset($visibleMap['contact'])) {
+            $contact = null;
+        }
+        if (!isset($visibleMap['education'])) {
+            $education = [];
+        }
+        if (!isset($visibleMap['employment'])) {
+            $employment = [];
+        }
+        if (!isset($visibleMap['reference'])) {
+            $reference = null;
+        }
+        if (!isset($visibleMap['socialmedia'])) {
+            $socialMedia = null;
+        }
+        if (!isset($visibleMap['ecourt'])) {
+            $ecourt = null;
         }
     }
 
@@ -579,9 +713,11 @@ try {
             'education' => $education,
             'employment' => $employment,
             'reference' => $reference,
+            'social_media' => $socialMedia,
+            'ecourt' => $ecourt,
             'authorization' => $authorization,
             'uploaded_docs' => $uploadedDocs,
-            'assigned_components' => $outAssigned,
+            'assigned_components' => $visibleAssigned,
             'component_workflow' => $workflowByComponent
         ]
     ]);

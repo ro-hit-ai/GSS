@@ -129,16 +129,13 @@ class IdentificationManager extends TabManager {
             const oldFileInput = this.findOrCreateInput(card, `old_upload_document[${index}]`, 'hidden');
             oldFileInput.value = data.upload_document;
             console.log(`   Set old file reference: ${data.upload_document}`);
-            
-            // Show preview if it's a real file
+
             if (data.upload_document !== 'INSUFFICIENT_DOCUMENTS') {
-                this.renderPreview(
-                    card,
-                    '.identification-preview',
-                    data.upload_document,
-                    '📄 Identification Document',
-                    'identification'
-                );
+                const input = card.querySelector('input[name="upload_document[]"]');
+                const box = this.getUploadBoxFromInput(input);
+                const base = window.APP_BASE_URL || '';
+                const url = `${base}/uploads/identification/${data.upload_document}`;
+                this.setUploadBox(box, data.upload_document, url, false);
                 console.log(`   Added document preview: ${data.upload_document}`);
             }
         }
@@ -234,31 +231,71 @@ class IdentificationManager extends TabManager {
 
     toggleDocumentFileInput(card, isInsufficient) {
         const documentFile = card.querySelector('input[name="upload_document[]"]');
-        const previewArea = card.querySelector('.identification-preview');
         
         if (documentFile) {
             documentFile.disabled = isInsufficient;
             documentFile.required = !isInsufficient;
             if (isInsufficient) {
                 documentFile.value = '';
-                if (previewArea) {
-                    previewArea.innerHTML = '';
-                }
+                this.clearUploadBox(this.getUploadBoxFromInput(documentFile));
             }
         }
     }
 
     setupFileHandlers() {
         console.log('🔧 Setting up file handlers');
-        
+
+        document.addEventListener('click', (e) => {
+            const trigger = e.target.closest('[data-file-choose]');
+            if (!trigger) return;
+            e.preventDefault();
+            const box = trigger.closest('[data-file-upload]');
+            const control = box ? box.closest('.form-control') : null;
+            const input = control ? control.querySelector('input[type="file"][data-file-input]') : null;
+            if (input) input.click();
+        });
+
         document.addEventListener('change', (e) => {
             if (e.target.matches('input[name="upload_document[]"]')) {
                 const input = e.target;
                 const card = input.closest('.identification-card');
-                
+                const file = input.files && input.files[0] ? input.files[0] : null;
+                const box = this.getUploadBoxFromInput(input);
+                if (box) {
+                    const errEl = box.querySelector('[data-file-error]');
+                    if (errEl) errEl.textContent = '';
+                }
+
+                const allowed = ['pdf', 'jpg', 'jpeg', 'png'];
+                const validation = this.validateUploadFile(file, allowed, 10 * 1024 * 1024);
+                if (file && !validation.ok) {
+                    alert(validation.message);
+                    input.value = '';
+                    this.clearUploadBox(box);
+                    if (box) {
+                        const errEl = box.querySelector('[data-file-error]');
+                        if (errEl) errEl.textContent = validation.message;
+                    }
+                }
+
                 if (card && input.files.length > 0) {
                     console.log(`📄 Document file selected in card:`, input.files[0].name);
-                    this.clearPreview(card, '.identification-preview');
+                    const insufficientCheckbox =
+                        card.querySelector('input[name="insufficient_documents[]"]');
+                    if (insufficientCheckbox) {
+                        insufficientCheckbox.checked = false;
+                        this.toggleDocumentFileInput(card, false);
+                    }
+
+                    const oldFile = card.querySelector('[name^="old_upload_document"]');
+                    if (oldFile && oldFile.value === 'INSUFFICIENT_DOCUMENTS') {
+                        oldFile.value = '';
+                    }
+
+                    if (file && box) {
+                        const url = URL.createObjectURL(file);
+                        this.setUploadBox(box, file.name, url, true);
+                    }
                     this.updateTabStatus();
                 }
             }
@@ -749,17 +786,15 @@ async submitForm(isDraft = false) {
                 // 🔧 SUCCESS: Let Router handle the success notification
                 // The Router will show success alert after submission
                 
-                // Navigate to next page
-                setTimeout(() => {
-                    if (window.Router && window.Router.navigateTo) {
-                        const nextPage = 'contact';
-                        console.log(`➡️ Navigating to: ${nextPage}`);
-                        window.Router.navigateTo(nextPage);
-                    } else {
-                        window.location.href =
-                            `${window.APP_BASE_URL}/modules/candidate/contact.php`;
-                    }
-                }, 500);
+                // Navigate to next page immediately
+                if (window.Router && window.Router.navigateTo) {
+                    const nextPage = 'contact';
+                    console.log(`➡️ Navigating to: ${nextPage}`);
+                    window.Router.navigateTo(nextPage);
+                } else {
+                    window.location.href =
+                        `${window.APP_BASE_URL}/modules/candidate/contact.php`;
+                }
             } else {
                 // 🔧 CHANGED: Use Router.notify for draft success
                 if (window.Router && window.Router.notify) {
@@ -903,3 +938,4 @@ if (typeof window !== 'undefined') {
 }
 
 console.log('✅ Identification.js module loaded');
+

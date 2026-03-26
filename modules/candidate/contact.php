@@ -19,7 +19,6 @@ $countries = ['India','United States','United Kingdom','Australia','Canada','Ger
     <div class="form-header">
         <i class="fas fa-address-book"></i> Contact Details
     </div>
-
     <p class="text-muted mb-3">
         Please provide your current contact information.
     </p>
@@ -28,7 +27,6 @@ $countries = ['India','United States','United Kingdom','Australia','Canada','Ger
 
         <!-- CONTACT INFO -->
         <div class="form-grid compact-grid">
-
             <div class="form-field">
                 <div class="form-control double-border compact-control">
                     <label class="compact-label">Mobile <span class="required">*</span></label>
@@ -73,17 +71,18 @@ $countries = ['India','United States','United Kingdom','Australia','Canada','Ger
 
         <!-- CURRENT ADDRESS -->
         <div class="form-grid compact-grid mt-3">
-
             <div class="form-field col-span-full">
-                <div class="form-control double-border compact-control">
-                    <label class="compact-label">Current Address Line 1 <span class="required">*</span></label>
-                    <input type="text" name="current_address1" required class="compact-input"
-                           value="<?= htmlspecialchars($row['address1'] ?? '') ?>">
-                </div>
-                <div class="form-control double-border compact-control mt-2">
-                    <label class="compact-label">Current Address Line 2</label>
-                    <input type="text" name="current_address2" class="compact-input"
-                           value="<?= htmlspecialchars($row['address2'] ?? '') ?>">
+                <div class="form-row-2 compact-row">
+                    <div class="form-control double-border compact-control">
+                        <label class="compact-label">Current Address Line 1 <span class="required">*</span></label>
+                        <input type="text" name="current_address1" required class="compact-input"
+                               value="<?= htmlspecialchars($row['address1'] ?? '') ?>">
+                    </div>
+                    <div class="form-control double-border compact-control">
+                        <label class="compact-label">Current Address Line 2</label>
+                        <input type="text" name="current_address2" class="compact-input"
+                               value="<?= htmlspecialchars($row['address2'] ?? '') ?>">
+                    </div>
                 </div>
             </div>
 
@@ -138,17 +137,18 @@ $countries = ['India','United States','United Kingdom','Australia','Canada','Ger
 
         <!-- PERMANENT ADDRESS -->
         <div class="form-grid compact-grid mt-3">
-
             <div class="form-field col-span-full">
-                <div class="form-control double-border compact-control">
-                    <label class="compact-label">Permanent Address Line 1 <span class="required">*</span></label>
-                    <input type="text" name="permanent_address1" required class="compact-input"<?php echo !empty($row['same_as_current']) ? ' disabled' : ''; ?>
-                           value="<?= htmlspecialchars($row['permanent_address1'] ?? '') ?>">
-                </div>
-                <div class="form-control double-border compact-control mt-2">
-                    <label class="compact-label">Permanent Address Line 2</label>
-                    <input type="text" name="permanent_address2" class="compact-input"<?php echo !empty($row['same_as_current']) ? ' disabled' : ''; ?>
-                           value="<?= htmlspecialchars($row['permanent_address2'] ?? '') ?>">
+                <div class="form-row-2 compact-row">
+                    <div class="form-control double-border compact-control">
+                        <label class="compact-label">Permanent Address Line 1 <span class="required">*</span></label>
+                        <input type="text" name="permanent_address1" required class="compact-input"<?php echo !empty($row['same_as_current']) ? ' disabled' : ''; ?>
+                               value="<?= htmlspecialchars($row['permanent_address1'] ?? '') ?>">
+                    </div>
+                    <div class="form-control double-border compact-control">
+                        <label class="compact-label">Permanent Address Line 2</label>
+                        <input type="text" name="permanent_address2" class="compact-input"<?php echo !empty($row['same_as_current']) ? ' disabled' : ''; ?>
+                               value="<?= htmlspecialchars($row['permanent_address2'] ?? '') ?>">
+                    </div>
                 </div>
             </div>
 
@@ -210,6 +210,3 @@ $countries = ['India','United States','United Kingdom','Australia','Canada','Ger
     </form>
 </div>
 
-<script>
-    window.APP_BASE_URL = "<?= APP_BASE_URL ?>";
-</script>

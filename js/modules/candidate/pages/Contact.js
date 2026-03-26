@@ -251,11 +251,9 @@ class Contact {
             localStorage.setItem("completed-contact", "1");
         }
 
-        setTimeout(() => {
-            window.Router?.navigateTo
-                ? Router.navigateTo("social")
-                : (window.location.href = "?page=social");
-        }, 600);
+        window.Router?.navigateTo
+            ? Router.navigateTo("social")
+            : (window.location.href = "?page=social");
     }
 
     /* ===================== API ===================== */

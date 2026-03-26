@@ -9,6 +9,10 @@ $menu = gss_admin_menu();
 
 ob_start();
 ?>
+<style>
+    .dashboard-table{overflow:visible;}
+    .dashboard-table .table{min-width:0;}
+</style>
 <!-- <div class="subnav">
     <a href="#" class="subnav-link">Profile Settings</a>
     <a href="#" class="subnav-link">Masters Data</a>

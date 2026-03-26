@@ -47,6 +47,7 @@ try {
                 c.invite_token,
                 c.invite_sent_at,
                 c.created_at,
+                app.status AS application_status,
                 cl.internal_tat,
                 cl.weekend_rules,
                 TRIM(CONCAT(vu.first_name, ' ', vu.last_name)) AS validator_assigned_name,
@@ -55,18 +56,21 @@ try {
                     (CASE WHEN ue.user_id IS NULL THEN NULL ELSE CONCAT('EDUCATION: ', TRIM(CONCAT(ue.first_name, ' ', ue.last_name))) END)
                 ) AS verifier_assigned_name,
                 CASE
+                    WHEN UPPER(TRIM(c.case_status)) IN ('REJECTED','STOP_BGV') THEN 'QA Rejected'
                     WHEN UPPER(TRIM(c.case_status)) IN ('APPROVED','VERIFIED','COMPLETED','CLEAR') THEN 'QA Completed'
                     WHEN (vq.completed_at IS NOT NULL AND COALESCE(vr.vr_pending, 0) = 0 AND COALESCE(vr.vr_total, 0) > 0) THEN 'QA Pending'
                     WHEN (COALESCE(vr.vr_total, 0) > 0 AND COALESCE(vr.vr_pending, 0) > 0 AND COALESCE(vr.vr_in_progress, 0) > 0) THEN 'Verifier In Progress'
                     WHEN (COALESCE(vr.vr_total, 0) > 0 AND COALESCE(vr.vr_pending, 0) > 0) THEN 'Verifier Pending'
                     WHEN (vq.assigned_user_id IS NOT NULL AND vq.completed_at IS NULL) THEN 'Validation In Progress'
                     WHEN (vq.case_id IS NOT NULL AND vq.completed_at IS NULL) THEN 'Validation Pending'
+                    WHEN LOWER(TRIM(COALESCE(app.status, ''))) = 'submitted' THEN 'Validation Pending'
                     WHEN (bd.application_id IS NOT NULL) THEN 'Candidate Submitted'
                     WHEN (c.invite_sent_at IS NOT NULL) THEN 'Invited'
                     ELSE 'Created'
                 END AS current_stage
             FROM Vati_Payfiller_Cases c
             LEFT JOIN Vati_Payfiller_Clients cl ON cl.client_id = c.client_id
+            LEFT JOIN Vati_Payfiller_Candidate_Applications app ON app.application_id = c.application_id
             LEFT JOIN (
                 SELECT application_id
                   FROM Vati_Payfiller_Candidate_Basic_details
@@ -79,7 +83,7 @@ try {
                         SELECT case_id, MAX(COALESCE(completed_at, claimed_at)) AS max_ts
                           FROM Vati_Payfiller_Validator_Queue
                          GROUP BY case_id
-                  ) q2 ON q2.case_id = q1.case_id AND q2.max_ts = COALESCE(q1.completed_at, q1.claimed_at)
+                  ) q2 ON q2.case_id = q1.case_id AND COALESCE(q2.max_ts, '1970-01-01 00:00:00') = COALESCE(COALESCE(q1.completed_at, q1.claimed_at), '1970-01-01 00:00:00')
             ) vq ON vq.case_id = c.case_id
             LEFT JOIN Vati_Payfiller_Users vu ON vu.user_id = vq.assigned_user_id
             LEFT JOIN (

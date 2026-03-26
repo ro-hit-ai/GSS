@@ -56,12 +56,14 @@ function post_locations(): array {
 function post_allowed_sections(): string {
     $raw = $_POST['allowed_sections'] ?? [];
     if (is_string($raw)) {
-        return trim($raw);
+        $raw = preg_split('/[\s,|]+/', trim($raw));
     }
     if (!is_array($raw)) return '';
     $out = [];
     foreach ($raw as $v) {
         $s = strtolower(trim((string)$v));
+        if ($s === 'social_media' || $s === 'social-media' || $s === 'social media') $s = 'socialmedia';
+        if ($s === 'e_court' || $s === 'e-court' || $s === 'e court') $s = 'ecourt';
         if ($s === '') continue;
         $out[$s] = true;
     }
@@ -103,6 +105,20 @@ try {
         http_response_code(400);
         echo json_encode(['status' => 0, 'message' => 'Invalid staff role']);
         exit;
+    }
+
+    if ($role === 'validator') {
+        $set = [];
+        foreach (preg_split('/[\s,|]+/', strtolower($allowedSections)) as $k) {
+            $k = trim((string)$k);
+            if ($k === '') continue;
+            if ($k === 'social_media' || $k === 'social-media' || $k === 'social media') $k = 'socialmedia';
+            if ($k === 'e_court' || $k === 'e-court' || $k === 'e court') $k = 'ecourt';
+            $set[$k] = true;
+        }
+        $set['socialmedia'] = true;
+        $set['ecourt'] = true;
+        $allowedSections = implode(',', array_keys($set));
     }
 
     $locations = post_locations();
@@ -149,6 +165,14 @@ try {
     $userId = isset($row['user_id']) ? (int)$row['user_id'] : 0;
 
     if ($userId > 0) {
+        // Force exact allowed_sections from UI (some SP builds may apply role defaults).
+        try {
+            $fix = $pdo->prepare('UPDATE Vati_Payfiller_Users SET allowed_sections = ? WHERE user_id = ?');
+            $fix->execute([$allowedSections, $userId]);
+        } catch (Throwable $e) {
+            // ignore; SP result still valid
+        }
+
         $tempPassword = generate_temp_password(10);
         $pwdStmt = $pdo->prepare('CALL SP_Vati_Payfiller_SetUserPassword(?, ?, ?, ?)');
         $pwdStmt->execute([$userId, $username, $tempPassword, 1]);

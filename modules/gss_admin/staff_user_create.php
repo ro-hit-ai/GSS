@@ -76,7 +76,7 @@ ob_start();
                 <div class="form-control">
                     <label>Allowed Authorization Sections</label>
                     <div id="staffAllowedSectionsHost" style="display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:8px; margin-top:6px;"></div>
-                    <div style="font-size:11px; color:#6b7280; margin-top:6px;">Only applies to Verifier / DB Verifier. QA/TL always has full access.</div>
+                    <div style="font-size:11px; color:#6b7280; margin-top:6px;">Applies to Validator / Verifier / DB Verifier. QA/TL always has full access.</div>
                 </div>
                 <div class="form-control">
                     <label>Send Login Email</label>

@@ -366,6 +366,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function filteredTimeline(items) {
         var list = Array.isArray(items) ? items.slice() : [];
+        list = list.filter(function (it) {
+            return !isWholeCaseCompletionItem(it);
+        });
         if (ACTIVE_FILTER !== 'all') {
             list = list.filter(function (it) {
                 return normalizeSection(it && it.section_key ? it.section_key : 'general') === ACTIVE_FILTER;
@@ -380,6 +383,17 @@ document.addEventListener('DOMContentLoaded', function () {
             return bt - at;
         });
         return list;
+    }
+
+    function isWholeCaseCompletionItem(it) {
+        var sec = normalizeSection(it && it.section_key ? it.section_key : '');
+        var msg = String(it && it.message ? it.message : '').toLowerCase();
+        if (sec === 'case_status') return true;
+        if (msg.indexOf('case action:') !== -1) return true;
+        if (msg.indexOf('completed case') !== -1) return true;
+        if (msg.indexOf('completed the case') !== -1) return true;
+        if (msg.indexOf('completed the group') !== -1) return true;
+        return false;
     }
 
     function isMine(it) {

@@ -74,15 +74,20 @@ try {
 
     enforce_client_admin_application_scope($pdo, $applicationId);
 
-    $sql = 'SELECT id, application_id, doc_type, file_path, original_name, mime_type, uploaded_by_role, created_at FROM Vati_Payfiller_Verification_Documents WHERE application_id = ?';
+    $sql = 'SELECT d.id, d.application_id, d.doc_type, d.file_path, d.original_name, d.mime_type, d.uploaded_by_user_id, d.uploaded_by_role, d.created_at, '
+        . "TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) AS uploaded_by_name, "
+        . 'u.username AS uploaded_by_username '
+        . 'FROM Vati_Payfiller_Verification_Documents d '
+        . 'LEFT JOIN Vati_Payfiller_Users u ON u.user_id = d.uploaded_by_user_id '
+        . 'WHERE d.application_id = ?';
     $params = [$applicationId];
 
     if ($docType !== '') {
-        $sql .= ' AND doc_type = ?';
+        $sql .= ' AND d.doc_type = ?';
         $params[] = $docType;
     }
 
-    $sql .= ' ORDER BY created_at DESC, id DESC LIMIT 200';
+    $sql .= ' ORDER BY d.created_at DESC, d.id DESC LIMIT 200';
 
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);

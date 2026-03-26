@@ -1,7 +1,12 @@
 <?php
 header('Content-Type: application/json');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: 0');
 
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/queue_visibility.php';
 
 auth_require_login('verifier');
 auth_session_start();
@@ -17,6 +22,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 function allowed_sections_set(): array {
     $raw = isset($_SESSION['auth_allowed_sections']) ? (string)$_SESSION['auth_allowed_sections'] : '';
+    try {
+        $pdo = getDB();
+        $uid = (int)($_SESSION['auth_user_id'] ?? 0);
+        if ($uid > 0) {
+            $st = $pdo->prepare('SELECT allowed_sections FROM Vati_Payfiller_Users WHERE user_id = ? LIMIT 1');
+            $st->execute([$uid]);
+            $dbRaw = (string)($st->fetchColumn() ?: '');
+            $raw = $dbRaw;
+            $_SESSION['auth_allowed_sections'] = $dbRaw;
+        }
+    } catch (Throwable $e) {
+    }
     $raw = strtolower(trim($raw));
     if ($raw === '*') return ['*' => true];
     if ($raw === '') return [];
@@ -24,31 +41,11 @@ function allowed_sections_set(): array {
     $out = [];
     foreach ($parts as $p) {
         $k = strtolower(trim((string)$p));
+        if ($k === 'social_media' || $k === 'social-media') $k = 'socialmedia';
+        if ($k === 'identification') $k = 'id';
         if ($k === '') continue;
         $out[$k] = true;
     }
-    return $out;
-}
-
-function compute_allowed_groups(array $set): array {
-    if (isset($set['*'])) return ['BASIC', 'EDUCATION'];
-
-    $basicKeys = ['basic', 'id', 'contact'];
-    $eduKeys = ['education', 'employment', 'reference'];
-
-    $hasBasic = false;
-    foreach ($basicKeys as $k) {
-        if (isset($set[$k])) { $hasBasic = true; break; }
-    }
-
-    $hasEdu = false;
-    foreach ($eduKeys as $k) {
-        if (isset($set[$k])) { $hasEdu = true; break; }
-    }
-
-    $out = [];
-    if ($hasBasic) $out[] = 'BASIC';
-    if ($hasEdu) $out[] = 'EDUCATION';
     return $out;
 }
 
@@ -60,13 +57,17 @@ try {
     }
 
     $set = allowed_sections_set();
-    $groups = compute_allowed_groups($set);
+    $allowedSectionsStr = isset($set['*']) ? '*' : implode(',', array_keys($set));
+    $groups = [];
+    foreach (['BASIC', 'EDUCATION'] as $g) {
+        if (verifier_can_group_by_sections($set, $g)) $groups[] = $g;
+    }
 
     echo json_encode([
         'status' => 1,
         'message' => 'ok',
         'data' => [
-            'allowed_sections' => isset($set['*']) ? '*' : implode(',', array_keys($set)),
+            'allowed_sections' => $allowedSectionsStr,
             'allowed_groups' => $groups
         ]
     ]);

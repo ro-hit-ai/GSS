@@ -128,6 +128,16 @@ function is_completed_case_status(string $status): bool {
     return in_array($s, ['APPROVED', 'VERIFIED', 'COMPLETED', 'CLEAR'], true);
 }
 
+function resolve_case_id_by_application(PDO $pdo, string $applicationId): int {
+    try {
+        $st = $pdo->prepare('SELECT case_id FROM Vati_Payfiller_Cases WHERE application_id = ? LIMIT 1');
+        $st->execute([$applicationId]);
+        return (int)($st->fetchColumn() ?: 0);
+    } catch (Throwable $e) {
+        return 0;
+    }
+}
+
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         http_response_code(405);
@@ -213,6 +223,34 @@ try {
         }
     }
 
+    if ($action === 'stop_bgv') {
+        try {
+            $resolvedCaseId = $caseId > 0 ? $caseId : resolve_case_id_by_application($pdo, $applicationId);
+            if ($resolvedCaseId > 0) {
+                // Stop BGV is final for current operational queues.
+                $vq = $pdo->prepare(
+                    "UPDATE Vati_Payfiller_Validator_Queue
+                     SET status = 'completed',
+                         completed_at = COALESCE(completed_at, NOW())
+                     WHERE case_id = ?
+                       AND completed_at IS NULL"
+                );
+                $vq->execute([$resolvedCaseId]);
+
+                $vrq = $pdo->prepare(
+                    "UPDATE Vati_Payfiller_Verifier_Group_Queue
+                     SET status = 'completed',
+                         completed_at = COALESCE(completed_at, NOW())
+                     WHERE case_id = ?
+                       AND completed_at IS NULL"
+                );
+                $vrq->execute([$resolvedCaseId]);
+            }
+        } catch (Throwable $e) {
+            // ignore
+        }
+    }
+
     // If action is performed by verifier on a claimed queue item, sync queue status as well.
     // - hold => followup
     // Note: completion is handled by /api/verifier/queue_complete.php
@@ -222,7 +260,7 @@ try {
             $queueStatus = null;
             if ($action === 'hold') {
                 $queueStatus = 'followup';
-            } elseif ($action === 'approve' || $action === 'reject' || $action === 'stop_bgv') {
+            } elseif ($action === 'approve' || $action === 'reject') {
                 $queueStatus = 'in_progress';
             }
 

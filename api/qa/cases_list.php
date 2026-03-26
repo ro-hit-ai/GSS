@@ -121,6 +121,7 @@ try {
                     ELSE 0
                 END) AS is_verifier_done,
                 CASE
+                    WHEN UPPER(TRIM(c.case_status)) IN ('REJECTED','STOP_BGV') THEN 'QA Rejected'
                     WHEN UPPER(TRIM(c.case_status)) IN ('APPROVED','VERIFIED','COMPLETED','CLEAR') THEN 'QA Completed'
                     ELSE 'QA Pending'
                 END AS current_stage
@@ -228,8 +229,12 @@ try {
             $r['verifier_assigned_name'] = $verifierAssigned;
 
             if ($role === 'team_lead') {
-                $isCompleted = isset($r['case_status']) && in_array(strtoupper(trim((string)$r['case_status'])), ['APPROVED', 'VERIFIED', 'COMPLETED', 'CLEAR'], true);
-                if ($isCompleted) {
+                $caseStatusUpper = strtoupper(trim((string)($r['case_status'] ?? '')));
+                $isCompleted = in_array($caseStatusUpper, ['APPROVED', 'VERIFIED', 'COMPLETED', 'CLEAR'], true);
+                $isRejected = in_array($caseStatusUpper, ['REJECTED', 'STOP_BGV'], true);
+                if ($isRejected) {
+                    $r['current_stage'] = 'QA Rejected';
+                } elseif ($isCompleted) {
                     $r['current_stage'] = 'Completed';
                 } else {
                     $r['current_stage'] = ($valDone && $vrDone) ? 'Pending Ready' : 'Pending Not Ready';

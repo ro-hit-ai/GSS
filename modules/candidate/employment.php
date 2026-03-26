@@ -31,7 +31,197 @@ $defaultCount = $isFresher ? 1 : max(1, count($rows));
 $maxCount = 5;
 ?>
 
-<div class="candidate-form compact-form">
+<style>
+    .bgv-fixed-form {
+        height: auto;
+        max-height: none;
+        min-height: 0;
+        display: block;
+        overflow: visible;
+        border-radius: 16px;
+    }
+
+    .bgv-fixed-form .form-header {
+        position: sticky;
+        top: 0;
+        background: #0b1220;
+        color: #ffffff;
+        padding: 10px 14px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 10px;
+        z-index: 10;
+        margin: 0 0 12px;
+        flex-shrink: 0;
+    }
+
+    .bgv-fixed-form .form-header i {
+        color: #93c5fd;
+    }
+
+    .bgv-fixed-form .form-content {
+        padding: 20px 24px;
+    }
+
+    .bgv-fixed-form .form-footer {
+        position: relative;
+        bottom: auto;
+        background: #ffffff;
+        padding: 16px 24px;
+        border-top: 1px solid #e2e8f0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .bgv-fixed-form .employment-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 12px 16px;
+        background: #f8fafc;
+        border-radius: 12px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+        flex-shrink: 0;
+    }
+
+    .bgv-fixed-form .tabs-container {
+        flex: 1;
+        overflow-x: auto;
+        min-width: 0;
+        scrollbar-width: thin;
+    }
+
+    .bgv-fixed-form .employment-tab {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 6px 14px;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        white-space: nowrap;
+        margin-right: 8px;
+    }
+
+    .bgv-fixed-form .employment-tab.active {
+        background: #3b82f6;
+        color: #ffffff;
+        border-color: #3b82f6;
+    }
+
+    .bgv-fixed-form .tab-dot {
+        font-size: 8px;
+        margin-left: 4px;
+    }
+
+    .bgv-fixed-form .compact-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        margin-bottom: 16px;
+        overflow: hidden;
+        transition: box-shadow 0.2s;
+    }
+
+    .bgv-fixed-form .compact-card:hover {
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    }
+
+    .bgv-fixed-form .compact-header {
+        background: #f8fafc;
+        padding: 10px 12px;
+        border-bottom: 1px solid #e2e8f0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .bgv-fixed-form .compact-header h6 {
+        font-size: 13px;
+        font-weight: 600;
+        color: #1e293b;
+        margin: 0;
+    }
+
+    .bgv-fixed-form .compact-body {
+        padding: 12px;
+    }
+
+    .bgv-fixed-form .compact-body .form-row-3 {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        margin-bottom: 12px;
+    }
+
+    .bgv-fixed-form .compact-body .form-row-2 {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+        margin-bottom: 12px;
+    }
+
+    .bgv-fixed-form .compact-control {
+        padding: 6px 10px !important;
+    }
+
+    .bgv-fixed-form .compact-input,
+    .bgv-fixed-form .compact-select {
+        height: 32px !important;
+        font-size: 13px !important;
+    }
+
+    .bgv-fixed-form .compact-textarea {
+        min-height: 50px !important;
+        font-size: 13px !important;
+    }
+
+    @media (max-width: 992px) {
+        .bgv-fixed-form .compact-body .form-row-3 {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+
+    @media (max-width: 768px) {
+        .bgv-fixed-form .compact-body .form-row-3,
+        .bgv-fixed-form .compact-body .form-row-2 {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    .employment-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .employment-hint-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: #eef2ff;
+        border: 1px solid #e2e8f0;
+        font-size: 11px;
+        color: #1f2937;
+        white-space: nowrap;
+    }
+
+    @media (max-width: 992px) {
+        .employment-hint-badge {
+            width: 100%;
+            white-space: normal;
+        }
+    }
+</style>
+
+<div class="candidate-form compact-form cr-fixed-form bgv-fixed-form">
 
     <!-- HEADER -->
     <div class="form-header">
@@ -42,15 +232,9 @@ $maxCount = 5;
         Please list your recent employers starting with the most recent one.
     </p>
 
-    <!-- Alert -->
-    <div class="alert compact-alert mb-3">
-        <i class="fas fa-info-circle"></i>
-        If you are a fresher, select <strong>Yes</strong> and fill only the first employer.
-    </div>
-
-    <!-- Number of Employments -->
-    <div class="compact-card mb-3">
-        <div class="form-field">
+    <!-- COUNT + TABS (COMPACT BAR) -->
+        <div class="compact-card employment-toolbar mb-3">
+        <div class="employment-count">
             <div class="form-control double-border compact-control">
                 <label class="compact-label">Number of Employments <span class="required">*</span></label>
                 <select id="employmentCount" class="compact-select" <?= $isFresher ? 'disabled' : '' ?>>
@@ -62,25 +246,35 @@ $maxCount = 5;
                 </select>
             </div>
         </div>
-    </div>
 
-    <!-- Tabs -->
-    <div class="tabs-container compact-tabs">
-        <div class="employment-tabs" id="employmentTabs"></div>
-    </div>
+        <div class="tabs-container compact-tabs">
+            <div class="employment-tabs" id="employmentTabs"></div>
+        </div>
+
+        <!-- <div class="employment-hint-badge">
+            <i class="fas fa-info-circle"></i>
+            If you are a fresher, select <strong>Yes</strong> and fill only the first employer.
+        </div> -->
+        </div>
 
     <!-- Form -->
-    <form id="employmentForm" enctype="multipart/form-data">
-        <div id="employmentContainer"></div>
-        
-        <!-- Hidden fields for radio buttons to work properly -->
-        <input type="hidden" name="is_fresher[0]" value="<?= $isFresher ? 'yes' : 'no' ?>">
-        <input type="hidden" name="currently_employed[0]" value="<?= $rows[0]['currently_employed'] ?? 'no' ?>">
-        <input type="hidden" name="contact_employer[0]" value="<?= $rows[0]['contact_employer'] ?? 'no' ?>">
-        <input type="hidden" name="application_id" value="<?= $application_id ?>">
-    </form>
+        <form id="employmentForm" enctype="multipart/form-data">
+            <div id="employmentContainer"></div>
+            
+            <!-- Hidden fields for radio buttons to work properly -->
+            <input type="hidden" name="is_fresher[0]" value="<?= $isFresher ? 'yes' : 'no' ?>">
+            <input type="hidden" name="currently_employed[0]" value="<?= $rows[0]['currently_employed'] ?? 'no' ?>">
+            <input type="hidden" name="contact_employer[0]" value="<?= $rows[0]['contact_employer'] ?? 'no' ?>">
+            <input type="hidden" name="application_id" value="<?= $application_id ?>">
+        </form>
 
-    <!-- Form Footer (OUTSIDE the form) -->
+        <!-- Hidden data -->
+        <div id="employmentData"
+             data-rows='<?= htmlspecialchars(json_encode($rows), ENT_QUOTES, "UTF-8") ?>'
+             data-is-fresher="<?= $isFresher ? 'true' : 'false' ?>"
+             data-default-count="<?= $defaultCount ?>"
+             style="display:none"></div>
+
     <div class="form-footer compact-footer">
         <button type="button" class="btn btn-outline prev-btn">
             <i class="fas fa-arrow-left me-2"></i> Previous
@@ -97,12 +291,6 @@ $maxCount = 5;
         </div>
     </div>
 
-    <!-- Hidden data -->
-    <div id="employmentData"
-         data-rows='<?= htmlspecialchars(json_encode($rows), ENT_QUOTES, "UTF-8") ?>'
-         data-is-fresher="<?= $isFresher ? 'true' : 'false' ?>"
-         data-default-count="<?= $defaultCount ?>"
-         style="display:none"></div>
 </div>
 
 <!-- ================= COMPACT TEMPLATE ================= -->
@@ -197,8 +385,8 @@ $maxCount = 5;
                 </div>
             </div>
 
-            <!-- Row 2: Dates -->
-            <div class="form-row-2 compact-row mb-2">
+            <!-- Row 2: Dates + Proof -->
+            <div class="form-row-3 compact-row mb-2">
                 <div class="form-field">
                     <div class="form-control double-border compact-control">
                         <label class="compact-label">Joining Date <span class="required">*</span></label>
@@ -212,6 +400,24 @@ $maxCount = 5;
                         <input type="date" name="relieving_date[]" class="compact-input">
                     </div>
                 </div>
+
+                <div class="form-field">
+                    <div class="form-control double-border compact-control">
+                        <label class="compact-label">Employment Proof</label>
+                        <div class="file-upload-box" data-file-upload>
+                            <div class="file-upload-row">
+                                <button type="button" class="file-upload-btn" data-file-choose>Choose File</button>
+                                <button type="button" class="file-upload-name" data-file-name disabled>No file chosen</button>
+                            </div>
+                            <div class="file-upload-error" data-file-error></div>
+                        </div>
+                        <input type="file"
+                               name="employment_doc[]"
+                               class="compact-file d-none"
+                               accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                               data-file-input>
+                    </div>
+                </div>
             </div>
 
             <!-- Row 3: Address & Reason -->
@@ -219,18 +425,18 @@ $maxCount = 5;
                 <div class="form-field">
                     <div class="form-control double-border compact-control">
                         <label class="compact-label">Employer Address <span class="required">*</span></label>
-                        <textarea name="employer_address[]" rows="2" required class="compact-textarea"></textarea>
+                        <textarea name="employer_address[]" rows="1" required class="compact-textarea"></textarea>
                     </div>
                 </div>
 
                 <div class="form-field">
                     <div class="form-control double-border compact-control">
                         <label class="compact-label">Reason for Leaving <span class="required">*</span></label>
-                        <textarea name="reason_leaving[]" rows="2" required class="compact-textarea"></textarea>
+                        <textarea name="reason_leaving[]" rows="1" required class="compact-textarea"></textarea>
                     </div>
                 </div>
             </div>
-
+            
             <!-- Row 4: HR Details -->
             <div class="form-row-3 compact-row mb-2">
                 <div class="form-field">
@@ -280,24 +486,21 @@ $maxCount = 5;
             </div>
 
             <!-- Row 6: Employment Proof -->
-            <div class="form-row-full compact-row mb-2">
+            <!-- <div class="form-row-full compact-row mb-2">
                 <div class="form-field">
                     <div class="form-control double-border compact-control">
                         <label class="compact-label">Employment Proof <span class="required">*</span></label>
-                        <div class="upload-box compact-upload">
-                            <input type="file" name="employment_doc[]" accept=".pdf,.jpg,.jpeg,.png" class="compact-file">
-                            <p class="upload-hint compact-hint">
-                                Offer/Salary/Relieving letter (Max 5MB)
-                            </p>
-                        </div>
+                        <input type="file" name="employment_doc[]" class="compact-file" accept=".pdf,.jpg,.jpeg,image/jpeg,application/pdf">
+                        <p class="upload-hint compact-hint">
+                            Offer/Salary/Relieving letter (Max 5MB)
+                        </p>
                         <input type="hidden" name="old_employment_doc[]" value="">
                         <div class="employment-doc-preview mt-1"></div>
                     </div>
                 </div>
-            </div>
+            </div> -->
 
-            <!-- Row 7: Checkbox -->
-            <div class="form-row-full compact-row">
+            <div class="form-row-2 compact-row mb-2">
                 <div class="form-field">
                     <div class="form-check normal-checkbox compact-checkbox">
                         <input type="checkbox" 
@@ -312,11 +515,8 @@ $maxCount = 5;
                         </small>
                     </div>
                 </div>
+                <div class="form-field"></div>
             </div>
         </div>
     </div>
 </template>
-
-<script>
-    window.APP_BASE_URL = "<?= APP_BASE_URL ?>";
-</script>

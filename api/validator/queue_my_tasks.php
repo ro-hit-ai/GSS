@@ -7,6 +7,51 @@ require_once __DIR__ . '/../../includes/auth.php';
 auth_require_login('validator');
 auth_session_start();
 
+function is_stop_bgv_case(array $row): bool {
+    $status = strtoupper(trim((string)($row['case_status'] ?? '')));
+    return $status === 'STOP_BGV';
+}
+
+function enrich_rows_with_application_status(PDO $pdo, array $rows): array {
+    if (!$rows) return [];
+    $appIds = [];
+    foreach ($rows as $r) {
+        $appId = trim((string)($r['application_id'] ?? ''));
+        if ($appId !== '') $appIds[$appId] = true;
+    }
+    if (!$appIds) return $rows;
+
+    $ids = array_keys($appIds);
+    $ph = implode(',', array_fill(0, count($ids), '?'));
+    $map = [];
+    try {
+        $st = $pdo->prepare('SELECT application_id, LOWER(TRIM(COALESCE(status, \'\'))) AS app_status FROM Vati_Payfiller_Candidate_Applications WHERE application_id IN (' . $ph . ')');
+        $st->execute($ids);
+        $rr = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        foreach ($rr as $it) {
+            $k = trim((string)($it['application_id'] ?? ''));
+            if ($k === '') continue;
+            $map[$k] = (string)($it['app_status'] ?? '');
+        }
+    } catch (Throwable $e) {
+        return $rows;
+    }
+
+    foreach ($rows as &$r) {
+        $appId = trim((string)($r['application_id'] ?? ''));
+        $r['__app_status'] = $appId !== '' ? (string)($map[$appId] ?? '') : '';
+    }
+    unset($r);
+    return $rows;
+}
+
+function is_candidate_pending_case(array $row): bool {
+    $status = strtoupper(trim((string)($row['case_status'] ?? '')));
+    if (!in_array($status, ['PENDING_CANDIDATE', 'CANDIDATE_PENDING', 'DRAFT'], true)) return false;
+    $appStatus = strtolower(trim((string)($row['__app_status'] ?? '')));
+    return $appStatus !== 'submitted';
+}
+
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
         http_response_code(405);
@@ -33,6 +78,11 @@ try {
     );
     $stmt->execute([$userId]);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $rows = enrich_rows_with_application_status($pdo, $rows);
+    $rows = array_values(array_filter($rows, function ($r) {
+        $it = (array)$r;
+        return !is_stop_bgv_case($it) && !is_candidate_pending_case($it);
+    }));
 
     echo json_encode(['status' => 1, 'message' => 'ok', 'data' => $rows]);
 

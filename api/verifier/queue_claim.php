@@ -107,6 +107,26 @@ try {
         exit;
     }
 
+    // Ensure queue row state is visible to dashboard KPIs immediately.
+    try {
+        $sync = $pdo->prepare(
+            "UPDATE Vati_Payfiller_Verifier_Group_Queue
+             SET assigned_user_id = COALESCE(assigned_user_id, ?),
+                 claimed_at = COALESCE(claimed_at, NOW()),
+                 status = CASE
+                     WHEN COALESCE(LOWER(TRIM(status)), '') = 'followup' THEN status
+                     WHEN completed_at IS NULL THEN 'in_progress'
+                     ELSE status
+                 END
+             WHERE case_id = ?
+               AND UPPER(TRIM(group_key)) = ?
+               AND completed_at IS NULL"
+        );
+        $sync->execute([$userId, $caseId, $groupKey]);
+    } catch (Throwable $e) {
+        // ignore
+    }
+
     // Best-effort: log to case timeline
     try {
         $log = $pdo->prepare('INSERT INTO Vati_Payfiller_Case_Timeline (application_id, actor_user_id, actor_role, event_type, section_key, message, created_at) SELECT application_id, ?, ?, ?, ?, ?, NOW() FROM Vati_Payfiller_Cases WHERE case_id = ? LIMIT 1');

@@ -119,6 +119,12 @@ class TabManager {
         cardElement.dataset.cardIndex = index;
         cardElement.id = `${this.pageName}-card-${index}`;
         cardElement.style.display = 'none'; // Hide initially
+
+        // Update visible card number badge if present
+        const numEl = cardElement.querySelector('.education-num, .document-num, .employer-num');
+        if (numEl) {
+            numEl.textContent = String(index + 1);
+        }
         
         // Populate with data
         this.populateCard(cardElement, row || {}, index);
@@ -315,7 +321,7 @@ class TabManager {
 /* ================= PREVIEW FUNCTIONALITY ================= */
 
 /**
- * Render a file preview with preview button
+ * Render a file preview with a clean filename link
  */
 renderPreview(card, selector, file, label, folder = '') {
     const el = card.querySelector(selector);
@@ -323,45 +329,56 @@ renderPreview(card, selector, file, label, folder = '') {
 
     const base = window.APP_BASE_URL || '';
     const filePath = `${base}/uploads/${folder ? folder + '/' : ''}${file}`;
-    
+
+    return this.renderPreviewHtml(el, file, filePath);
+}
+
+/**
+ * Render a local (just-selected) file preview
+ */
+renderLocalPreview(card, selector, file) {
+    const el = card.querySelector(selector);
+    if (!el || !file) return null;
+
+    const url = URL.createObjectURL(file);
+    // Track object URLs so we can revoke later
+    const prevUrl = el.getAttribute('data-preview-url');
+    if (prevUrl) {
+        try { URL.revokeObjectURL(prevUrl); } catch (_e) {}
+    }
+    el.setAttribute('data-preview-url', url);
+
+    return this.renderPreviewHtml(el, file.name, url);
+}
+
+    renderPreviewHtml(el, fileName, filePath) {
+        if (!el) return null;
+
     // Clear existing content
     el.innerHTML = '';
-    
-    // Get file extension
-    const extension = file.split('.').pop().toLowerCase();
+
+    const extension = String(fileName || '').split('.').pop().toLowerCase();
     const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(extension);
     const isPDF = extension === 'pdf';
-    
+
     const previewHTML = `
-        <div class="file-preview-container mt-2">
-            <div class="file-info mb-2">
-                ${isImage ? 
-                    '<i class="fas fa-image text-primary me-2"></i>' : 
-                    isPDF ? 
-                    '<i class="fas fa-file-pdf text-danger me-2"></i>' : 
-                    '<i class="fas fa-file text-secondary me-2"></i>'
-                }
-                <span class="fw-medium">${label}:</span>
-                <span class="text-muted ms-2">${file}</span>
-            </div>
-            <div class="file-actions">
-                <button type="button" 
-                        class="btn btn-sm btn-outline-primary preview-btn" 
-                        data-url="${filePath}" 
-                        data-name="${file}"
-                        data-type="${isImage ? 'image' : isPDF ? 'pdf' : 'other'}">
-                    <i class="fas fa-eye me-1"></i> Preview
-                </button>
-                <a href="${filePath}" 
-                   class="btn btn-sm btn-outline-secondary ms-2" 
-                   target="_blank" 
-                   download="${file}">
-                    <i class="fas fa-download me-1"></i> Download
-                </a>
-            </div>
+        <div class="file-preview-pill">
+            ${isImage ? 
+                '<i class="fas fa-image text-primary me-2"></i>' : 
+                isPDF ? 
+                '<i class="fas fa-file-pdf text-danger me-2"></i>' : 
+                '<i class="fas fa-file text-secondary me-2"></i>'
+            }
+            <button type="button"
+                    class="file-preview-link preview-btn"
+                    data-url="${filePath}"
+                    data-name="${fileName}"
+                    data-type="${isImage ? 'image' : isPDF ? 'pdf' : 'other'}">
+                ${fileName}
+            </button>
         </div>
     `;
-    
+
     el.innerHTML = previewHTML;
     return el;
 }
@@ -381,6 +398,11 @@ setupPreviewEvents() {
 clearPreview(card, selector) {
     const el = card.querySelector(selector);
     if (el) {
+        const prevUrl = el.getAttribute('data-preview-url');
+        if (prevUrl) {
+            try { URL.revokeObjectURL(prevUrl); } catch (_e) {}
+            el.removeAttribute('data-preview-url');
+        }
         el.innerHTML = '';
     }
 }
@@ -394,7 +416,92 @@ clearPreview(card, selector) {
         this.eventListeners.push({ element, type, handler });
         return handler;
     }
-    
+
+    /* ================= FILE UPLOAD UI HELPERS ================= */
+
+    getUploadBoxFromInput(input) {
+        if (!input) return null;
+        const control = input.closest('.form-control');
+        if (!control) return null;
+        return control.querySelector('[data-file-upload]');
+    }
+
+    clearUploadBox(box) {
+        if (!box) return;
+        const prevUrl = box.getAttribute('data-object-url');
+        if (prevUrl) {
+            try { URL.revokeObjectURL(prevUrl); } catch (_e) {}
+            box.removeAttribute('data-object-url');
+        }
+        const nameEl = box.querySelector('[data-file-name]');
+        const errorEl = box.querySelector('[data-file-error]');
+
+        if (nameEl) {
+            nameEl.textContent = 'No file chosen';
+            nameEl.classList.remove('preview-btn');
+            nameEl.removeAttribute('data-url');
+            nameEl.removeAttribute('data-name');
+            nameEl.removeAttribute('data-type');
+            nameEl.setAttribute('disabled', 'disabled');
+        }
+        if (errorEl) errorEl.textContent = '';
+    }
+
+    setUploadBox(box, fileName, previewUrl, isLocal = false) {
+        if (!box) return;
+        const nameEl = box.querySelector('[data-file-name]');
+        const errorEl = box.querySelector('[data-file-error]');
+
+        if (errorEl) errorEl.textContent = '';
+        if (nameEl) {
+            const extension = String(fileName || '').split('.').pop().toLowerCase();
+            const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(extension);
+            const isPDF = extension === 'pdf';
+            const iconHtml = isImage
+                ? '<i class="fas fa-image"></i>'
+                : isPDF
+                    ? '<i class="fas fa-file-pdf"></i>'
+                    : '<i class="fas fa-file"></i>';
+
+            nameEl.innerHTML = fileName
+                ? `${iconHtml}<span>${fileName}</span>`
+                : 'No file chosen';
+            nameEl.classList.toggle('preview-btn', !!fileName);
+            if (fileName) {
+                nameEl.removeAttribute('disabled');
+                nameEl.setAttribute('data-url', previewUrl);
+                nameEl.setAttribute('data-name', fileName);
+                nameEl.setAttribute('data-type', isImage ? 'image' : isPDF ? 'pdf' : 'other');
+            } else {
+                nameEl.setAttribute('disabled', 'disabled');
+                nameEl.removeAttribute('data-url');
+                nameEl.removeAttribute('data-name');
+                nameEl.removeAttribute('data-type');
+            }
+        }
+
+        if (isLocal) {
+            const prevUrl = box.getAttribute('data-object-url');
+            if (prevUrl && prevUrl !== previewUrl) {
+                try { URL.revokeObjectURL(prevUrl); } catch (_e) {}
+            }
+            box.setAttribute('data-object-url', previewUrl);
+        }
+    }
+
+    validateUploadFile(file, allowedExt, maxBytes) {
+        if (!file) return { ok: true };
+        const name = String(file.name || '').toLowerCase();
+        const ext = name.includes('.') ? name.split('.').pop() : '';
+        if (!allowedExt.includes(ext)) {
+            return { ok: false, message: 'Invalid file type. Only PDF, JPG, JPEG, PNG allowed.' };
+        }
+        if (file.size > maxBytes) {
+            return { ok: false, message: 'File too large. Maximum 10MB allowed.' };
+        }
+        return { ok: true };
+    }
+
     findInput(card, name) {
         // Try exact match first
         let element = card.querySelector(`[name="${name}"]`);

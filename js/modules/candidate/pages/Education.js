@@ -35,6 +35,10 @@ class EducationManager extends TabManager {
                     var wrap = this.countSelect.closest ? this.countSelect.closest('.form-control') : null;
                     if (wrap) {
                         wrap.style.display = 'none';
+                        var countWrap = wrap.closest ? wrap.closest('.education-count') : null;
+                        if (countWrap) {
+                            countWrap.style.display = 'none';
+                        }
                     } else {
                         this.countSelect.style.display = 'none';
                     }
@@ -117,16 +121,13 @@ class EducationManager extends TabManager {
         if (data.marksheet_file) {
             const marksheetInput = this.findOrCreateInput(card, `old_marksheet_file[${index}]`, 'hidden');
             marksheetInput.value = data.marksheet_file;
-            
-            // Only show preview if it's a real file
+
             if (data.marksheet_file !== 'INSUFFICIENT_DOCUMENTS') {
-                this.renderPreview(
-                    card,
-                    '.marksheet-preview',
-                    data.marksheet_file,
-                    '📄 Marksheet',
-                    'education'
-                );
+                const input = card.querySelector('input[name="marksheet_file[]"]');
+                const box = this.getUploadBoxFromInput(input);
+                const base = window.APP_BASE_URL || '';
+                const url = `${base}/uploads/education/${data.marksheet_file}`;
+                this.setUploadBox(box, data.marksheet_file, url, false);
                 console.log(`   Added marksheet: ${data.marksheet_file}`);
             }
         }
@@ -135,15 +136,13 @@ class EducationManager extends TabManager {
         if (data.degree_file) {
             const degreeInput = this.findOrCreateInput(card, `old_degree_file[${index}]`, 'hidden');
             degreeInput.value = data.degree_file;
-            
+
             if (data.degree_file !== 'INSUFFICIENT_DOCUMENTS') {
-                this.renderPreview(
-                    card,
-                    '.degree-preview',
-                    data.degree_file,
-                    '🎓 Degree',
-                    'education'
-                );
+                const input = card.querySelector('input[name="degree_file[]"]');
+                const box = this.getUploadBoxFromInput(input);
+                const base = window.APP_BASE_URL || '';
+                const url = `${base}/uploads/education/${data.degree_file}`;
+                this.setUploadBox(box, data.degree_file, url, false);
                 console.log(`   Added degree: ${data.degree_file}`);
             }
         }
@@ -212,7 +211,7 @@ class EducationManager extends TabManager {
             marksheetFile.required = !isInsufficient;
             if (isInsufficient) {
                 marksheetFile.value = '';
-                this.clearPreview(card, '.marksheet-preview');
+                this.clearUploadBox(this.getUploadBoxFromInput(marksheetFile));
             }
         }
         
@@ -221,7 +220,7 @@ class EducationManager extends TabManager {
             degreeFile.required = !isInsufficient;
             if (isInsufficient) {
                 degreeFile.value = '';
-                this.clearPreview(card, '.degree-preview');
+                this.clearUploadBox(this.getUploadBoxFromInput(degreeFile));
             }
         }
     }
@@ -245,6 +244,16 @@ class EducationManager extends TabManager {
 setupFileHandlers() {
     console.log('🔧 Setting up education file handlers');
 
+    document.addEventListener('click', (e) => {
+        const trigger = e.target.closest('[data-file-choose]');
+        if (!trigger) return;
+        e.preventDefault();
+        const box = trigger.closest('[data-file-upload]');
+        const control = box ? box.closest('.form-control') : null;
+        const input = control ? control.querySelector('input[type="file"][data-file-input]') : null;
+        if (input) input.click();
+    });
+
     document.addEventListener('change', (e) => {
         if (
             e.target.matches('input[name="marksheet_file[]"]') ||
@@ -252,17 +261,37 @@ setupFileHandlers() {
         ) {
             const input = e.target;
             const card = input.closest('.education-card');
+            const file = input.files && input.files[0] ? input.files[0] : null;
+            const box = this.getUploadBoxFromInput(input);
+            if (box) {
+                const errEl = box.querySelector('[data-file-error]');
+                if (errEl) errEl.textContent = '';
+            }
+
+            const allowed = ['pdf', 'jpg', 'jpeg', 'png'];
+            const validation = this.validateUploadFile(file, allowed, 10 * 1024 * 1024);
+            if (file && !validation.ok) {
+                alert(validation.message);
+                input.value = '';
+                this.clearUploadBox(box);
+                if (box) {
+                    const errEl = box.querySelector('[data-file-error]');
+                    if (errEl) errEl.textContent = validation.message;
+                }
+            }
+
             if (!card || input.files.length === 0) return;
 
-            console.log(`📄 File selected: ${input.files[0].name}`);
+                console.log(`📄 File selected: ${input.files[0].name}`);
 
-            // 🔥 FORCE CLEAR INSUFFICIENT STATE
-            const insufficientCheckbox =
-                card.querySelector('input[name="insufficient_education_docs[]"]');
+                // 🔥 FORCE CLEAR INSUFFICIENT STATE
+                const insufficientCheckbox =
+                    card.querySelector('input[name="insufficient_education_docs[]"]');
 
-            if (insufficientCheckbox) {
-                insufficientCheckbox.checked = false;
-            }
+                if (insufficientCheckbox) {
+                    insufficientCheckbox.checked = false;
+                    this.toggleFileInputs(card, false);
+                }
 
             // 🔥 CLEAR DB "INSUFFICIENT_DOCUMENTS" FALLBACK
             const oldMarksheet =
@@ -276,6 +305,11 @@ setupFileHandlers() {
 
             if (oldDegree && oldDegree.value === 'INSUFFICIENT_DOCUMENTS') {
                 oldDegree.value = '';
+            }
+
+            if (file && box) {
+                const url = URL.createObjectURL(file);
+                this.setUploadBox(box, file.name, url, true);
             }
 
             // Normal behavior
@@ -613,13 +647,11 @@ async submitForm(isDraft = false) {
                         if (window.Router.markCompleted) {
                             window.Router.markCompleted('education');
                         }
-                        setTimeout(() => {
-                            if (window.Router.navigateTo) {
-                                window.Router.navigateTo('employment');
-                            } else {
-                                window.location.href = `${window.APP_BASE_URL}/modules/candidate/employment.php`;
-                            }
-                        }, 250);
+                        if (window.Router.navigateTo) {
+                            window.Router.navigateTo('employment');
+                        } else {
+                            window.location.href = `${window.APP_BASE_URL}/modules/candidate/employment.php`;
+                        }
                     } else {
                         window.location.href = `${window.APP_BASE_URL}/modules/candidate/employment.php`;
                     }

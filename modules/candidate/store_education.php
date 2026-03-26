@@ -42,14 +42,14 @@ function handleFile($fileArray, $application_id, $index, $type) {
         throw new ValidationException("File upload error for $type (card $index)");
     }
 
-    $allowed = ['pdf', 'jpg', 'jpeg'];
+    $allowed = ['pdf', 'jpg', 'jpeg', 'png'];
     $ext = strtolower(pathinfo($fileArray['name'][$index], PATHINFO_EXTENSION));
     if (!in_array($ext, $allowed)) {
-        throw new ValidationException("Invalid file type for $type. Only PDF, JPG, JPEG allowed");
+        throw new ValidationException("Invalid file type for $type. Only PDF, JPG, JPEG, PNG allowed");
     }
 
-    if ($fileArray['size'][$index] > 5 * 1024 * 1024) {
-        throw new ValidationException("File too large (max 5MB) for $type");
+    if ($fileArray['size'][$index] > 10 * 1024 * 1024) {
+        throw new ValidationException("File too large (max 10MB) for $type");
     }
 
     $dir = __DIR__ . "/../../uploads/education/";

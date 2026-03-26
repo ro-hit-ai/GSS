@@ -82,6 +82,39 @@ try {
             // Keep status pending if not claimed yet
             $pdo->prepare('UPDATE Vati_Payfiller_Validator_Queue SET status = IF(completed_at IS NULL AND assigned_user_id IS NULL, \"pending\", status) WHERE case_id = ?')
                 ->execute([$caseId]);
+
+            // Candidate submission should move case to validator stage.
+            $pdo->prepare(
+                "UPDATE Vati_Payfiller_Cases
+                 SET case_status = 'PENDING_VALIDATOR'
+                 WHERE case_id = ?
+                   AND UPPER(TRIM(COALESCE(case_status,''))) NOT IN ('REJECTED','STOP_BGV','APPROVED','COMPLETED','CLEAR')"
+            )->execute([$caseId]);
+
+            $pdo->prepare(
+                "UPDATE Vati_Payfiller_Candidate_Applications
+                 SET status = 'PENDING_VALIDATOR'
+                 WHERE application_id = ?
+                   AND UPPER(TRIM(COALESCE(status,''))) NOT IN ('REJECTED','STOP_BGV','APPROVED','COMPLETED','CLEAR')"
+            )->execute([$application_id]);
+
+            // Seed candidate-stage workflow as approved for all required components.
+            try {
+                $pdo->prepare(
+                    "INSERT INTO Vati_Payfiller_Case_Component_Workflow
+                        (case_id, application_id, component_key, stage, status, updated_by_user_id, updated_by_role, completed_at)
+                     SELECT c.case_id, c.application_id, LOWER(TRIM(c.component_key)), 'candidate', 'approved', NULL, 'candidate', NOW()
+                     FROM Vati_Payfiller_Case_Components c
+                     WHERE c.case_id = ?
+                       AND c.is_required = 1
+                     ON DUPLICATE KEY UPDATE
+                        status = 'approved',
+                        completed_at = COALESCE(completed_at, NOW()),
+                        updated_at = NOW()"
+                )->execute([$caseId]);
+            } catch (Throwable $e) {
+                // ignore
+            }
         }
     } catch (Throwable $e) {
         // ignore

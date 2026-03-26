@@ -47,6 +47,17 @@ class Ecourt {
     static onPageLoad() {
         this.cleanupEventListeners();
 
+        if (!window.ECOURT_DATA) {
+            const dataEl = document.getElementById('ecourtData');
+            if (dataEl && dataEl.dataset && dataEl.dataset.ecourt) {
+                try {
+                    window.ECOURT_DATA = JSON.parse(dataEl.dataset.ecourt || '{}');
+                } catch (e) {
+                    window.ECOURT_DATA = null;
+                }
+            }
+        }
+
         this._savedData = window.ECOURT_DATA || null;
         this._initialized = true;
 
@@ -55,6 +66,16 @@ class Ecourt {
         this.initActionButtons(); // REQUIRED FOR ROUTER
         this.initFileHandling();
         this.initAutoCalculateDuration();
+
+        const dobInput = document.querySelector('[name="dob"]');
+        const dataEl = document.getElementById('ecourtData');
+        const dobMax = dataEl && dataEl.dataset ? dataEl.dataset.dobMax : '';
+        if (dobInput && dobMax) {
+            try {
+                dobInput.max = dobInput.max || String(dobMax);
+            } catch (e) {
+            }
+        }
 
         console.log("✅ Ecourt page initialized");
     }
@@ -191,6 +212,15 @@ class Ecourt {
         const fileInput = document.querySelector('[name="evidence_document"]');
         if (!fileInput) return;
 
+        const isAllowedDoc = (file) => {
+            if (!file) return true;
+            const name = String(file.name || '').toLowerCase();
+            const type = String(file.type || '').toLowerCase();
+            const nameOk = /\.(pdf|jpe?g)$/.test(name);
+            const typeOk = (type === '' || type === 'application/pdf' || type === 'image/jpeg');
+            return nameOk && typeOk;
+        };
+
         this.addEventListener(fileInput, 'change', e => {
             const file = e.target.files[0];
             if (!file) return;
@@ -201,9 +231,8 @@ class Ecourt {
                 return;
             }
 
-            const allowed = ['application/pdf', 'image/jpeg', 'image/png'];
-            if (!allowed.includes(file.type)) {
-                this.showNotification('Only PDF, JPG, PNG allowed', true);
+            if (!isAllowedDoc(file)) {
+                this.showNotification('Only PDF or JPG/JPEG allowed', true);
                 e.target.value = '';
                 return;
             }
@@ -284,6 +313,23 @@ class Ecourt {
             }
         }
 
+        // DOB validation (candidate must be 18 or older)
+        const dobEl = form.querySelector('[name="dob"]');
+        if (dobEl && dobEl.value) {
+            const dob = new Date(dobEl.value + 'T00:00:00');
+            if (Number.isNaN(dob.getTime())) {
+                this.showNotification('Please enter a valid date of birth', true);
+                return false;
+            }
+            const cutoff = new Date();
+            cutoff.setHours(0, 0, 0, 0);
+            cutoff.setFullYear(cutoff.getFullYear() - 18);
+            if (dob > cutoff) {
+                this.showNotification('Candidate must be at least 18 years old', true);
+                return false;
+            }
+        }
+
         return true;
     }
 
@@ -349,9 +395,7 @@ class Ecourt {
                 localStorage.setItem('completed-ecourt', '1');
             }
 
-            setTimeout(() => {
-                Router?.navigateTo?.('education');
-            }, 700);
+            Router?.navigateTo?.('education');
         } catch (e) {
             this.showNotification(e.message, true);
         } finally {

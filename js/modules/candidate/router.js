@@ -36,7 +36,16 @@ class Router {
     // Special pages that don't need API submission
     static noApiSubmissionPages = ["review-confirmation", "success"];
     
-    static selfHandledPages = ["basic-details", "contact", "ecourt", "social"];
+    static selfHandledPages = [
+        "basic-details",
+        "identification",
+        "contact",
+        "social",
+        "ecourt",
+        "education",
+        "employment",
+        "reference"
+    ];
 
     static shouldUseCache(pageId) {
         // Dynamic pages should always be fetched fresh to reflect saved DB values
@@ -470,9 +479,6 @@ class Router {
 
     static async initializePage(pageId) {
         console.log(`🛠 Initializing page: ${pageId}`);
-        
-        // Small delay to ensure DOM is ready
-        await new Promise(resolve => setTimeout(resolve, 50));
         
         // Initialize page module
         const pageModules = {

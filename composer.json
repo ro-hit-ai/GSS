@@ -1,5 +1,9 @@
 {
     "require": {
-        "phpmailer/phpmailer": "^7.0"
+        "phpmailer/phpmailer": "^7.0",
+        "tecnickcom/tcpdf": "6.10",
+        "setasign/fpdi": "2.6",
+        "setasign/fpdi-tcpdf": "2.3",
+        "mpdf/mpdf": "8.2"
     }
 }

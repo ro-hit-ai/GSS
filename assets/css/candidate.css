@@ -41,6 +41,11 @@ body.candidate-page {
     padding: 0;
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
     color: var(--text-main);
+    overflow-x: hidden;
+}
+
+html {
+    overflow-x: hidden;
 }
 
 .app-shell {
@@ -48,6 +53,7 @@ body.candidate-page {
     align-items: stretch;
     height: calc(100vh - var(--header-height));
     overflow: hidden;
+    padding-left: 0 !important;
 }
 
 .main {
@@ -56,11 +62,19 @@ body.candidate-page {
     flex-direction: column;
     height: calc(100vh - var(--header-height));
     overflow-y: auto;
-    padding-bottom: calc(var(--global-footer-height) + 40px);
+    overflow-x: hidden;
+    min-width: 0;
+    padding-bottom: calc(var(--global-footer-height) + 12px);
+}
+
+.page-area {
+    overflow-x: hidden;
 }
 
 .page-area {
     padding: 15px 28px 16px;
+    padding-bottom: 28px;
+    flex: 1 0 auto;
 }
 
 .candidate-wrapper {
@@ -96,19 +110,22 @@ body.candidate-page {
 }
 
 .brand-mark {
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    background:
-        radial-gradient(circle at 30% 0%, #4ade80, transparent 60%),
-        radial-gradient(circle at 70% 100%, #38bdf8, transparent 60%),
-        linear-gradient(135deg, #1d4ed8, #22c55e);
+    width: auto;
+    height: auto;
+    border-radius: 0;
+    background: none;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 13px;
     font-weight: 700;
     color: white;
+}
+
+.brand-mark .brand-logo {
+    height: 28px;
+    width: auto;
+    display: block;
 }
 
 .brand-text {
@@ -184,19 +201,44 @@ body.candidate-page {
     border-radius: 0 22px 22px 0;
     transition: width 0.22s ease, padding 0.22s ease, transform 0.22s ease, box-shadow 0.18s ease;
     position: sticky;
-    min-height: calc(100vh - var(--header-height));
+    top: var(--header-height);
+    left: 0;
+    align-self: flex-start;
+    height: calc(100vh - var(--header-height));
+    overflow: auto;
+    min-height: 0;
 }
 
 .sidebar::before {
-    content: "";
-    position: absolute;
+    content: none;
+}
+
+/* Keep candidate layout from inheriting admin layout offsets */
+body.candidate-page .app-shell {
+    padding-left: 0 !important;
+}
+
+body.candidate-page .app-footer {
+    margin-top: auto;
+    width: 100%;
+}
+
+.app-footer {
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    font-size: 12px;
+    color: #6b7280;
+    border-top: 1px solid #e5e7eb;
+    background: #f9fafb;
+    flex-shrink: 0;
+    position: fixed;
+    bottom: 0;
     left: 0;
-    top: 18px;
-    bottom: 18px;
-    width: 4px;
-    border-radius: 0 999px 999px 0;
-    background: linear-gradient(to bottom, var(--crm-primary), var(--crm-accent));
-    opacity: 0.45;
+    right: 0;
+    z-index: 2000;
 }
 
 .sidebar-nav {
@@ -248,13 +290,13 @@ body.candidate-page {
 }
 
 .sidebar-item:hover {
-    background: rgba(219, 234, 254, 0.9);
+    background: rgba(5, 125, 219, 0.08);
     transform: translateX(1px);
     box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.28);
 }
 
 .sidebar-item.active {
-    background: linear-gradient(135deg, var(--crm-primary), var(--crm-accent));
+    background: linear-gradient(135deg, var(--crm-primary), var(--crm-primary-2));
     color: #ffffff;
     font-weight: 600;
     box-shadow: 0 10px 18px rgba(37, 99, 235, 0.22);
@@ -342,11 +384,26 @@ body.candidate-page {
     margin-bottom: 16px;
 }
 
+.form-grid-4 {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
 .form-row-3 {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 16px;
     margin-bottom: 16px;
+}
+
+.form-row-4 {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr) 120px;
+    gap: 16px;
+    margin-bottom: 16px;
+    align-items: start;
 }
 
 .form-row-2 {
@@ -367,7 +424,11 @@ body.candidate-page {
     position: relative;
 }
 
-/* Double border form controls */
+.form-field.spacer-field {
+    visibility: hidden;
+}
+
+/* Double border form controls (restored) */
 .form-control.double-border {
     display: flex;
     flex-direction: column;
@@ -435,16 +496,20 @@ body.candidate-page {
     padding: 20px !important;
 }
 
+
 .compact-control {
-    padding: 8px 10px !important;
-    min-height: 70px !important;
-    gap: 4px !important;
+    padding: 6px 10px !important;
+    min-height: 56px !important;
+    gap: 3px !important;
 }
 
 .compact-label {
     font-size: 11px !important;
     font-weight: 600;
     margin-bottom: 2px;
+    line-height: 1.25;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
 }
 
 .compact-input,
@@ -531,6 +596,29 @@ body.candidate-page {
     gap: 24px;
     align-items: start;
     margin-bottom: 20px;
+}
+
+.basic-photo-cell {
+    text-align: center;
+}
+
+.basic-photo-cell .compact-control {
+    padding: 8px 10px;
+    min-height: auto;
+}
+
+.basic-photo-cell .compact-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #4b5563;
+    margin-bottom: 6px;
+}
+
+.basic-photo-cell .compact-photo {
+    width: 100px;
+    height: 100px !important;
+    padding: 8px !important;
+    margin: 0 auto;
 }
 
 .photo-header {
@@ -770,6 +858,371 @@ body.candidate-page {
 }
 
 /* ============================================
+   CANDIDATE UI ENHANCEMENTS (Verifier-style)
+============================================ */
+.candidate-form {
+    background: #ffffff;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    box-shadow: 0 14px 28px rgba(15, 23, 42, 0.08);
+}
+
+.form-header {
+    background: #0b1220;
+    color: #ffffff;
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-weight: 800;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    font-size: 13px;
+}
+
+.form-header i {
+    color: #93c5fd;
+}
+
+.compact-card {
+    background: #ffffff;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+}
+
+.compact-header {
+    background: #111827;
+    color: #ffffff;
+}
+
+.compact-header h5,
+.compact-header h6 {
+    color: #ffffff;
+}
+
+/* ============================================
+   EDUCATION TOOLBAR (COUNT + TABS)
+============================================ */
+.education-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start !important;
+    gap: 12px;
+    padding: 10px 12px;
+}
+
+.education-count {
+    min-width: 230px;
+}
+
+.education-toolbar .compact-control {
+    min-height: 52px !important;
+}
+
+.education-toolbar .tabs-container {
+    flex: 1;
+    margin: 0 !important;
+    display: flex;
+    justify-content: flex-start !important;
+    text-align: left;
+}
+
+.education-toolbar .compact-tabs {
+    margin: 0 !important;
+    padding: 6px !important;
+}
+
+.education-tabs {
+    flex-wrap: wrap;
+    row-gap: 6px;
+    justify-content: flex-start !important;
+    width: 100%;
+}
+
+/* ============================================
+   IDENTIFICATION TOOLBAR (COUNTRY + COUNT + TABS)
+============================================ */
+.identification-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 12px;
+    padding: 10px 12px;
+}
+
+.identification-controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(200px, 1fr));
+    gap: 10px;
+    min-width: 420px;
+}
+
+.identification-toolbar .tabs-container {
+    flex: 1;
+    margin: 0 !important;
+    display: flex;
+    justify-content: flex-start;
+}
+
+.identification-toolbar .compact-tabs {
+    margin: 0 !important;
+    padding: 6px !important;
+}
+
+.identification-tabs {
+    flex-wrap: wrap;
+    row-gap: 6px;
+    justify-content: flex-start !important;
+    width: 100%;
+}
+
+/* Identification internal scroll (contained form) */
+.candidate-form.cr-ident-scroll {
+    max-height: calc(100vh - var(--header-height) - var(--global-footer-height) - 48px);
+    overflow-y: auto;
+    padding-bottom: 24px !important;
+}
+
+.candidate-form.cr-ident-scroll .form-footer {
+    position: sticky;
+    bottom: 0;
+    background: var(--bg-card);
+    padding-top: 10px;
+    padding-bottom: 10px;
+    margin-top: 8px;
+    border-top: 1px solid rgba(148, 163, 184, 0.22);
+    z-index: 10;
+}
+
+@media (max-width: 992px) {
+    .identification-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .identification-controls {
+        grid-template-columns: 1fr;
+        min-width: 0;
+        width: 100%;
+    }
+}
+/* ============================================
+   EMPLOYMENT TOOLBAR (COUNT + TABS)
+============================================ */
+.employment-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start !important;
+    gap: 12px;
+    padding: 10px 12px;
+}
+
+.employment-count {
+    min-width: 230px;
+}
+
+.employment-toolbar .compact-control {
+    min-height: 52px !important;
+}
+
+.employment-toolbar .tabs-container {
+    flex: 1;
+    margin: 0 !important;
+    display: flex;
+    justify-content: flex-start !important;
+    text-align: left;
+}
+
+.employment-toolbar .compact-tabs {
+    margin: 0 !important;
+    padding: 6px !important;
+}
+
+.employment-tabs {
+    flex-wrap: wrap;
+    row-gap: 6px;
+    justify-content: flex-start !important;
+    width: 100%;
+}
+
+/* Education address row 2/3 + 1/3 */
+.edu-address-row {
+    grid-template-columns: 2fr 1fr;
+}
+
+.input-with-prefix {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #ffffff;
+    height: 32px;
+}
+
+.input-prefix {
+    background: #f3f4f6;
+    padding: 0 10px;
+    font-size: 12px;
+    color: #64748b;
+    border-right: 1px solid #e5e7eb;
+    height: 100%;
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+}
+
+.input-with-prefix .compact-input {
+    border: 0 !important;
+    height: 100% !important;
+    padding: 4px 8px !important;
+}
+
+/* File upload button + filename */
+.file-upload {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+}
+
+.file-upload .file-input {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+    pointer-events: none;
+}
+
+.file-upload .file-btn {
+    background: #2563eb;
+    color: #fff;
+    border: none;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.file-upload .file-name {
+    font-size: 12px;
+    color: #64748b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 180px;
+}
+
+/* File preview pill (ecourt + identification) */
+.file-preview-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    margin-top: 4px;
+    color: #0f172a;
+}
+
+.file-preview-pill i {
+    font-size: 10px;
+}
+
+.file-preview-link {
+    background: transparent;
+    border: none;
+    padding: 0;
+    color: #2563eb;
+    font-weight: 600;
+    font-size: 11px;
+    line-height: 1.2;
+    cursor: pointer;
+    text-decoration: none;
+}
+
+.file-preview-link:hover,
+.file-preview-link:focus {
+    text-decoration: underline;
+    color: #1d4ed8;
+    outline: none;
+}
+
+.checkbox-group {
+    display: flex;
+    gap: 20px;
+}
+
+@media (max-width: 768px) {
+    .checkbox-group {
+        flex-direction: column;
+        gap: 8px;
+    }
+}
+
+@media (max-width: 992px) {
+    .education-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .education-count {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .employment-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .employment-count {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .edu-address-row {
+        grid-template-columns: 1fr;
+    }
+
+    .file-upload {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+
+
+.education-tab,
+.employment-tab,
+.identification-tab {
+    border-radius: 999px;
+    font-weight: 700;
+}
+
+.education-tab.active,
+.employment-tab.active,
+.identification-tab.active {
+    box-shadow: 0 6px 16px rgba(37, 99, 235, 0.25);
+}
+
+.tabs-container {
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    box-shadow: 0 6px 16px rgba(15, 23, 42, 0.05);
+}
+
+.btn-primary {
+    border-radius: 999px;
+    font-weight: 700;
+}
+
+.btn-secondary,
+.btn-outline {
+    border-radius: 999px;
+    font-weight: 600;
+}
+/* ============================================
    CHECKBOXES & RADIO BUTTONS
 ============================================ */
 .form-check.normal-checkbox {
@@ -886,6 +1339,83 @@ body.candidate-page {
 }
 
 /* ============================================
+   FILE UPLOAD BOX (CANDIDATE FORMS)
+============================================ */
+.file-upload-box {
+    border: 1.5px dashed #cbd5f5;
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.file-upload-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.file-upload-btn,
+.file-replace-link {
+    background: #2563eb;
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.file-replace-link {
+    background: #0f172a;
+}
+
+.file-upload-name {
+    font-size: 12px;
+    color: #475569;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 240px;
+}
+
+.file-upload-error {
+    color: #dc2626;
+    font-size: 11px;
+    min-height: 12px;
+}
+
+.file-upload-name {
+    font-size: 12px;
+    color: #475569;
+    font-weight: 500;
+}
+
+.file-upload-name.preview-btn {
+    background: transparent;
+    border: none;
+    padding: 0;
+    color: #2563eb;
+    font-weight: 600;
+    text-decoration: underline;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.file-upload-name.preview-btn:hover,
+.file-upload-name.preview-btn:focus {
+    color: #1d4ed8;
+    outline: none;
+}
+
+/* ============================================
    UTILITY CLASSES
 ============================================ */
 .col-span-2 {
@@ -924,6 +1454,40 @@ body.candidate-page {
     color: #6b7280;
     font-size: 12px;
     margin-top: 4px;
+}
+
+/* Horizontal field layout (contact) */
+.horizontal-field {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.horizontal-field label {
+    width: 120px;
+    font-size: 12px;
+    font-weight: 500;
+    flex-shrink: 0;
+    color: #374151;
+}
+
+.horizontal-field .field-input {
+    flex: 1;
+}
+
+.phone-group {
+    display: flex;
+    gap: 8px;
+    flex: 1;
+}
+
+.phone-group select {
+    width: 80px;
+}
+
+.phone-group input {
+    flex: 1;
 }
 
 /* ============================================
@@ -1260,6 +1824,10 @@ body.candidate-page {
     .form-grid {
         grid-template-columns: repeat(3, 1fr);
     }
+
+    .form-grid-4 {
+        grid-template-columns: repeat(3, 1fr);
+    }
 }
 
 @media (max-width: 992px) {
@@ -1281,6 +1849,19 @@ body.candidate-page {
     .form-row-3 {
         grid-template-columns: repeat(2, 1fr);
     }
+
+    .form-row-4 {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .basic-photo-cell {
+        grid-column: span 2;
+        justify-self: center;
+    }
+
+    .form-grid-4 {
+        grid-template-columns: repeat(2, 1fr);
+    }
 }
 
 /* ============================================
@@ -1298,6 +1879,20 @@ body.candidate-page {
     .form-grid,
     .form-row-3,
     .form-row-2 {
+        grid-template-columns: 1fr !important;
+        gap: 12px !important;
+    }
+
+    .form-row-4 {
+        grid-template-columns: 1fr !important;
+        gap: 12px !important;
+    }
+
+    .basic-photo-cell {
+        grid-column: auto !important;
+    }
+
+    .form-grid-4 {
         grid-template-columns: 1fr !important;
         gap: 12px !important;
     }
@@ -1488,6 +2083,17 @@ body.candidate-page {
     min-height: 60px !important;
 }
 
+.education-card-header {
+    padding: 8px 12px;
+    border-radius: 10px 10px 0 0;
+}
+
+.education-card-header h6 {
+    font-size: 12px;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+}
+
 /* Make file upload labels smaller */
 .candidate-form.compact-form .education-card .compact-control label.compact-label {
     font-size: 11px !important;
@@ -1604,6 +2210,15 @@ body.candidate-page {
     margin-bottom: 16px;
 }
 
+/* 4-column row with fixed photo width */
+.form-row-4 {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr) 120px;
+    gap: 16px;
+    margin-bottom: 16px;
+    align-items: start;
+}
+
 /* 2-column grid (already exists as .form-row-2) */
 .form-row-2 {
     display: grid;
@@ -1641,6 +2256,10 @@ body.candidate-page {
     .form-grid {
         grid-template-columns: repeat(3, 1fr);
     }
+
+    .form-row-4 {
+        grid-template-columns: repeat(2, 1fr);
+    }
 }
 
 @media (max-width: 768px) {
@@ -1650,7 +2269,8 @@ body.candidate-page {
     
     .form-grid,
     .form-row-3,
-    .form-row-2 {
+    .form-row-2,
+    .form-row-4 {
         grid-template-columns: repeat(2, 1fr);
     }
 }
@@ -1659,7 +2279,8 @@ body.candidate-page {
     .form-row-5,
     .form-grid,
     .form-row-3,
-    .form-row-2 {
+    .form-row-2,
+    .form-row-4 {
         grid-template-columns: 1fr;
     }
 }
@@ -1710,6 +2331,94 @@ body.candidate-page {
 /* Spacing utilities */
 .mt-3 { margin-top: 16px; }
 .mb-3 { margin-bottom: 16px; }
+
+/* ============================================
+   FIXED FORM LAYOUT (EDUCATION/EMPLOYMENT/IDENTIFICATION)
+============================================ */
+body.candidate-page.cr-fixed-forms {
+    --global-footer-height: 32px;
+    height: 100vh;
+    overflow: hidden;
+}
+
+body.candidate-page.cr-fixed-forms .app-shell {
+    height: calc(100vh - var(--header-height) - var(--global-footer-height));
+    overflow: hidden;
+}
+
+body.candidate-page.cr-fixed-forms .main {
+    height: calc(100vh - var(--header-height) - var(--global-footer-height));
+    overflow: hidden;
+    padding-bottom: 0;
+}
+
+body.candidate-page.cr-fixed-forms .page-area {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding-bottom: 0;
+    box-sizing: border-box;
+}
+
+body.candidate-page.cr-fixed-forms .candidate-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    box-sizing: border-box;
+}
+
+body.candidate-page.cr-fixed-forms #page-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+body.candidate-page.cr-fixed-forms .candidate-form.cr-fixed-form {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-bottom: 12px;
+}
+
+body.candidate-page.cr-fixed-forms .candidate-form.cr-fixed-form .form-footer {
+    position: sticky;
+    bottom: 0;
+    background: var(--bg-card);
+    margin-top: auto;
+    padding-top: 12px;
+    padding-bottom: 12px;
+    border-top: 1px solid rgba(148, 163, 184, 0.22);
+    z-index: 20;
+    box-shadow: 0 -8px 18px rgba(15, 23, 42, 0.08);
+}
+
+body.candidate-page.cr-fixed-forms .education-toolbar,
+body.candidate-page.cr-fixed-forms .employment-toolbar,
+body.candidate-page.cr-fixed-forms .identification-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 15;
+    background: var(--bg-card);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+/* Responsive tabs: horizontal scroll on mobile */
+@media (max-width: 768px) {
+    body.candidate-page.cr-fixed-forms .education-tabs,
+    body.candidate-page.cr-fixed-forms .employment-tabs,
+    body.candidate-page.cr-fixed-forms .identification-tabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        white-space: nowrap;
+        -webkit-overflow-scrolling: touch;
+    }
+}
 
 /* Basic top grid layout */
 .basic-top-grid {

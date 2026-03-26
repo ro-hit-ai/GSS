@@ -1,8 +1,12 @@
 <?php
 header('Content-Type: application/json');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: 0');
 
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/queue_visibility.php';
 
 auth_require_login('verifier');
 
@@ -18,6 +22,9 @@ try {
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     while ($stmt->nextRowset()) {
     }
+
+    $allowedSet = verifier_allowed_sections_set_from_session($pdo);
+    $rows = verifier_filter_actionable_queue_rows($pdo, $rows, $allowedSet);
 
     // Limit to top 10 tasks
     if (count($rows) > 10) {

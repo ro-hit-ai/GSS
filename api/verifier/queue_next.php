@@ -4,36 +4,12 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../config/env.php';
+require_once __DIR__ . '/queue_visibility.php';
 
 auth_require_login('verifier');
 
 auth_session_start();
 $userId = (int)($_SESSION['auth_user_id'] ?? 0);
-
-function verifier_allowed_sections_set(): array {
-    $raw = isset($_SESSION['auth_allowed_sections']) ? (string)$_SESSION['auth_allowed_sections'] : '';
-    $raw = strtolower(trim($raw));
-    if ($raw === '*') return ['*' => true];
-    if ($raw === '') return [];
-    $parts = preg_split('/[\s,|]+/', $raw) ?: [];
-    $out = [];
-    foreach ($parts as $p) {
-        $k = strtolower(trim((string)$p));
-        if ($k === '') continue;
-        $out[$k] = true;
-    }
-    return $out;
-}
-
-function verifier_can_group(array $set, string $groupKey): bool {
-    if (isset($set['*'])) return true;
-    $g = strtoupper(trim($groupKey));
-    $need = $g === 'BASIC' ? ['basic', 'id', 'contact'] : ($g === 'EDUCATION' ? ['education', 'employment', 'reference'] : []);
-    foreach ($need as $k) {
-        if (isset($set[$k])) return true;
-    }
-    return false;
-}
 
 $input = json_decode(file_get_contents('php://input'), true) ?: [];
 $clientId = isset($input['client_id']) ? (int)$input['client_id'] : 0;
@@ -59,14 +35,13 @@ try {
         exit;
     }
 
-    $allowedSet = verifier_allowed_sections_set();
-    if (!verifier_can_group($allowedSet, $groupKey)) {
+    $pdo = getDB();
+    $allowedSet = verifier_allowed_sections_set_from_session($pdo);
+    if (!verifier_can_group_by_sections($allowedSet, $groupKey)) {
         http_response_code(403);
         echo json_encode(['status' => 0, 'message' => 'Access denied']);
         exit;
     }
-
-    $pdo = getDB();
 
     // Pool vs Dedicated assignment rule (client_id + group_key)
     try {
@@ -99,6 +74,7 @@ try {
     $mineRows = $mine->fetchAll(PDO::FETCH_ASSOC) ?: [];
     while ($mine->nextRowset()) {
     }
+    $mineRows = verifier_filter_actionable_queue_rows($pdo, $mineRows, $allowedSet);
 
     if (!empty($mineRows)) {
         $row = $mineRows[0];
@@ -149,6 +125,7 @@ try {
     $availRows = $avail->fetchAll(PDO::FETCH_ASSOC) ?: [];
     while ($avail->nextRowset()) {
     }
+    $availRows = verifier_filter_actionable_queue_rows($pdo, $availRows, $allowedSet);
 
     if (empty($availRows)) {
         $resp = ['status' => 1, 'message' => 'No pending cases for this group', 'data' => ['url' => null]];
@@ -208,6 +185,26 @@ try {
         }
         echo json_encode($resp);
         exit;
+    }
+
+    // Ensure dashboard counters reflect claim immediately even if SP doesn't set status fields.
+    try {
+        $sync = $pdo->prepare(
+            "UPDATE Vati_Payfiller_Verifier_Group_Queue
+             SET assigned_user_id = COALESCE(assigned_user_id, ?),
+                 claimed_at = COALESCE(claimed_at, NOW()),
+                 status = CASE
+                     WHEN COALESCE(LOWER(TRIM(status)), '') = 'followup' THEN status
+                     WHEN completed_at IS NULL THEN 'in_progress'
+                     ELSE status
+                 END
+             WHERE case_id = ?
+               AND UPPER(TRIM(group_key)) = ?
+               AND completed_at IS NULL"
+        );
+        $sync->execute([$userId, $caseIdInt, $groupKey]);
+    } catch (Throwable $e) {
+        // ignore
     }
 
     $appId = trim((string)($row['application_id'] ?? ''));

@@ -32,12 +32,23 @@ try {
 
     $pdo = getDB();
 
+    // Ensure queue rows exist so pending counts reflect newly submitted cases.
+    try {
+        $seed = $pdo->prepare('CALL SP_Vati_Payfiller_VAL_EnsureQueue(?)');
+        $seed->execute([null]);
+        while ($seed->nextRowset()) {
+        }
+    } catch (Throwable $e) {
+        // continue with counts
+    }
+
     $stmt = $pdo->prepare(
         "SELECT\n" .
-        "  SUM(CASE WHEN q.completed_at IS NULL AND q.assigned_user_id IS NULL THEN 1 ELSE 0 END) AS pending,\n" .
-        "  SUM(CASE WHEN q.completed_at IS NULL AND q.assigned_user_id IS NOT NULL THEN 1 ELSE 0 END) AS in_progress,\n" .
+        "  SUM(CASE WHEN q.completed_at IS NULL AND q.assigned_user_id IS NULL AND UPPER(TRIM(COALESCE(c.case_status,''))) NOT IN ('STOP_BGV','PENDING_CANDIDATE','CANDIDATE_PENDING','DRAFT') THEN 1 ELSE 0 END) AS pending,\n" .
+        "  SUM(CASE WHEN q.completed_at IS NULL AND q.assigned_user_id IS NOT NULL AND UPPER(TRIM(COALESCE(c.case_status,''))) NOT IN ('STOP_BGV','PENDING_CANDIDATE','CANDIDATE_PENDING','DRAFT') THEN 1 ELSE 0 END) AS in_progress,\n" .
         "  SUM(CASE WHEN q.completed_at IS NOT NULL AND DATE(q.completed_at) = CURDATE() THEN 1 ELSE 0 END) AS completed_today\n" .
-        "FROM Vati_Payfiller_Validator_Queue q"
+        "FROM Vati_Payfiller_Validator_Queue q\n" .
+        "LEFT JOIN Vati_Payfiller_Cases c ON c.case_id = q.case_id"
     );
     $stmt->execute();
     $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];

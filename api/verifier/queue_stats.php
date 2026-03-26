@@ -1,39 +1,19 @@
 <?php
 header('Content-Type: application/json');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: 0');
 
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/queue_visibility.php';
 
 auth_require_login('verifier');
 
 auth_session_start();
 $userId = (int)($_SESSION['auth_user_id'] ?? 0);
 $clientId = 0;
-
-function verifier_allowed_sections_set(): array {
-    $raw = isset($_SESSION['auth_allowed_sections']) ? (string)$_SESSION['auth_allowed_sections'] : '';
-    $raw = strtolower(trim($raw));
-    if ($raw === '*') return ['*' => true];
-    if ($raw === '') return [];
-    $parts = preg_split('/[\s,|]+/', $raw) ?: [];
-    $out = [];
-    foreach ($parts as $p) {
-        $k = strtolower(trim((string)$p));
-        if ($k === '') continue;
-        $out[$k] = true;
-    }
-    return $out;
-}
-
-function verifier_can_group(array $set, string $groupKey): bool {
-    if (isset($set['*'])) return true;
-    $g = strtoupper(trim($groupKey));
-    $need = $g === 'BASIC' ? ['basic', 'id', 'contact'] : ($g === 'EDUCATION' ? ['education', 'employment', 'reference'] : []);
-    foreach ($need as $k) {
-        if (isset($set[$k])) return true;
-    }
-    return false;
-}
+$scope = strtolower(trim((string)($_GET['scope'] ?? 'all'))); // all|mine
 
 try {
     $pdo = getDB();
@@ -44,25 +24,68 @@ try {
     while ($ensure->nextRowset()) {
     }
 
-    $stmt = $pdo->prepare(
-        'SELECT group_key, ' .
-        'SUM(CASE WHEN completed_at IS NULL AND assigned_user_id IS NULL THEN 1 ELSE 0 END) AS pending, ' .
-        'SUM(CASE WHEN completed_at IS NULL AND assigned_user_id = ? AND LOWER(TRIM(status)) = \'followup\' THEN 1 ELSE 0 END) AS followup, ' .
-        'SUM(CASE WHEN completed_at IS NULL AND assigned_user_id = ? AND (LOWER(TRIM(status)) <> \'followup\' OR status IS NULL OR TRIM(status) = \'\') THEN 1 ELSE 0 END) AS in_progress, ' .
-        'SUM(CASE WHEN completed_at IS NOT NULL AND assigned_user_id = ? THEN 1 ELSE 0 END) AS completed_total, ' .
-        'SUM(CASE WHEN completed_at IS NOT NULL AND assigned_user_id = ? AND DATE(completed_at) = CURDATE() THEN 1 ELSE 0 END) AS completed_today ' .
-        'FROM Vati_Payfiller_Verifier_Group_Queue ' .
-        'WHERE (? = 0 OR client_id = ?) ' .
-        'GROUP BY group_key'
+    $rowStmt = $pdo->prepare(
+        'SELECT id, case_id, application_id, client_id, group_key, status, assigned_user_id, completed_at '
+        . 'FROM Vati_Payfiller_Verifier_Group_Queue '
+        . 'WHERE (? = 0 OR client_id = ?)'
     );
-    $stmt->execute([$userId, $userId, $userId, $userId, $clientId, $clientId]);
-    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $rowStmt->execute([$clientId, $clientId]);
+    $queueRows = $rowStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-    $allowedSet = verifier_allowed_sections_set();
-    $rows = array_values(array_filter($rows, function ($r) use ($allowedSet) {
-        $g = isset($r['group_key']) ? (string)$r['group_key'] : '';
-        return verifier_can_group($allowedSet, $g);
-    }));
+    $allowedSet = verifier_allowed_sections_set_from_session($pdo);
+    $queueRows = verifier_filter_actionable_queue_rows($pdo, $queueRows, $allowedSet);
+
+    $rowsByGroup = [];
+    foreach ($queueRows as $r) {
+        $g = strtoupper(trim((string)($r['group_key'] ?? '')));
+        if ($g === '') continue;
+        if (!isset($rowsByGroup[$g])) {
+            $rowsByGroup[$g] = [
+                'group_key' => $g,
+                'pending' => 0,
+                'followup' => 0,
+                'in_progress' => 0,
+                'completed_total' => 0,
+                'completed_today' => 0
+            ];
+        }
+
+        $assigned = isset($r['assigned_user_id']) ? (int)$r['assigned_user_id'] : 0;
+        $status = strtolower(trim((string)($r['status'] ?? '')));
+        $completedAt = trim((string)($r['completed_at'] ?? ''));
+
+        if ($completedAt !== '') {
+            if ($assigned === $userId) {
+                $rowsByGroup[$g]['completed_total']++;
+                if (substr($completedAt, 0, 10) === date('Y-m-d')) {
+                    $rowsByGroup[$g]['completed_today']++;
+                }
+            }
+            continue;
+        }
+
+        // "mine" should include:
+        // - unassigned pending rows (actionable for this verifier)
+        // - rows assigned to current verifier
+        // and exclude rows assigned to other verifiers.
+        if ($scope === 'mine' && $assigned !== 0 && $assigned !== $userId) {
+            continue;
+        }
+
+        if ($assigned === 0) {
+            $rowsByGroup[$g]['pending']++;
+            continue;
+        }
+        if ($assigned === $userId && $status === 'followup') {
+            $rowsByGroup[$g]['followup']++;
+            continue;
+        }
+        if ($assigned === $userId) {
+            $rowsByGroup[$g]['in_progress']++;
+        }
+    }
+
+    $rows = array_values($rowsByGroup);
 
     echo json_encode(['status' => 1, 'message' => 'ok', 'data' => $rows]);
 

@@ -132,6 +132,8 @@ document.addEventListener('DOMContentLoaded', function () {
         var set = {};
         raw.split(/[\s,|]+/).forEach(function (p) {
             var k = String(p || '').trim();
+            if (k === 'social_media' || k === 'social-media') k = 'socialmedia';
+            if (k === 'e_court' || k === 'e-court') k = 'ecourt';
             if (k) set[k] = true;
         });
 
@@ -149,6 +151,8 @@ document.addEventListener('DOMContentLoaded', function () {
             if (!cb || cb.disabled) return;
             if (!cb.checked) return;
             var k = String(cb.value || '').toLowerCase().trim();
+            if (k === 'social_media' || k === 'social-media') k = 'socialmedia';
+            if (k === 'e_court' || k === 'e-court') k = 'ecourt';
             if (!k) return;
             out[k] = true;
         });
@@ -237,6 +241,24 @@ document.addEventListener('DOMContentLoaded', function () {
             }
             if (!enabled) cb.checked = false;
         });
+
+        // Validator should always include these two components.
+        if (enabled && r === 'validator') {
+            ensureValidatorExtraSections();
+        }
+    }
+
+    function ensureValidatorExtraSections() {
+        if (!form) return;
+        var boxes = form.querySelectorAll('input[name="allowed_sections[]"]');
+        Array.prototype.slice.call(boxes).forEach(function (cb) {
+            var k = String(cb && cb.value ? cb.value : '').toLowerCase().trim();
+            if (k === 'social_media' || k === 'social-media') k = 'socialmedia';
+            if (k === 'e_court' || k === 'e-court') k = 'ecourt';
+            if (k === 'socialmedia' || k === 'ecourt') {
+                cb.checked = true;
+            }
+        });
     }
 
     function loadUserForEdit(userIdToLoad) {
@@ -315,7 +337,7 @@ document.addEventListener('DOMContentLoaded', function () {
         .then(function () {
             if (userId > 0) {
                 return loadUserForEdit(userId);
-            }
+            } 
         })
         .catch(function () {
         });
@@ -348,6 +370,17 @@ document.addEventListener('DOMContentLoaded', function () {
     form.addEventListener('submit', function (e) {
         e.preventDefault();
         setMessage('', '');
+
+        var roleNow = '';
+        try {
+            var roleEl = form.querySelector('[name="role"]');
+            roleNow = roleEl ? String(roleEl.value || '').toLowerCase().trim() : '';
+        } catch (e2) {
+            roleNow = '';
+        }
+        if (roleNow === 'validator') {
+            ensureValidatorExtraSections();
+        }
 
         var fd = new FormData(form);
 

@@ -28,12 +28,19 @@ try {
 
     $pdo = getDB();
 
-    // New SP. If not installed, fallback: return all active verification types.
+    // New SP. If not installed OR returns no rows, fallback to all active verification types.
     try {
         $stmt = $pdo->prepare('CALL SP_Vati_Payfiller_GetVerificationTypesByJobRole(?)');
         $stmt->execute([$jobRoleId]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
         while ($stmt->nextRowset()) {
+        }
+        if (!is_array($rows) || count($rows) === 0) {
+            $stmt2 = $pdo->prepare('CALL SP_Vati_Payfiller_GetAllActiveVerificationTypes()');
+            $stmt2->execute();
+            $rows = $stmt2->fetchAll(PDO::FETCH_ASSOC);
+            while ($stmt2->nextRowset()) {
+            }
         }
     } catch (Throwable $e) {
         $stmt2 = $pdo->prepare('CALL SP_Vati_Payfiller_GetAllActiveVerificationTypes()');
@@ -43,15 +50,40 @@ try {
         }
     }
 
+    // Fallback map if SP does not return required_count in this environment.
+    $requiredByTypeId = [];
+    try {
+        $rcStmt = $pdo->prepare(
+            'SELECT verification_type_id, required_count
+             FROM Vati_Payfiller_Job_Role_Verification_Types
+             WHERE job_role_id = ?'
+        );
+        $rcStmt->execute([$jobRoleId]);
+        $rcRows = $rcStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        foreach ($rcRows as $rr) {
+            $vtId = isset($rr['verification_type_id']) ? (int)$rr['verification_type_id'] : 0;
+            $rc = isset($rr['required_count']) ? (int)$rr['required_count'] : 1;
+            if ($vtId > 0) $requiredByTypeId[$vtId] = $rc > 0 ? $rc : 1;
+        }
+    } catch (Throwable $e) {
+        $requiredByTypeId = [];
+    }
+
     $out = [];
     foreach ($rows as $r) {
+        $vtId = isset($r['verification_type_id']) ? (int)$r['verification_type_id'] : 0;
+        $req = isset($r['required_count']) ? (int)$r['required_count'] : 1;
+        if ($vtId > 0 && isset($requiredByTypeId[$vtId])) {
+            $req = (int)$requiredByTypeId[$vtId];
+        }
+        if ($req <= 0) $req = 1;
         $out[] = [
-            'verification_type_id' => isset($r['verification_type_id']) ? (int)$r['verification_type_id'] : 0,
+            'verification_type_id' => $vtId,
             'type_name' => (string)($r['type_name'] ?? ''),
             'type_category' => (string)($r['type_category'] ?? ''),
             'is_enabled' => isset($r['is_enabled']) ? (int)$r['is_enabled'] : 0,
             'sort_order' => isset($r['sort_order']) ? (int)$r['sort_order'] : 0,
-            'required_count' => isset($r['required_count']) ? (int)$r['required_count'] : 1,
+            'required_count' => $req,
         ];
     }
 

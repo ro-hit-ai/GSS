@@ -163,8 +163,8 @@ try {
                     throw new ValidationException("Invalid file type for Document {$documentIndex}. Allowed: PDF, JPG, JPEG, PNG");
                 }
 
-                if ($fileSize > 5 * 1024 * 1024) {
-                    throw new ValidationException("File too large for Document {$documentIndex}. Maximum 5MB allowed");
+                if ($fileSize > 10 * 1024 * 1024) {
+                    throw new ValidationException("File too large for Document {$documentIndex}. Maximum 10MB allowed");
                 }
 
                 $newFile = "doc_{$application_id}_{$documentIndex}_" . time() . "_" . uniqid() . "." . $ext;

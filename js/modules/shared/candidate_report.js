@@ -2,6 +2,8 @@
     var REPORT_PAYLOAD = null;
     var CURRENT_APP_ID = '';
     var CURRENT_SECTION_KEY = '';
+    var LAST_COMPONENT_SECTION_KEY = '';
+    var CURRENT_MODAL_REASON_TYPE = '';
     var TL_CACHE = [];
     var TL_ACTIVE_FILTER = 'all';
 
@@ -27,6 +29,63 @@
         } catch (e) {
         }
     }
+
+function closeBsModal(id) {
+    try {
+        var el = document.getElementById(id);
+        if (!el) return;
+
+        // Get Bootstrap modal instance
+        if (window.bootstrap && window.bootstrap.Modal) {
+            var modal = window.bootstrap.Modal.getInstance(el);
+            if (modal) {
+                modal.hide();
+            } else {
+                // Manual hide if instance doesn't exist
+                el.classList.remove('show');
+                el.style.display = 'none';
+                el.setAttribute('aria-hidden', 'true');
+            }
+        } else {
+            el.classList.remove('show');
+            el.style.display = 'none';
+            el.setAttribute('aria-hidden', 'true');
+        }
+
+        // Aggressive cleanup of all modal artifacts
+        setTimeout(function () {
+            // Remove all backdrops
+            document.querySelectorAll('.modal-backdrop').forEach(function (b) {
+                if (b && b.parentNode) {
+                    b.parentNode.removeChild(b);
+                }
+            });
+            
+            // Reset body and html classes/styles
+            document.body.classList.remove('modal-open');
+            document.documentElement.classList.remove('modal-open');
+            document.body.style.removeProperty('padding-right');
+            document.body.style.removeProperty('overflow');
+            document.documentElement.style.removeProperty('overflow');
+            document.documentElement.style.removeProperty('padding-right');
+            
+            // Ensure no modals are still visible
+            document.querySelectorAll('.modal.show').forEach(function (m) {
+                m.classList.remove('show');
+                m.style.display = 'none';
+                m.setAttribute('aria-hidden', 'true');
+            });
+
+            // Restore validator overflow lock if needed
+            if (document.querySelector('.cr-report-root.cr-role-validator') &&
+                String(qs('print') || '') !== '1') {
+                document.body.style.overflow = 'hidden';
+            }
+        }, 100);
+    } catch (e) {
+        try { console.warn('Error closing modal:', e); } catch (_e2) {}
+    }
+}
 
     function escHtml(s) {
         return String(s == null ? '' : s)
@@ -241,7 +300,9 @@
     }
 
     function getRole() {
-        return String(qs('role') || '').toLowerCase().trim();
+        var q = String(qs('role') || '').toLowerCase().trim();
+        if (q) return q;
+        return String(window.CURRENT_ROLE || '').toLowerCase().trim();
     }
 
     function setBoxMessage(id, text, type) {
@@ -259,11 +320,16 @@
     }
 
     function allowedSectionsSet() {
+        var role = getRole();
         var raw = (window.ALLOWED_SECTIONS || '').toString().toLowerCase().trim();
-        if (!raw || raw === '*') return { '*': true };
+        if (raw === '*') return { '*': true };
+        if (!raw) {
+            if (role === 'verifier' || role === 'validator' || role === 'db_verifier') return {};
+            return { '*': true };
+        }
         var out = {};
         raw.split(/[\s,|]+/).forEach(function (p) {
-            var k = String(p || '').trim();
+            var k = normSection(String(p || '').trim());
             if (k) out[k] = true;
         });
         return out;
@@ -276,6 +342,34 @@
         return !!(k && allowSet[k]);
     }
 
+    function displayCaseStatus(appStatus, caseStatus) {
+        var a = String(appStatus || '').trim();
+        var c = String(caseStatus || '').trim();
+        var role = getRole();
+        var cu = c.toUpperCase();
+        if (cu === 'REJECTED' || cu === 'STOP_BGV' || cu === 'APPROVED' || cu === 'VERIFIED' || cu === 'COMPLETED' || cu === 'CLEAR') {
+            return c;
+        }
+        var au = a.toUpperCase();
+        if (role === 'validator' || role === 'db_verifier') {
+            if (cu === 'PENDING_VERIFIER') return 'Pending Verifier';
+            if (cu === 'PENDING_QA') return 'Pending QA';
+            if (cu === 'PENDING_VALIDATOR' || cu === 'IN_PROGRESS') return 'Pending Validator';
+            if (cu === 'PENDING_CANDIDATE' || cu === 'CANDIDATE_PENDING' || cu === 'INVITED') {
+                if (au === 'SUBMITTED' || au === 'PENDING_VALIDATOR') return 'Pending Validator';
+            }
+            if (au === 'SUBMITTED') return 'Pending Validator';
+        }
+        if (role === 'verifier') {
+            if (cu === 'PENDING_VERIFIER' || au === 'PENDING_VERIFIER') return 'Pending Verifier';
+            if (cu === 'PENDING_QA' || au === 'PENDING_QA') return 'Pending QA';
+        }
+        if (role === 'qa' || role === 'team_lead') {
+            if (cu === 'PENDING_QA' || au === 'PENDING_QA') return 'Pending QA';
+        }
+        return c || a;
+    }
+
     function sectionLabel(section) {
         section = normSection(section);
         if (section === 'basic') return 'Basic';
@@ -283,12 +377,23 @@
         if (section === 'education') return 'Education';
         if (section === 'employment') return 'Employment';
         if (section === 'reference') return 'Reference';
+        if (section === 'socialmedia') return 'Social Media';
         if (section === 'ecourt') return 'E-court';
         if (section === 'database') return 'Database';
         if (section === 'driving_licence') return 'Driving Licence';
         if (section === 'contact') return 'Contact';
         if (section === 'reports') return 'Reports';
         return section ? (section.charAt(0).toUpperCase() + section.slice(1)) : '';
+    }
+
+    function canUseComponentWorkflowRole(role) {
+        role = String(role || '').toLowerCase().trim();
+        return (role === 'verifier' || role === 'validator' || role === 'db_verifier' || role === 'qa' || role === 'team_lead');
+    }
+
+    function canTakeActionRole(role) {
+        role = String(role || '').toLowerCase().trim();
+        return canUseComponentWorkflowRole(role) || role === 'gss_admin' || role === 'client_admin';
     }
 
     function setCompNavActive(section) {
@@ -304,7 +409,7 @@
         section = String(section || '').toLowerCase().trim();
         if (!section || section === 'timeline') return false;
         var role = getRole();
-        if (!(role === 'verifier' || role === 'validator' || role === 'db_verifier' || role === 'qa' || role === 'team_lead')) return false;
+        if (!canTakeActionRole(role)) return false;
         // Only for real components (skip reports/contact if you later remove them)
         return true;
     }
@@ -459,7 +564,7 @@
 
     function renderComponentNav(payload) {
         var role = getRole();
-        if (!(role === 'verifier' || role === 'validator' || role === 'db_verifier')) return;
+        if (!canTakeActionRole(role)) return;
 
         var wrap = document.getElementById('cvComponentNav');
         var host = document.getElementById('cvComponentNavItems');
@@ -499,6 +604,7 @@
     function getAssignedComponentKeys(payload) {
         payload = payload || {};
         var d = payload.data || payload;
+        var role = getRole();
         var list = Array.isArray(d.assigned_components) ? d.assigned_components : [];
         var out = {};
         list.forEach(function (r) {
@@ -506,9 +612,37 @@
             k = normSection(k);
             if (k) out[k] = true;
         });
-        // Common sections always visible
-        out.basic = true;
-        out.id = true;
+
+        // Defensive union: if payload has section data but assigned_components is stale/partial,
+        // keep those sections visible for staff users to avoid sidebar dropping valid sections.
+        if (d && typeof d === 'object') {
+            if (Array.isArray(d.identification) && d.identification.length) out.id = true;
+            if (Array.isArray(d.education) && d.education.length) out.education = true;
+            if (Array.isArray(d.employment) && d.employment.length) out.employment = true;
+
+            if (d.basic && typeof d.basic === 'object' && Object.keys(d.basic).length) out.basic = true;
+            if (d.contact && typeof d.contact === 'object' && Object.keys(d.contact).length) out.contact = true;
+            if (d.reference && typeof d.reference === 'object' && Object.keys(d.reference).length) out.reference = true;
+            if (d.social_media && typeof d.social_media === 'object' && Object.keys(d.social_media).length) out.socialmedia = true;
+            if (d.ecourt && typeof d.ecourt === 'object' && Object.keys(d.ecourt).length) out.ecourt = true;
+            if (d.authorization && typeof d.authorization === 'object' && Object.keys(d.authorization).length) out.reports = true;
+        }
+
+        // Keep validator-rejected components visible for verifier sidebar even when
+        // assigned_components is filtered by queue group.
+        if (role === 'verifier' && d && d.component_workflow && typeof d.component_workflow === 'object') {
+            Object.keys(d.component_workflow).forEach(function (wk) {
+                var k = normSection(wk);
+                if (!k) return;
+                var row = d.component_workflow[wk] || {};
+                var validator = row && row.validator ? row.validator : null;
+                var vStatus = validator && validator.status ? String(validator.status).toLowerCase().trim() : '';
+                if (vStatus === 'rejected') {
+                    out[k] = true;
+                }
+            });
+        }
+
         return Object.keys(out);
     }
 
@@ -518,6 +652,7 @@
         if (s === 'identification') return 'id';
         if (s === 'address') return 'contact';
         if (s === 'references') return 'reference';
+        if (s === 'social_media' || s === 'social-media') return 'socialmedia';
         if (s === 'general') return '';
         return s;
     }
@@ -526,9 +661,20 @@
         section = normSection(section);
         if (!section || section === 'all') return items;
         return (items || []).filter(function (it) {
-            var s = normSection(it && it.section);
+            var s = normSection(it && (it.section_key || it.section));
             return s === section;
         });
+    }
+
+    function isWholeCaseCompletionItem(it) {
+        var sec = normSection(it && (it.section_key || it.section));
+        var msg = String(it && it.message ? it.message : '').toLowerCase();
+        if (sec === 'case_status') return true;
+        if (msg.indexOf('case action:') !== -1) return true;
+        if (msg.indexOf('completed case') !== -1) return true;
+        if (msg.indexOf('completed the case') !== -1) return true;
+        if (msg.indexOf('completed the group') !== -1) return true;
+        return false;
     }
 
     function renderMiniTimeline() {
@@ -611,7 +757,7 @@
                 var role = it.actor_role || '';
                 var actor = actorName || actorUser || (role ? String(role).toUpperCase() : '') || 'System';
                 var type = it.event_type || '';
-                var section = it.section || '';
+                var section = it.section_key || it.section || '';
                 var msg = it.message || '';
                 var ts = '';
                 try {
@@ -622,9 +768,13 @@
 
                 var dotTone = 'blue';
                 var tLower = String(type || '').toLowerCase();
+                var mLower = String(msg || '').toLowerCase();
                 if (tLower.indexOf('hold') !== -1) dotTone = 'amber';
                 if (tLower.indexOf('reject') !== -1) dotTone = 'red';
                 if (tLower.indexOf('approve') !== -1 || tLower.indexOf('complete') !== -1) dotTone = 'green';
+                if (mLower.indexOf('hold') !== -1) dotTone = 'amber';
+                if (mLower.indexOf('reject') !== -1) dotTone = 'red';
+                if (mLower.indexOf('approve') !== -1 || mLower.indexOf('status: approved') !== -1) dotTone = 'green';
 
                 var badges = [];
                 if (type) badges.push('<span class="badge bg-secondary" style="margin-right:6px;">' + esc(type) + '</span>');
@@ -691,8 +841,8 @@
                 return;
             }
 
-            var items = data.data || [];
-            TL_CACHE = Array.isArray(items) ? items : [];
+            var items = Array.isArray(data.data) ? data.data : [];
+            TL_CACHE = items.filter(function (it) { return !isWholeCaseCompletionItem(it); });
             host.innerHTML = timelineHtml(TL_CACHE);
             renderMiniTimeline();
 
@@ -710,7 +860,7 @@
             var badge = document.getElementById('cvNavBadgeTimeline');
             if (badge) {
                 badge.className = 'badge bg-secondary';
-                badge.textContent = String(Array.isArray(items) ? items.length : 0);
+                badge.textContent = String(Array.isArray(TL_CACHE) ? TL_CACHE.length : 0);
             }
         } catch (_e) {
             host.innerHTML = '<div style="color:#b91c1c; font-size:13px;">Network error loading timeline.</div>';
@@ -721,9 +871,16 @@
 
     function isRemarkItem(it) {
         var type = it && it.event_type ? String(it.event_type).toLowerCase().trim() : '';
-        if (type && type !== 'comment') return false;
+        var sec = remarkSectionKey(it);
+        if (!sec) return false;
+        if (type && type !== 'comment' && type !== 'update' && type !== 'action') return false;
         var msg = it && it.message ? String(it.message).trim() : '';
-        return msg !== '';
+        if (!msg) return false;
+        if (type === 'comment') return true;
+        var low = msg.toLowerCase();
+        if (low.indexOf('component status:') !== -1) return true;
+        if (low.indexOf('component action:') !== -1) return true;
+        return false;
     }
 
     function remarkSectionKey(it) {
@@ -777,7 +934,7 @@
         if (!section) return;
 
         var role = getRole();
-        if (!(role === 'verifier' || role === 'validator' || role === 'db_verifier')) return;
+        if (!canTakeActionRole(role)) return;
         if (String(qs('print') || '') === '1') return;
 
         // Create right-side chat column once
@@ -923,9 +1080,6 @@
         var host = document.getElementById('cvRemarksPanel');
         var countEl = document.getElementById('cvRemarksPanelCount');
         if (!host) return;
-
-        var role = getRole();
-        if (!(role === 'verifier' || role === 'validator' || role === 'db_verifier')) return;
 
         var list = Array.isArray(TL_CACHE) ? TL_CACHE.filter(isRemarkItem) : [];
         if (countEl) {
@@ -1441,7 +1595,7 @@
         var el = document.getElementById(id);
         if (!el) return;
         var k = String(kind || '').toLowerCase();
-        el.classList.remove('bg-success', 'bg-warning', 'bg-secondary', 'text-dark');
+        el.classList.remove('bg-success', 'bg-warning', 'bg-secondary', 'bg-danger', 'text-dark');
         if (k === 'done') {
             el.classList.add('bg-success');
             el.textContent = text || '✔';
@@ -1450,6 +1604,11 @@
         if (k === 'wip') {
             el.classList.add('bg-warning', 'text-dark');
             el.textContent = text || 'WIP';
+            return;
+        }
+        if (k === 'rejected') {
+            el.classList.add('bg-danger');
+            el.textContent = text || 'Rejected';
             return;
         }
         el.classList.add('bg-secondary');
@@ -1465,11 +1624,46 @@
         var val = String(stages && stages.validator ? stages.validator : '').toLowerCase().trim();
         var ver = String(stages && stages.verifier ? stages.verifier : '').toLowerCase().trim();
         var qa = String(stages && stages.qa ? stages.qa : '').toLowerCase().trim();
+        if (qa === 'rejected') return 'QA Rejected';
         if (qa === 'approved') return 'Completed';
+        if (ver === 'rejected') return 'Verifier Rejected';
         if (ver === 'approved') return 'Pending QA';
+        if (val === 'rejected') return 'Validator Rejected';
+        if (cand === 'rejected') return 'Candidate Rejected';
         if (val === 'approved') return 'Pending Verifier';
         if (cand === 'approved') return 'Pending Validator';
         return '';
+    }
+
+    function normalizeStageLabelForRole(stageLabel) {
+        var raw = String(stageLabel || '').trim();
+        var low = raw.toLowerCase();
+        if (low === 'pendingverifier') return 'Pending Verifier';
+        if (low === 'pendingvalidator') return 'Pending Validator';
+        if (low === 'pendingqa') return 'Pending QA';
+        return raw;
+    }
+
+    function getWorkflowComponentRow(d, componentKey) {
+        try {
+            componentKey = normSection(componentKey);
+            if (!componentKey) return null;
+            var cw = d && d.component_workflow ? d.component_workflow : null;
+            if (!cw || typeof cw !== 'object') return null;
+            if (cw[componentKey] && typeof cw[componentKey] === 'object') return cw[componentKey];
+
+            var keys = Object.keys(cw);
+            for (var i = 0; i < keys.length; i++) {
+                var rawKey = String(keys[i] || '');
+                if (normSection(rawKey) === componentKey) {
+                    var row = cw[rawKey];
+                    if (row && typeof row === 'object') return row;
+                }
+            }
+            return null;
+        } catch (_e) {
+            return null;
+        }
     }
 
     function getWorkflowStageLabel(d, componentKey) {
@@ -1477,17 +1671,8 @@
             componentKey = normSection(componentKey);
             if (!componentKey) return '';
 
-            var list = Array.isArray(d && d.assigned_components) ? d.assigned_components : [];
-            for (var i = 0; i < list.length; i++) {
-                var r = list[i] || {};
-                var k = r.component_key ? normSection(r.component_key) : '';
-                if (k === componentKey) {
-                    return r.current_stage ? String(r.current_stage) : '';
-                }
-            }
-
-            var cw = d && d.component_workflow ? d.component_workflow : null;
-            var byComp = cw && typeof cw === 'object' ? (cw[componentKey] || null) : null;
+            // Prefer workflow table status (freshest source) when available.
+            var byComp = getWorkflowComponentRow(d, componentKey);
             if (byComp && typeof byComp === 'object') {
                 var stSimple = {
                     candidate: byComp.candidate && byComp.candidate.status ? String(byComp.candidate.status) : '',
@@ -1495,7 +1680,17 @@
                     verifier: byComp.verifier && byComp.verifier.status ? String(byComp.verifier.status) : '',
                     qa: byComp.qa && byComp.qa.status ? String(byComp.qa.status) : ''
                 };
-                return computeComponentStageLabel(stSimple);
+                var fromWorkflow = normalizeStageLabelForRole(computeComponentStageLabel(stSimple));
+                if (fromWorkflow) return fromWorkflow;
+            }
+
+            var list = Array.isArray(d && d.assigned_components) ? d.assigned_components : [];
+            for (var i = 0; i < list.length; i++) {
+                var r = list[i] || {};
+                var k = r.component_key ? normSection(r.component_key) : '';
+                if (k === componentKey) {
+                    return normalizeStageLabelForRole(r.current_stage ? String(r.current_stage) : '');
+                }
             }
             return '';
         } catch (e) {
@@ -1504,17 +1699,21 @@
     }
 
     function setStageBadge(badgeId, stageLabel) {
+        stageLabel = normalizeStageLabelForRole(stageLabel);
         stageLabel = String(stageLabel || '').trim();
         if (!stageLabel) return false;
 
         var low = stageLabel.toLowerCase();
+        if (low.indexOf('rejected') !== -1) {
+            setBadge(badgeId, 'rejected', stageLabel);
+            return true;
+        }
         if (low === 'completed') {
-            setBadge(badgeId, 'done', 'Done');
+            setBadge(badgeId, 'done', 'Completed');
             return true;
         }
         if (low.indexOf('pending') === 0) {
-            var shortTxt = stageLabel.replace(/^Pending\s*/i, 'Pending');
-            setBadge(badgeId, 'wip', shortTxt);
+            setBadge(badgeId, 'wip', stageLabel);
             return true;
         }
 
@@ -1522,11 +1721,56 @@
         return true;
     }
 
+    function isValidatorRejectedOpenState(d, componentKey) {
+        try {
+            componentKey = normSection(componentKey);
+            if (!componentKey) return false;
+
+            var byComp = getWorkflowComponentRow(d, componentKey);
+            if (byComp && typeof byComp === 'object') {
+                var vfs = byComp.verifier && typeof byComp.verifier === 'object'
+                    ? String(byComp.verifier.status || '').toLowerCase().trim()
+                    : '';
+                var qas = byComp.qa && typeof byComp.qa === 'object'
+                    ? String(byComp.qa.status || '').toLowerCase().trim()
+                    : '';
+                if (vfs === 'approved' || vfs === 'rejected' || qas === 'approved' || qas === 'rejected') {
+                    return false;
+                }
+            }
+            if (byComp && byComp.validator && typeof byComp.validator === 'object') {
+                var s = String(byComp.validator.status || '').toLowerCase().trim();
+                if (s === 'rejected') return true;
+            }
+
+            var list = Array.isArray(d && d.assigned_components) ? d.assigned_components : [];
+            for (var i = 0; i < list.length; i++) {
+                var r = list[i] || {};
+                var k = r.component_key ? normSection(r.component_key) : '';
+                if (k !== componentKey) continue;
+                var wf = r.workflow && typeof r.workflow === 'object' ? r.workflow : null;
+                if (wf) {
+                    var ver = String(wf.verifier || '').toLowerCase().trim();
+                    var qa = String(wf.qa || '').toLowerCase().trim();
+                    if (ver === 'approved' || ver === 'rejected' || qa === 'approved' || qa === 'rejected') {
+                        return false;
+                    }
+                }
+                var s2 = wf ? String(wf.validator || '').toLowerCase().trim() : '';
+                if (s2 === 'rejected') return true;
+            }
+        } catch (_e) {
+        }
+        return false;
+    }
+
     function updateSectionBadges(d) {
         d = d || {};
         var basic = d.basic || {};
         var contact = d.contact || {};
         var ref = d.reference || {};
+        var social = d.social_media || {};
+        var ecourt = d.ecourt || {};
         var app = d.application || {};
         var auth = d.authorization || {};
 
@@ -1540,16 +1784,40 @@
         var eduDone = education.length > 0;
         var empDone = employment.length > 0;
         var refDone = isFilled(ref.reference_name) || isFilled(ref.reference_mobile) || isFilled(ref.reference_email);
+        var socialDone = isFilled(social.linkedin_url) || isFilled(social.facebook_url) || isFilled(social.instagram_url) || isFilled(social.twitter_url) || isFilled(social.other_url);
+        var ecourtDone = isFilled(ecourt.current_address) || isFilled(ecourt.permanent_address) || isFilled(ecourt.evidence_document);
         var reportsDone = isFilled(app.submitted_at) || isFilled(auth.file_name) || isFilled(auth.uploaded_at);
+
+        // Show Validator Rejected only while verifier/qa has not finalized that component.
+        var forcedRejected = {
+            basic: isValidatorRejectedOpenState(d, 'basic'),
+            id: isValidatorRejectedOpenState(d, 'id'),
+            contact: isValidatorRejectedOpenState(d, 'contact'),
+            education: isValidatorRejectedOpenState(d, 'education'),
+            employment: isValidatorRejectedOpenState(d, 'employment'),
+            reference: isValidatorRejectedOpenState(d, 'reference'),
+            socialmedia: isValidatorRejectedOpenState(d, 'socialmedia'),
+            ecourt: isValidatorRejectedOpenState(d, 'ecourt')
+        };
+        if (forcedRejected.basic) setBadge('cvNavBadgeBasic', 'rejected', 'Validator Rejected');
+        if (forcedRejected.id) setBadge('cvNavBadgeId', 'rejected', 'Validator Rejected');
+        if (forcedRejected.contact) setBadge('cvNavBadgeContact', 'rejected', 'Validator Rejected');
+        if (forcedRejected.education) setBadge('cvNavBadgeEducation', 'rejected', 'Validator Rejected');
+        if (forcedRejected.employment) setBadge('cvNavBadgeEmployment', 'rejected', 'Validator Rejected');
+        if (forcedRejected.reference) setBadge('cvNavBadgeReference', 'rejected', 'Validator Rejected');
+        if (forcedRejected.socialmedia) setBadge('cvNavBadgeSocialmedia', 'rejected', 'Validator Rejected');
+        if (forcedRejected.ecourt) setBadge('cvNavBadgeEcourt', 'rejected', 'Validator Rejected');
 
         // Prefer workflow stage when available
         var usedWorkflow = false;
-        usedWorkflow = setStageBadge('cvNavBadgeBasic', getWorkflowStageLabel(d, 'basic')) || usedWorkflow;
-        usedWorkflow = setStageBadge('cvNavBadgeId', getWorkflowStageLabel(d, 'id')) || usedWorkflow;
-        usedWorkflow = setStageBadge('cvNavBadgeContact', getWorkflowStageLabel(d, 'contact')) || usedWorkflow;
-        usedWorkflow = setStageBadge('cvNavBadgeEducation', getWorkflowStageLabel(d, 'education')) || usedWorkflow;
-        usedWorkflow = setStageBadge('cvNavBadgeEmployment', getWorkflowStageLabel(d, 'employment')) || usedWorkflow;
-        usedWorkflow = setStageBadge('cvNavBadgeReference', getWorkflowStageLabel(d, 'reference')) || usedWorkflow;
+        if (!forcedRejected.basic) usedWorkflow = setStageBadge('cvNavBadgeBasic', getWorkflowStageLabel(d, 'basic')) || usedWorkflow;
+        if (!forcedRejected.id) usedWorkflow = setStageBadge('cvNavBadgeId', getWorkflowStageLabel(d, 'id')) || usedWorkflow;
+        if (!forcedRejected.contact) usedWorkflow = setStageBadge('cvNavBadgeContact', getWorkflowStageLabel(d, 'contact')) || usedWorkflow;
+        if (!forcedRejected.education) usedWorkflow = setStageBadge('cvNavBadgeEducation', getWorkflowStageLabel(d, 'education')) || usedWorkflow;
+        if (!forcedRejected.employment) usedWorkflow = setStageBadge('cvNavBadgeEmployment', getWorkflowStageLabel(d, 'employment')) || usedWorkflow;
+        if (!forcedRejected.reference) usedWorkflow = setStageBadge('cvNavBadgeReference', getWorkflowStageLabel(d, 'reference')) || usedWorkflow;
+        if (!forcedRejected.socialmedia) usedWorkflow = setStageBadge('cvNavBadgeSocialmedia', getWorkflowStageLabel(d, 'socialmedia')) || usedWorkflow;
+        if (!forcedRejected.ecourt) usedWorkflow = setStageBadge('cvNavBadgeEcourt', getWorkflowStageLabel(d, 'ecourt')) || usedWorkflow;
 
         if (!usedWorkflow) {
             setBadge('cvNavBadgeBasic', basicDone ? 'done' : 'pending');
@@ -1558,6 +1826,8 @@
             setBadge('cvNavBadgeEducation', eduDone ? 'done' : 'pending');
             setBadge('cvNavBadgeEmployment', empDone ? 'done' : 'pending');
             setBadge('cvNavBadgeReference', refDone ? 'done' : 'pending');
+            setBadge('cvNavBadgeSocialmedia', socialDone ? 'done' : 'pending');
+            setBadge('cvNavBadgeEcourt', ecourtDone ? 'done' : 'pending');
         }
 
         setBadge('cvNavBadgeReports', reportsDone ? 'done' : 'pending');
@@ -2068,6 +2338,20 @@
         });
     }
 
+    function canTakeCaseAction() {
+        var perms = REPORT_PAYLOAD && REPORT_PAYLOAD.permissions ? REPORT_PAYLOAD.permissions : null;
+        if (perms && Object.prototype.hasOwnProperty.call(perms, 'can_take_action')) {
+            return !!perms.can_take_action;
+        }
+        return true;
+    }
+
+    function applyCaseActionCardVisibility() {
+        var card = document.getElementById('cvCaseActionsCard');
+        if (!card) return;
+        card.style.display = canTakeCaseAction() ? '' : 'none';
+    }
+
     function initCaseActions(applicationId) {
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
         var url = base + '/api/shared/case_action.php';
@@ -2099,7 +2383,18 @@
 
         function getStageStatusFor(componentKey, stage) {
             try {
-                var r = getAssignedRowForComponent(REPORT_PAYLOAD || {}, componentKey);
+                componentKey = normSection(componentKey);
+                stage = String(stage || '').toLowerCase().trim();
+                if (!componentKey || !stage) return '';
+
+                var d = REPORT_PAYLOAD || {};
+                var byComp = getWorkflowComponentRow(d, componentKey);
+                if (byComp && byComp[stage] && typeof byComp[stage] === 'object') {
+                    var s1 = String(byComp[stage].status || '').toLowerCase().trim();
+                    if (s1) return s1;
+                }
+
+                var r = getAssignedRowForComponent(d, componentKey);
                 if (r && r.workflow && typeof r.workflow === 'object') {
                     return String(r.workflow[stage] || '').toLowerCase().trim();
                 }
@@ -2129,6 +2424,27 @@
                 if (!componentKey || componentKey === 'timeline') return;
 
                 var st = getStageStatusFor(componentKey, stage);
+                if (role === 'verifier') {
+                    if (st === 'approved' || st === 'rejected') {
+                        setComponentActionButtonsEnabled(false);
+                        setText('cvTopMessage', 'This component is already ' + st + ' for ' + stage + '.');
+                        return;
+                    }
+                    var validatorSt = getStageStatusFor(componentKey, 'validator');
+                    if (validatorSt === 'rejected') {
+                        setComponentActionButtonsEnabled(true);
+                        setText('cvTopMessage', 'Validator rejected this component. Approval requires reason.');
+                    } else {
+                        setComponentActionButtonsEnabled(true);
+                    }
+                    return;
+                }
+                if (role === 'qa' || role === 'team_lead') {
+                    var verifierSt = getStageStatusFor(componentKey, 'verifier');
+                    if (verifierSt === 'rejected' && !(st === 'approved' || st === 'rejected')) {
+                        setText('cvTopMessage', 'Verifier rejected this component. QA action requires reason.');
+                    }
+                }
                 if (st === 'approved' || st === 'rejected') {
                     setComponentActionButtonsEnabled(false);
                     setText('cvTopMessage', 'This component is already ' + st + ' for ' + stage + '.');
@@ -2139,11 +2455,219 @@
             }
         }
 
+        function askOverrideReason(componentKey, promptText, titleText, modalReasonType) {
+            return new Promise(function (resolve) {
+                var label = sectionLabel(componentKey) || String(componentKey || 'Component');
+                var modalEl = document.getElementById('cvVerifierOverrideModal');
+                var ta = document.getElementById('cvVerifierOverrideText');
+                var err = document.getElementById('cvVerifierOverrideError');
+                var okBtn = document.getElementById('cvVerifierOverrideSubmit');
+                var cancelBtn = document.getElementById('cvVerifierOverrideCancel');
+                var titleEl = document.getElementById('cvVerifierOverrideTitle');
+                var effectiveReasonType = String(modalReasonType || 'reprocess_action');
+
+                var hasBootstrapModal = !!(window.bootstrap && window.bootstrap.Modal);
+                if (!modalEl || !ta || !okBtn || !hasBootstrapModal) {
+                    var fallback = window.prompt((promptText || 'Enter reason:') + ' (' + label + ')');
+                    if (fallback == null) return resolve(null);
+                    var fallbackMsg = String(fallback || '').trim();
+                    if (!fallbackMsg) return resolve(null);
+                    CURRENT_MODAL_REASON_TYPE = '';
+                    return resolve({ reason: fallbackMsg, reasonType: effectiveReasonType });
+                }
+
+                CURRENT_MODAL_REASON_TYPE = effectiveReasonType;
+                var done = false;
+                function finish(v) {
+                    if (done) return;
+                    done = true;
+                    try { modalEl.removeEventListener('hidden.bs.modal', onHidden); } catch (_e) {}
+                    try { okBtn.removeEventListener('click', onOk); } catch (_e2) {}
+                    try { if (cancelBtn) cancelBtn.removeEventListener('click', onCancel); } catch (_e3) {}
+                    CURRENT_MODAL_REASON_TYPE = '';
+                    resolve(v);
+                }
+                function onCancel() {
+                    finish(null);
+                    closeBsModal('cvVerifierOverrideModal');
+                }
+                function onHidden() {
+                    finish(null);
+                    closeBsModal('cvVerifierOverrideModal');
+                }
+                function onOk() {
+                    var msg = String(ta.value || '').trim();
+                    if (!msg) {
+                        if (err) {
+                            err.textContent = 'Reason is required.';
+                            err.style.display = 'block';
+                        }
+                        ta.focus();
+                        return;
+                    }
+                    if (err) {
+                        err.textContent = '';
+                        err.style.display = 'none';
+                    }
+                    finish({ reason: msg, reasonType: (CURRENT_MODAL_REASON_TYPE || effectiveReasonType) });
+                    closeBsModal('cvVerifierOverrideModal');
+                }
+
+                if (titleEl) {
+                    titleEl.textContent = (titleText || 'Reason Required') + ' - ' + label;
+                }
+                if (ta) ta.value = '';
+                if (err) {
+                    err.textContent = '';
+                    err.style.display = 'none';
+                }
+
+                modalEl.addEventListener('hidden.bs.modal', onHidden);
+                okBtn.addEventListener('click', onOk);
+                if (cancelBtn) cancelBtn.addEventListener('click', onCancel);
+                openBsModal('cvVerifierOverrideModal');
+                try { ta.focus(); } catch (_e4) {}
+            });
+        }
+
+function askActionConfirm(label) {
+    return new Promise(function (resolve) {
+        var modalEl = document.getElementById('cvActionConfirmModal');
+        var titleEl = document.getElementById('cvActionConfirmTitle');
+        var textEl = document.getElementById('cvActionConfirmText');
+        var yesBtn = document.getElementById('cvActionConfirmYes');
+        var noBtn = document.getElementById('cvActionConfirmNo');
+
+        // Fallback if modal not available
+        if (!modalEl || !yesBtn || !window.bootstrap) {
+            resolve(window.confirm('Confirm: ' + label + '?'));
+            return;
+        }
+
+        var done = false;
+        
+        // Force remove any existing backdrops before showing modal
+        document.querySelectorAll('.modal-backdrop').forEach(function(backdrop) {
+            if (backdrop && backdrop.parentNode) {
+                backdrop.parentNode.removeChild(backdrop);
+            }
+        });
+        
+        // Reset all modal-related classes and styles
+        document.body.classList.remove('modal-open');
+        document.documentElement.classList.remove('modal-open');
+        document.body.style.removeProperty('padding-right');
+        document.body.style.removeProperty('overflow');
+        document.documentElement.style.removeProperty('overflow');
+        document.documentElement.style.removeProperty('padding-right');
+
+        // Get fresh modal instance
+        var modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
+
+        function cleanupAndResolve(result) {
+            if (done) return;
+            done = true;
+
+            // Remove event listeners
+            modalEl.removeEventListener('hidden.bs.modal', onHidden);
+            yesBtn.removeEventListener('click', onYes);
+            if (noBtn) noBtn.removeEventListener('click', onNo);
+
+            // Hide the modal
+            modal.hide();
+
+            // Aggressive cleanup after modal hide animation
+            setTimeout(function () {
+                // Remove all backdrop elements
+                document.querySelectorAll('.modal-backdrop').forEach(function (backdrop) {
+                    if (backdrop && backdrop.parentNode) {
+                        backdrop.parentNode.removeChild(backdrop);
+                    }
+                });
+                
+                // Reset all body and html classes/styles
+                document.body.classList.remove('modal-open');
+                document.documentElement.classList.remove('modal-open');
+                document.body.style.removeProperty('padding-right');
+                document.body.style.removeProperty('overflow');
+                document.documentElement.style.removeProperty('overflow');
+                document.documentElement.style.removeProperty('padding-right');
+                
+                // Force hide any visible modals
+                document.querySelectorAll('.modal.show').forEach(function (m) {
+                    m.classList.remove('show');
+                    m.style.display = 'none';
+                    m.setAttribute('aria-hidden', 'true');
+                });
+
+                // Restore validator-specific overflow if needed
+                if (document.querySelector('.cr-report-root.cr-role-validator') &&
+                    String(qs('print') || '') !== '1') {
+                    document.body.style.overflow = 'hidden';
+                }
+            }, 50);
+
+            resolve(result);
+        }
+
+        function onYes() {
+            cleanupAndResolve(true);
+        }
+
+        function onNo() {
+            cleanupAndResolve(false);
+        }
+
+        function onHidden() {
+            cleanupAndResolve(false);
+        }
+
+        // Set modal content
+        if (titleEl) titleEl.textContent = 'Confirm Action';
+        if (textEl) {
+            textEl.textContent = 'Are you sure you want to ' +
+                String(label || 'continue').toLowerCase() + '?';
+        }
+
+        // Remove any existing event listeners to prevent duplicates
+        yesBtn.removeEventListener('click', onYes);
+        if (noBtn) noBtn.removeEventListener('click', onNo);
+        modalEl.removeEventListener('hidden.bs.modal', onHidden);
+
+        // Bind fresh event listeners
+        modalEl.addEventListener('hidden.bs.modal', onHidden);
+        yesBtn.addEventListener('click', onYes);
+        if (noBtn) noBtn.addEventListener('click', onNo);
+
+        // Show modal
+        modal.show();
+    });
+}
+
+        function bindSectionChangeLock() {
+            if (document.body && document.body.dataset.cvSectionLockBound === '1') return;
+            if (document.body) document.body.dataset.cvSectionLockBound = '1';
+            document.addEventListener('cv:section-changed', function () {
+                applyComponentActionLock();
+            });
+        }
+
         function currentSectionKey() {
-            if (CURRENT_SECTION_KEY) return normSection(CURRENT_SECTION_KEY);
+            if (CURRENT_SECTION_KEY) {
+                var current = normSection(CURRENT_SECTION_KEY);
+                if (current && current !== 'timeline') return current;
+            }
+            if (LAST_COMPONENT_SECTION_KEY) {
+                var last = normSection(LAST_COMPONENT_SECTION_KEY);
+                if (last && last !== 'timeline') return last;
+            }
             var active = document.querySelector('.list-group-item[data-section].active');
             var sec = active ? (active.getAttribute('data-section') || '') : '';
             sec = normSection(sec);
+            if (sec === 'timeline' && LAST_COMPONENT_SECTION_KEY) {
+                var last2 = normSection(LAST_COMPONENT_SECTION_KEY);
+                if (last2 && last2 !== 'timeline') sec = last2;
+            }
             if (!sec) {
                 var activePanel = document.querySelector('.candidate-section.cr-active');
                 if (activePanel && activePanel.id) {
@@ -2156,32 +2680,62 @@
         async function run(action, label) {
             if (!applicationId) return;
 
-            if (window.GSSDialog && typeof window.GSSDialog.confirm === 'function') {
-                var ok = await window.GSSDialog.confirm('Confirm: ' + label + '?', { title: 'Confirm action', okText: 'Yes', cancelText: 'No', okVariant: 'danger' });
-                if (!ok) return;
-            } else {
-                if (!window.confirm('Confirm: ' + label + '?')) {
+            try {
+                if (!canTakeCaseAction()) {
+                    setBoxMessage('cvTopMessage', 'You do not have permission to take action on this case.', 'warning');
                     return;
                 }
-            }
 
-            setActionsDisabled(true);
-            setText('cvTopMessage', '');
-
-            try {
                 var caseId = REPORT_PAYLOAD && REPORT_PAYLOAD.case && REPORT_PAYLOAD.case.case_id ? parseInt(REPORT_PAYLOAD.case.case_id, 10) : 0;
 
                 var role = getRole();
-                var isComponentRole = (role === 'verifier' || role === 'validator' || role === 'db_verifier' || role === 'qa' || role === 'team_lead');
+                var isComponentRole = canUseComponentWorkflowRole(role);
+                var overrideReason = '';
+                var componentKey = '';
+
+                if (isComponentRole && (action === 'hold' || action === 'reject' || action === 'approve')) {
+                    componentKey = currentSectionKey();
+                    if (!componentKey || componentKey === 'timeline') {
+                        setBoxMessage('cvTopMessage', 'Please select a component first.', 'warning');
+                        return;
+                    }
+                }
+
+                var reasonTitle = 'Reason Required';
+                var reasonPrompt = 'Enter reason to ' + String(label || action || 'continue').toLowerCase();
+                if (action === 'approve' && componentKey) {
+                    var validatorStatus = getStageStatusFor(componentKey, 'validator');
+                    var verifierStatus = getStageStatusFor(componentKey, 'verifier');
+                    if (validatorStatus === 'rejected') {
+                        reasonTitle = 'Verifier Reason Required';
+                        reasonPrompt = 'Validator rejected this component. Enter reason to approve';
+                    } else if (verifierStatus === 'rejected') {
+                        reasonTitle = 'QA Reason Required';
+                        reasonPrompt = 'Verifier rejected this component. Enter reason to proceed';
+                    }
+                }
+
+                var reasonPayload = await askOverrideReason(
+                    componentKey || 'case',
+                    reasonPrompt,
+                    reasonTitle,
+                    'reprocess_action'
+                );
+                if (reasonPayload == null) return;
+                overrideReason = String(reasonPayload.reason || '').trim();
+                if (!overrideReason) {
+                    setBoxMessage('cvTopMessage', 'Reason is required to continue.', 'warning');
+                    return;
+                }
+
+                var ok = await askActionConfirm(label);
+                if (!ok) return;
+
+                setActionsDisabled(true);
+                setBoxMessage('cvTopMessage', '', '');
 
                 var out;
                 if (isComponentRole && (action === 'hold' || action === 'reject' || action === 'approve')) {
-                    var componentKey = currentSectionKey();
-                    if (!componentKey || componentKey === 'timeline') {
-                        setText('cvTopMessage', 'Please select a component first.');
-                        return;
-                    }
-
                     var group2 = null;
                     if (role === 'verifier') {
                         group2 = getVerifierGroup() || null;
@@ -2191,7 +2745,8 @@
                         case_id: caseId || null,
                         component_key: componentKey,
                         action: action,
-                        group: group2
+                        group: group2,
+                        override_reason: overrideReason || null
                     });
                 } else {
                     var group = getVerifierGroup();
@@ -2204,12 +2759,35 @@
                 }
                 if (!out.res.ok || !out.payload || out.payload.status !== 1) {
                     var msg = (out.payload && out.payload.message) ? out.payload.message : 'Action failed.';
-                    setText('cvTopMessage', msg);
+                    var msgLower = String(msg || '').toLowerCase();
+                    if (msgLower.indexOf('validator rejected') !== -1) {
+                        if (msgLower.indexOf('reason is required') !== -1 || msgLower.indexOf('reason required') !== -1) {
+                            msg = 'Reason is required to approve validator rejected component.';
+                        } else {
+                            msg = 'Validator rejected this component. Add reason and approve.';
+                        }
+                    } else if (msgLower.indexOf('verifier rejected') !== -1) {
+                        if (msgLower.indexOf('reason is required') !== -1 || msgLower.indexOf('reason required') !== -1) {
+                            msg = 'Reason is required for QA action on verifier rejected component.';
+                        } else {
+                            msg = 'Verifier rejected this component. Add QA reason to proceed.';
+                        }
+                    }
+                    setBoxMessage('cvTopMessage', msg, 'danger');
                     return;
                 }
 
                 var d = out.payload.data || {};
                 var statusLabel = d.application_status || d.case_status || '';
+                if ((role === 'qa' || role === 'team_lead') && action === 'reject') {
+                    statusLabel = 'QA Rejected';
+                }
+                if ((role === 'qa' || role === 'team_lead') && action === 'approve' && statusLabel) {
+                    var sl = String(statusLabel).toLowerCase();
+                    if (sl === 'approved' || sl === 'completed' || sl === 'clear' || sl === 'verified') {
+                        statusLabel = 'QA Approved';
+                    }
+                }
                 if (statusLabel) {
                     setText('cvHeaderStatus', statusLabel);
                 }
@@ -2237,15 +2815,17 @@
                         REPORT_PAYLOAD.component_workflow[componentKey2] = {};
                     }
                     REPORT_PAYLOAD.component_workflow[componentKey2][stage2] = { status: row2.workflow[stage2] };
+                    CURRENT_SECTION_KEY = componentKey2;
+                    LAST_COMPONENT_SECTION_KEY = componentKey2;
                     try {
                         updateSectionBadges(REPORT_PAYLOAD || {});
                     } catch (_e) {
                     }
                     applyComponentActionLock();
                 }
-                setText('cvTopMessage', 'Updated successfully.');
+                setBoxMessage('cvTopMessage', 'Updated successfully.', 'success');
             } catch (e) {
-                setText('cvTopMessage', (e && e.message) ? e.message : 'Action failed.');
+                setBoxMessage('cvTopMessage', (e && e.message) ? e.message : 'Action failed.', 'danger');
             } finally {
                 setActionsDisabled(false);
             }
@@ -2277,6 +2857,7 @@
         }
 
         // Initial lock based on current component + stage status
+        bindSectionChangeLock();
         applyComponentActionLock();
     }
 
@@ -2285,8 +2866,12 @@
         if (!items.length) return;
 
         var role = getRole();
+        if ((role === 'verifier' || role === 'db_verifier' || role === 'validator') && !REPORT_PAYLOAD) {
+            // Avoid pre-payload flicker/override; render once with resolved assigned components.
+            return;
+        }
         var assignedKeys = [];
-        if ((role === 'verifier' || role === 'validator' || role === 'db_verifier') && REPORT_PAYLOAD) {
+        if ((role === 'verifier' || role === 'db_verifier' || role === 'validator') && REPORT_PAYLOAD) {
             assignedKeys = getAssignedComponentKeys(REPORT_PAYLOAD);
 
             // Hide nav items and panels not assigned
@@ -2324,6 +2909,9 @@
             section = normSection(section);
             if (!section) return;
             CURRENT_SECTION_KEY = section;
+            if (section !== 'timeline') {
+                LAST_COMPONENT_SECTION_KEY = section;
+            }
 
             if (section === 'timeline') {
                 openBsModal('cvTimelineModal');
@@ -2357,6 +2945,11 @@
                 renderRemarksPanel(section);
             } catch (_e) {
             }
+
+            try {
+                document.dispatchEvent(new CustomEvent('cv:section-changed', { detail: { section: section } }));
+            } catch (_e) {
+            }
         }
 
         items.forEach(function (btn) {
@@ -2370,21 +2963,24 @@
             }
         });
 
-        // Hide sidebar items for disallowed sections
+        // Hide sidebar items for disallowed sections.
+        // For staff roles with payload-assigned components, assignedKeys is authoritative.
         var allowSet = allowedSectionsSet();
-        items.forEach(function (btn) {
-            var s = String(btn.getAttribute('data-section') || '').toLowerCase();
-            if (s && s !== 'timeline' && !canSeeSection(s, allowSet)) {
-                btn.style.display = 'none';
-            }
-            if (s === 'timeline' && !canSeeSection('timeline', allowSet)) {
-                btn.style.display = 'none';
-            }
-        });
+        if (!((role === 'verifier' || role === 'db_verifier' || role === 'validator') && assignedKeys.length)) {
+            items.forEach(function (btn) {
+                var s = String(btn.getAttribute('data-section') || '').toLowerCase();
+                if (s && s !== 'timeline' && !canSeeSection(s, allowSet)) {
+                    btn.style.display = 'none';
+                }
+                if (s === 'timeline' && !canSeeSection('timeline', allowSet)) {
+                    btn.style.display = 'none';
+                }
+            });
+        }
 
         var active = items.find(function (b) { return b.classList.contains('active') && b.style.display !== 'none'; });
         var initial = active ? active.getAttribute('data-section') : 'basic';
-        if (!canSeeSection(initial, allowSet)) {
+        if (!((role === 'verifier' || role === 'db_verifier' || role === 'validator') && assignedKeys.length) && !canSeeSection(initial, allowSet)) {
             var firstVisible = items.find(function (b) { return b.style.display !== 'none'; });
             initial = firstVisible ? firstVisible.getAttribute('data-section') : '';
         }
@@ -2789,10 +3385,13 @@
     }
 
     async function loadReport() {
+        var root = document.querySelector('.cr-report-root');
+        if (root) root.setAttribute('data-ui-ready', '0');
+
         var applicationId = qs('application_id') || '';
         var caseId = qs('case_id') || '';
         var clientId = qs('client_id') || '';
-        var role = qs('role') || '';
+        var role = getRole();
 
         function qaAudit(event, meta) {
             if (String(role || '').toLowerCase().trim() !== 'qa') return;
@@ -2818,7 +3417,7 @@
             return;
         }
 
-        var role2 = (qs('role') || '').toString().toLowerCase().trim();
+        var role2 = getRole();
         if (role2) {
             url += '&role=' + encodeURIComponent(role2);
         }
@@ -2855,6 +3454,7 @@
 
         var d = payload.data || {};
         REPORT_PAYLOAD = d;
+        applyCaseActionCardVisibility();
 
         // Re-apply section filtering once assigned components are known
         initSectionNav();
@@ -2862,6 +3462,8 @@
         var basic = d.basic || {};
         var contact = d.contact || {};
         var ref = d.reference || {};
+        var social = d.social_media || {};
+        var ecourt = d.ecourt || {};
         var app = d.application || {};
         var cs = d.case || {};
         var auth = d.authorization || {};
@@ -2907,7 +3509,7 @@
             var metaHtml =
                 '<div><b>Candidate:</b> ' + esc(coverName) + '</div>' +
                 '<div><b>Application:</b> ' + esc(coverApp) + '</div>' +
-                '<div><b>Status:</b> ' + esc(app.status || cs.case_status || '') + '</div>';
+                '<div><b>Status:</b> ' + esc(displayCaseStatus(app.status, cs.case_status) || '') + '</div>';
             setHtml('cvPdfSummaryMeta', metaHtml);
             setHtml('cvPdfChecklistMeta', metaHtml);
             setHtml('cvPdfAllFieldsMeta', metaHtml);
@@ -2922,6 +3524,8 @@
             renderKeyValue(hostId, 'Basic Details', basic);
             renderKeyValue(hostId, 'Contact Details', contact);
             renderKeyValue(hostId, 'Reference Details', ref);
+            renderKeyValue(hostId, 'Social Media Details', social);
+            renderKeyValue(hostId, 'E-Court Details', ecourt);
             renderKeyValue(hostId, 'Authorization', auth);
 
             renderArray(hostId, 'Identification Details', d.identification || []);
@@ -2937,7 +3541,7 @@
             summary.push(kvBox('Mobile', (basic.mobile || cs.candidate_mobile || '') + ''));
             summary.push(kvBox('Case ID', coverCase));
             summary.push(kvBox('Application ID', coverApp));
-            summary.push(kvBox('Status', (app.status || cs.case_status || '') + ''));
+            summary.push(kvBox('Status', (displayCaseStatus(app.status, cs.case_status) || '') + ''));
             setHtml('cvPdfSummaryGrid', summary.join(''));
 
             // Executive summary + checklist + grouped docs
@@ -2948,7 +3552,7 @@
 
         setText('cvHeaderCandidate', (cs.candidate_first_name || '') + ' ' + (cs.candidate_last_name || ''));
         setText('cvHeaderAppId', applicationId);
-        setText('cvHeaderStatus', (app.status || cs.case_status || ''));
+        setText('cvHeaderStatus', (displayCaseStatus(app.status, cs.case_status) || ''));
         var tatDays = cs && typeof cs.internal_tat !== 'undefined' ? (parseInt(cs.internal_tat || '20', 10) || 20) : 20;
         var rules = cs && cs.weekend_rules ? cs.weekend_rules : 'exclude';
         setText('cvHeaderTat', tatLabelFromCreated(cs.created_at || '', { internal_tat: tatDays, weekend_rules: rules }));
@@ -2960,10 +3564,12 @@
         setText('cvSectionTatEducation', tatLabel ? ('Component TAT: ' + tatLabel) : '');
         setText('cvSectionTatEmployment', tatLabel ? ('Component TAT: ' + tatLabel) : '');
         setText('cvSectionTatReference', tatLabel ? ('Component TAT: ' + tatLabel) : '');
+        setText('cvSectionTatSocialmedia', tatLabel ? ('Component TAT: ' + tatLabel) : '');
+        setText('cvSectionTatEcourt', tatLabel ? ('Component TAT: ' + tatLabel) : '');
         setText('cvSectionTatReports', tatLabel ? ('Component TAT: ' + tatLabel) : '');
 
         // If case is already approved, prevent further action changes from this view
-        var statusStr = String(app.status || cs.case_status || '').toUpperCase();
+        var statusStr = String(displayCaseStatus(app.status, cs.case_status) || '').toUpperCase();
         if (statusStr === 'APPROVED' || statusStr.indexOf('APPROVE') !== -1) {
             var holdBtn = document.getElementById('cvActionHold');
             var rejectBtn = document.getElementById('cvActionReject');
@@ -3031,6 +3637,23 @@
         setVal('cv_reference_relationship', ref.relationship || '');
         setVal('cv_reference_years_known', ref.years_known || '');
 
+        setVal('cv_social_linkedin_url', social.linkedin_url || '');
+        setVal('cv_social_facebook_url', social.facebook_url || '');
+        setVal('cv_social_instagram_url', social.instagram_url || '');
+        setVal('cv_social_twitter_url', social.twitter_url || '');
+        setVal('cv_social_other_url', social.other_url || '');
+        setVal('cv_social_consent_bgv', Number(social.consent_bgv || 0) === 1 ? 'Yes' : (social.consent_bgv === null || typeof social.consent_bgv === 'undefined' ? '' : 'No'));
+        setVal('cv_social_content', social.content || '');
+
+        setVal('cv_ecourt_current_address', ecourt.current_address || '');
+        setVal('cv_ecourt_permanent_address', ecourt.permanent_address || '');
+        setVal('cv_ecourt_evidence_document', ecourt.evidence_document || '');
+        setVal('cv_ecourt_period_from_date', window.GSS_DATE.formatDbDateTime(ecourt.period_from_date || ''));
+        setVal('cv_ecourt_period_to_date', window.GSS_DATE.formatDbDateTime(ecourt.period_to_date || ''));
+        setVal('cv_ecourt_period_duration_years', ecourt.period_duration_years || '');
+        setVal('cv_ecourt_dob', window.GSS_DATE.formatDbDateTime(ecourt.dob || ''));
+        setVal('cv_ecourt_comments', ecourt.comments || '');
+
         var authSignature = auth.digital_signature || auth.signature || auth.authorization_signature || auth.auth_signature || '';
         var authFileName = auth.file_name || auth.authorization_file_name || auth.auth_file_name || auth.filename || '';
         var authUploadedAt = auth.uploaded_at || auth.authorization_uploaded_at || auth.auth_uploaded_at || auth.uploadedAt || '';
@@ -3097,20 +3720,38 @@
             var activeBtn = document.querySelector('.list-group-item[data-section].active');
             var activeSection = activeBtn ? String(activeBtn.getAttribute('data-section') || '').toLowerCase() : 'basic';
             if (activeSection) ensureComponentToolbar(activeSection);
+            if (activeSection) {
+                CURRENT_SECTION_KEY = normSection(activeSection);
+                LAST_COMPONENT_SECTION_KEY = CURRENT_SECTION_KEY;
+                try {
+                    document.dispatchEvent(new CustomEvent('cv:section-changed', { detail: { section: activeSection } }));
+                } catch (_e2) {}
+            }
         } catch (_e) {
         }
+
+        if (root) root.setAttribute('data-ui-ready', '1');
 
         return d;
     }
 
     document.addEventListener('DOMContentLoaded', function () {
-        initSectionNav();
+        var deprecatedCompleteBtn = document.getElementById('cvCompleteGroupBtn');
+        if (deprecatedCompleteBtn) {
+            deprecatedCompleteBtn.style.display = 'none';
+            deprecatedCompleteBtn.disabled = true;
+        }
         initUploadPicker();
         initValidatorRemarks();
         initDocViewModal();
+        if (document.querySelector('.cr-report-root.cr-role-validator') && String(qs('print') || '') !== '1') {
+            document.body.style.overflow = 'hidden';
+        }
         loadReport().then(function (payload) {
             initVerifierCompleteNext(function () { return payload; });
         }).catch(function (e) {
+            var root = document.querySelector('.cr-report-root');
+            if (root) root.setAttribute('data-ui-ready', '1');
             setText('cvTopMessage', (e && e.message) ? e.message : 'Failed to load report');
         });
     });

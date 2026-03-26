@@ -10,6 +10,8 @@ $menu = validator_menu();
 ob_start();
 ?>
 <style>
+    .vr-page{display:flex; flex-direction:column; gap:12px;}
+    .vr-card{border-radius:14px;}
     .qa-like-main{padding:14px;}
     .qa-like-head{display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;}
     .qa-like-title{font-weight:900; color:#0f172a;}
@@ -44,12 +46,13 @@ ob_start();
     .vr-mini-card .d{font-size:12px; color:#64748b; margin-top:4px;}
 </style>
 
-<div class="card">
+<div class="vr-page">
+<div class="card vr-card">
     <h3 style="margin-bottom:4px;">Validator Dashboard</h3>
-    <p class="card-subtitle" style="margin-bottom:0; color:#64748b;">QA-style layout with validator workflow actions.</p>
+    <!-- <p class="card-subtitle" style="margin-bottom:0; color:#64748b;">QA-style layout with validator workflow actions.</p> -->
 </div>
 
-<div class="card qa-like-main">
+<div class="card vr-card qa-like-main">
     <div class="qa-like-head">
         <div>
             <div class="qa-like-title">Live Dashboard</div>
@@ -134,6 +137,7 @@ ob_start();
             </div>
         </div>
     </div>
+</div>
 </div>
 <?php
 $content = ob_get_clean();

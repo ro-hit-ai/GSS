@@ -276,11 +276,9 @@ class Reference {
             window.Router?.updateProgress?.();
             window.Forms?.clearDraft?.('reference');
 
-            setTimeout(() => {
-                window.Router?.navigateTo
-                    ? Router.navigateTo('success')
-                    : (location.href = '/candidate/success.php');
-            }, 600);
+            window.Router?.navigateTo
+                ? Router.navigateTo('success')
+                : (location.href = '?page=success');
 
         } catch (e) {
             this.showNotification(e.message, true);

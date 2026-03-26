@@ -31,7 +31,7 @@ $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
     <form id="referenceForm" enctype="multipart/form-data">
 
         <!-- Row 1: Name, Designation -->
-        <div class="form-row-3 compact-row mb-2">
+        <div class="form-row-2 compact-row mb-2">
             <!-- Reference Name -->
             <div class="form-field">
                 <div class="form-control double-border compact-control">
@@ -49,7 +49,10 @@ $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
                            value="<?= htmlspecialchars($row['reference_designation'] ?? '') ?>">
                 </div>
             </div>
+        </div>
 
+        
+        <div class="form-row-2 compact-row mb-2">
             <div class="form-field">
                 <div class="form-control double-border compact-control">
                     <label class="compact-label">Company <span class="required">*</span></label>
@@ -57,10 +60,27 @@ $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
                            value="<?= htmlspecialchars($row['reference_company'] ?? '') ?>">
                 </div>
             </div>
-        </div>
 
-        <!-- Row 2: Company, Mobile -->
+            <div class="form-field">
+                <div class="form-control double-border compact-control">
+                    <label class="compact-label">Relationship <span class="required">*</span></label>
+                    <input type="text" name="relationship" required class="compact-input"
+                           value="<?= htmlspecialchars($row['relationship'] ?? '') ?>">
+                </div>
+            </div>
+
+     </div>
+        <!-- Row 2: Mobile, Email, Years Known -->
         <div class="form-row-3 compact-row mb-2">
+             <div class="form-field">
+                <div class="form-control double-border compact-control">
+                    <label class="compact-label">Years Known <span class="required">*</span></label>
+                    <input type="number" name="years_known" min="1" max="50" required class="compact-input"
+                           value="<?= htmlspecialchars($row['years_known'] ?? '') ?>">
+                    <!-- <small class="compact-hint">Number of years you have known this reference</small> -->
+                </div>
+            </div>
+
             <div class="form-field">
                 <div class="form-control double-border compact-control">
                     <label class="compact-label">Mobile <span class="required">*</span></label>
@@ -76,29 +96,8 @@ $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
                            value="<?= htmlspecialchars($row['reference_email'] ?? '') ?>">
                 </div>
             </div>
-
-            <div class="form-field">
-                <div class="form-control double-border compact-control">
-                    <label class="compact-label">Relationship <span class="required">*</span></label>
-                    <input type="text" name="relationship" required class="compact-input"
-                           value="<?= htmlspecialchars($row['relationship'] ?? '') ?>">
-                </div>
-            </div>
-
         </div>
 
-
-        <!-- Row 4: Years Known (Full width) -->
-        <div class="form-row-full compact-row mb-3">
-            <div class="form-field">
-                <div class="form-control double-border compact-control">
-                    <label class="compact-label">Years Known <span class="required">*</span></label>
-                    <input type="number" name="years_known" min="1" max="50" required class="compact-input"
-                           value="<?= htmlspecialchars($row['years_known'] ?? '') ?>">
-                    <small class="compact-hint">Number of years you have known this reference</small>
-                </div>
-            </div>
-        </div>
 
         <!-- Hidden fields -->
         <input type="hidden" name="application_id" value="<?= $application_id ?>">

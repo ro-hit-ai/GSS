@@ -27,8 +27,8 @@ ob_start();
 
                 <label style="font-size:13px; margin-right:6px;">View</label>
                 <select id="vrCasesViewSelect" style="font-size:13px; padding:6px 8px; min-width:180px; border-radius:10px; border:1px solid #cbd5e1;">
-                    <option value="mine">My Tasks</option>
                     <option value="available">Available</option>
+                    <option value="mine" selected>My Tasks</option>
                     <option value="followup">Follow-up</option>
                     <option value="completed">Completed</option>
                 </select>

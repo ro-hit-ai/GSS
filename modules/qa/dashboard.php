@@ -182,6 +182,7 @@ ob_start();
         border-radius:14px;
         padding:12px;
         background:#fff;
+        overflow:hidden;
     }
     .qa-panel-title{
         font-weight:900;
@@ -195,6 +196,21 @@ ob_start();
     }
     .qa-assignments-table{
         margin-top:8px;
+    }
+
+    /* Keep workload tables inside card without horizontal scrollbar */
+    .qa-workload-grid .table-scroll{
+        overflow-x: hidden;
+    }
+    .qa-workload-grid .table{
+        width:100%;
+        min-width:0 !important;
+        table-layout: fixed;
+    }
+    .qa-workload-grid .table th,
+    .qa-workload-grid .table td{
+        white-space: normal;
+        word-break: break-word;
     }
 
     /* Responsive behaviour */

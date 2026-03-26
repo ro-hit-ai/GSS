@@ -75,7 +75,7 @@ function handleEvidenceUpload($file, $application_id) {
     }
 
     // Create upload directory if it doesn't exist
-    $dir = $_SERVER['DOCUMENT_ROOT'] . "/uploads/ecourt/";
+    $dir = rtrim(app_path('/uploads/ecourt/'), '/\\') . DIRECTORY_SEPARATOR;
     if (!is_dir($dir)) {
         if (!@mkdir($dir, 0755, true) && !is_dir($dir)) {
             throw new FileUploadException('Failed to create upload folder: ' . $dir);
@@ -120,8 +120,10 @@ function getExistingEcourtData($pdo, $application_id) {
 }
 
 function cleanupUploadedFile($filename) {
-    if ($filename && file_exists($_SERVER['DOCUMENT_ROOT'] . "/uploads/ecourt/" . $filename)) {
-        @unlink($_SERVER['DOCUMENT_ROOT'] . "/uploads/ecourt/" . $filename);
+    $dir = rtrim(app_path('/uploads/ecourt/'), '/\\') . DIRECTORY_SEPARATOR;
+    $full = $dir . basename((string)$filename);
+    if ($filename && file_exists($full)) {
+        @unlink($full);
     }
 }
 

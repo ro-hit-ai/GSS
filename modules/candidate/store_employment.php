@@ -64,8 +64,8 @@ function handleFileUpload(array $file, string $applicationId, int $index): strin
         throw new ValidationException("Invalid file type for employment document");
     }
 
-    if ($file['size'] > 5 * 1024 * 1024) {
-        throw new ValidationException("Employment document exceeds 5MB");
+    if ($file['size'] > 10 * 1024 * 1024) {
+        throw new ValidationException("Employment document exceeds 10MB");
     }
 
     $dir = __DIR__ . '/../../uploads/employment/';

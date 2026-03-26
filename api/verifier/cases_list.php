@@ -3,6 +3,7 @@ header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/queue_visibility.php';
 
 auth_require_login('verifier');
 auth_session_start();
@@ -18,31 +19,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 function get_str(string $key, string $default = ''): string {
     return trim((string)($_GET[$key] ?? $default));
-}
-
-function verifier_allowed_sections_set(): array {
-    $raw = isset($_SESSION['auth_allowed_sections']) ? (string)$_SESSION['auth_allowed_sections'] : '';
-    $raw = strtolower(trim($raw));
-    if ($raw === '*') return ['*' => true];
-    if ($raw === '') return [];
-    $parts = preg_split('/[\s,|]+/', $raw) ?: [];
-    $out = [];
-    foreach ($parts as $p) {
-        $k = strtolower(trim((string)$p));
-        if ($k === '') continue;
-        $out[$k] = true;
-    }
-    return $out;
-}
-
-function verifier_can_group(array $set, string $groupKey): bool {
-    if (isset($set['*'])) return true;
-    $g = strtoupper(trim($groupKey));
-    $need = $g === 'BASIC' ? ['basic', 'id', 'contact'] : ($g === 'EDUCATION' ? ['education', 'employment', 'reference'] : []);
-    foreach ($need as $k) {
-        if (isset($set[$k])) return true;
-    }
-    return false;
 }
 
 try {
@@ -62,7 +38,7 @@ try {
 
     $groupKey = strtoupper(get_str('group', ''));
     $search = get_str('search', '');
-    $view = strtolower(get_str('view', 'mine')); // mine|available|followup|completed
+    $view = strtolower(get_str('view', 'available')); // available|mine|followup|completed
 
     if ($groupKey === '' || !in_array($groupKey, ['BASIC', 'EDUCATION'], true)) {
         http_response_code(400);
@@ -70,8 +46,9 @@ try {
         exit;
     }
 
-    $allowedSet = verifier_allowed_sections_set();
-    if (!verifier_can_group($allowedSet, $groupKey)) {
+    $pdo = getDB();
+    $allowedSet = verifier_allowed_sections_set_from_session($pdo);
+    if (!verifier_can_group_by_sections($allowedSet, $groupKey)) {
         http_response_code(403);
         echo json_encode(['status' => 0, 'message' => 'Access denied']);
         exit;
@@ -81,7 +58,16 @@ try {
         $view = 'mine';
     }
 
-    $pdo = getDB();
+    
+    // Ensure verifier group queue exists so list does not appear empty in fresh/stale states.
+    try {
+        $ensure = $pdo->prepare('CALL SP_Vati_Payfiller_VR_EnsureGroupQueue(?)');
+        $ensure->execute([$clientId > 0 ? $clientId : null]);
+        while ($ensure->nextRowset()) {
+        }
+    } catch (Throwable $e) {
+        // ignore and continue with listing query
+    }
 
     if ($view === 'available') {
         $stmt = $pdo->prepare('CALL SP_Vati_Payfiller_VR_ListAvailable(?, ?, ?, ?)');
@@ -124,6 +110,88 @@ try {
 
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     while ($stmt->nextRowset()) {
+    }
+    $rows = verifier_filter_actionable_queue_rows($pdo, $rows, $allowedSet);
+
+    // "Available" should also surface current verifier's open tasks so users can
+    // continue work without switching views.
+    if ($view === 'available') {
+        $sqlMineOpen =
+            'SELECT q.id, q.case_id, q.application_id, q.client_id, q.group_key, q.status, q.assigned_user_id, q.claimed_at, q.completed_at, ' .
+            'c.candidate_first_name, c.candidate_last_name, c.candidate_email, c.candidate_mobile, c.case_status, c.created_at ' .
+            'FROM Vati_Payfiller_Verifier_Group_Queue q ' .
+            'JOIN Vati_Payfiller_Cases c ON c.case_id = q.case_id ' .
+            'WHERE ( ? = 0 OR q.client_id = ? ) ' .
+            'AND q.group_key = ? ' .
+            'AND q.completed_at IS NULL AND q.assigned_user_id = ? ' .
+            "AND ( ? = '' OR c.application_id LIKE CONCAT('%', ?, '%') OR c.candidate_first_name LIKE CONCAT('%', ?, '%') OR c.candidate_last_name LIKE CONCAT('%', ?, '%') OR c.candidate_email LIKE CONCAT('%', ?, '%') OR c.candidate_mobile LIKE CONCAT('%', ?, '%') ) " .
+            'ORDER BY COALESCE(q.claimed_at, c.created_at) ASC ' .
+            'LIMIT 200';
+        $mineOpen = $pdo->prepare($sqlMineOpen);
+        $searchParam = $search !== '' ? $search : '';
+        $mineOpen->execute([
+            $clientId,
+            $clientId,
+            $groupKey,
+            $userId,
+            $searchParam,
+            $searchParam,
+            $searchParam,
+            $searchParam,
+            $searchParam,
+            $searchParam
+        ]);
+        $mineRows = $mineOpen->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $mineRows = verifier_filter_actionable_queue_rows($pdo, $mineRows, $allowedSet);
+
+        if ($mineRows) {
+            $seen = [];
+            foreach ($rows as $r) {
+                $k = !empty($r['id'])
+                    ? ('id:' . (string)$r['id'])
+                    : ('cg:' . (string)($r['case_id'] ?? '') . '|' . strtoupper(trim((string)($r['group_key'] ?? ''))));
+                $seen[$k] = true;
+            }
+            foreach ($mineRows as $r) {
+                $k = !empty($r['id'])
+                    ? ('id:' . (string)$r['id'])
+                    : ('cg:' . (string)($r['case_id'] ?? '') . '|' . strtoupper(trim((string)($r['group_key'] ?? ''))));
+                if (!isset($seen[$k])) {
+                    $rows[] = $r;
+                    $seen[$k] = true;
+                }
+            }
+        }
+    }
+
+    // Fallback SQL when SPs return no rows (keeps UI stable across env/proc variants).
+    if (!$rows && ($view === 'available' || $view === 'mine')) {
+        $whereStatus = ($view === 'available')
+            ? "q.completed_at IS NULL AND COALESCE(q.assigned_user_id,0) = 0"
+            : "q.completed_at IS NULL AND q.assigned_user_id = ?";
+
+        $sql =
+            'SELECT q.id, q.case_id, q.application_id, q.client_id, q.group_key, q.status, q.assigned_user_id, q.claimed_at, q.completed_at, ' .
+            'c.candidate_first_name, c.candidate_last_name, c.candidate_email, c.candidate_mobile, c.case_status, c.created_at ' .
+            'FROM Vati_Payfiller_Verifier_Group_Queue q ' .
+            'JOIN Vati_Payfiller_Cases c ON c.case_id = q.case_id ' .
+            'WHERE ( ? = 0 OR q.client_id = ? ) ' .
+            'AND q.group_key = ? ' .
+            'AND ' . $whereStatus . ' ' .
+            "AND ( ? = '' OR c.application_id LIKE CONCAT('%', ?, '%') OR c.candidate_first_name LIKE CONCAT('%', ?, '%') OR c.candidate_last_name LIKE CONCAT('%', ?, '%') OR c.candidate_email LIKE CONCAT('%', ?, '%') OR c.candidate_mobile LIKE CONCAT('%', ?, '%') ) " .
+            'ORDER BY COALESCE(q.claimed_at, c.created_at) ASC ' .
+            'LIMIT 200';
+
+        $st = $pdo->prepare($sql);
+        $searchParam = $search !== '' ? $search : '';
+        $params = [$clientId, $clientId, $groupKey];
+        if ($view === 'mine') {
+            $params[] = $userId;
+        }
+        $params = array_merge($params, [$searchParam, $searchParam, $searchParam, $searchParam, $searchParam, $searchParam]);
+        $st->execute($params);
+        $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $rows = verifier_filter_actionable_queue_rows($pdo, $rows, $allowedSet);
     }
 
     echo json_encode(['status' => 1, 'message' => 'ok', 'data' => $rows]);

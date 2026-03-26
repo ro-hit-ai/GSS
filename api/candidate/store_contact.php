@@ -33,7 +33,7 @@ function handleFileUpload(array $file, string $application_id): string {
         throw new ValidationException("File size exceeds 5MB.");
     }
 
-    $dir = $_SERVER['DOCUMENT_ROOT'] . "/uploads/address/";
+    $dir = rtrim(app_path('/uploads/address/'), '/\\') . DIRECTORY_SEPARATOR;
     if (!is_dir($dir)) {
         mkdir($dir, 0755, true);
     }

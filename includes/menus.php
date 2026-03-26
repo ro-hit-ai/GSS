@@ -28,6 +28,7 @@ function gss_admin_menu(): array {
             'key' => 'candidate',
             'children' => [
                 ['label' => 'Candidate List', 'href' => 'candidates_list.php'],
+                // ['label' => 'Final Report', 'href' => 'candidate_report.php'],
                 ['label' => 'Create Candidate', 'href' => 'candidate_create.php'],
                 ['label' => 'Bulk Upload', 'href' => 'candidate_bulk.php'],
             ]
@@ -41,7 +42,7 @@ function gss_admin_menu(): array {
             ]
         ],
         // ['label' => 'Profile Settings', 'href' => '../settings/profile.php'],
-        // ['label' => 'Reports', 'href' => '../reports/dashboard.php'],
+        ['label' => 'Report', 'href' => 'candidate_report.php'],
     ];
 }
 

@@ -499,6 +499,17 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!cb) return;
         cb.checked = !!checked;
 
+        try {
+            var row = cb.closest ? cb.closest('.cv-type-row') : null;
+            if (row) {
+                row.querySelectorAll('.cv_it_tat_val,.cv_it_tat_unit,.cv_et_tat_val,.cv_et_tat_unit,.cv_cost,.cv_count')
+                    .forEach(function (el) {
+                        el.disabled = !cb.checked;
+                    });
+            }
+        } catch (e) {
+        }
+
         var stageKey = getActiveStageKey();
         if (stageKey) {
             if (cb.checked) addTypeToStageOrder(stageKey, vtId);
@@ -577,8 +588,21 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!t) return false;
         var name = t && t.type_name ? String(t.type_name || '') : '';
         var cat = t && t.type_category ? String(t.type_category || '') : '';
-        var key = (cat || name || '').toLowerCase();
-        return key.indexOf('education') !== -1 || key.indexOf('employment') !== -1 || key.indexOf('identification') !== -1;
+        var key = ((name || '') + ' ' + (cat || '')).toLowerCase();
+        var idLike = (
+            key.indexOf('identification') !== -1
+            || key.indexOf('identity') !== -1
+            || key.indexOf(' id ') !== -1
+            || key.indexOf('id verification') !== -1
+            || key.indexOf('kyc') !== -1
+            || key.indexOf('aadhaar') !== -1
+            || key.indexOf('aadhar') !== -1
+            || key.indexOf('pan') !== -1
+            || key.indexOf('passport') !== -1
+            || key.indexOf('driving licence') !== -1
+            || key.indexOf('driving license') !== -1
+        );
+        return key.indexOf('education') !== -1 || key.indexOf('employment') !== -1 || idLike;
     }
 
     function getTypeCountInput(vtId) {
@@ -734,10 +758,10 @@ document.addEventListener('DOMContentLoaded', function () {
         return out;
     }
 
-    function saveJobRoleVerificationTypes(jobRoleId) {
+    function saveJobRoleVerificationTypes(jobRoleId, presetTypes) {
         var jrId = parseInt(jobRoleId || '0', 10) || 0;
         if (jrId <= 0) return Promise.resolve(true);
-        var types = collectSelectedVerificationTypesWithCounts();
+        var types = Array.isArray(presetTypes) ? presetTypes : collectSelectedVerificationTypesWithCounts();
         if (!types.length) return Promise.resolve(true);
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
         var url = base + '/api/gssadmin/job_role_verification_types_save.php';
@@ -748,7 +772,12 @@ document.addEventListener('DOMContentLoaded', function () {
             credentials: 'same-origin'
         }).then(function (r) { return r.json(); })
             .then(function (d) {
-                return !!(d && d.status === 1);
+                if (!d || d.status !== 1) return false;
+                var savedCount = (typeof d.saved_count !== 'undefined') ? (parseInt(d.saved_count || '0', 10) || 0) : types.length;
+                if (types.length > 0 && savedCount <= 0) {
+                    return false;
+                }
+                return true;
             })
             .catch(function () { return false; });
     }
@@ -1259,6 +1288,17 @@ document.addEventListener('DOMContentLoaded', function () {
             setTypeChecked(vtId, true);
         });
 
+        // Keep required-count and TAT/cost fields in sync while restoring from summary.
+        applyJobRoleRequiredCounts(jrId);
+        if (lvl) {
+            loadTatCost(urlClientId, lvl, jrId).then(function () {
+                syncInlineTatCost(lvl, jrId);
+                renderTatCost();
+            });
+        } else {
+            renderTatCost();
+        }
+
         refreshSelectedTypesChips();
         applyTypesSearch();
 
@@ -1739,6 +1779,9 @@ document.addEventListener('DOMContentLoaded', function () {
             return Promise.resolve(false);
         }
 
+        // Take a stable snapshot before async saves begin.
+        var selectedTypesWithCounts = collectSelectedVerificationTypesWithCounts();
+
         var activeTatLevel = getActiveTatLevel(levels);
         var tatItems = activeTatLevel ? collectTatCostInputs(activeTatLevel) : [];
 
@@ -1801,7 +1844,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 jrIds.forEach(function (jrId3) {
                     saveTypesChain = saveTypesChain.then(function (prevOk) {
                         if (!prevOk) return false;
-                        return saveJobRoleVerificationTypes(jrId3);
+                        return saveJobRoleVerificationTypes(jrId3, selectedTypesWithCounts);
                     });
                 });
                 return saveTypesChain;

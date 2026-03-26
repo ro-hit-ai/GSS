@@ -9,12 +9,52 @@ function str_contains_ci(string $haystack, string $needle): bool {
     return stripos($haystack, $needle) !== false;
 }
 
+function extract_required_count(array $row): int {
+    $keys = [
+        'required_count',
+        'requiredCount',
+        'verification_count',
+        'no_of_verifications',
+        'no_of_checks',
+        'count_required'
+    ];
+    foreach ($keys as $k) {
+        if (array_key_exists($k, $row)) {
+            $v = (int)$row[$k];
+            return $v > 0 ? $v : 1;
+        }
+    }
+    return 1;
+}
+
 function map_verification_type_to_pages(string $typeName, string $typeCategory): array {
     $typeName = trim($typeName);
     $typeCategory = trim($typeCategory);
 
     $hay = strtolower(trim(($typeName !== '' ? $typeName : '') . ' ' . ($typeCategory !== '' ? $typeCategory : '')));
     $pages = [];
+
+    // Identification / ID
+    if (
+        str_contains_ci($hay, 'identification')
+        || str_contains_ci($hay, 'identity')
+        || str_contains_ci($hay, 'id verification')
+        || str_contains_ci($hay, 'kyc')
+        || str_contains_ci($hay, 'aadhaar')
+        || str_contains_ci($hay, 'aadhar')
+        || str_contains_ci($hay, 'pan')
+        || str_contains_ci($hay, 'passport')
+        || str_contains_ci($hay, 'driving licence')
+        || str_contains_ci($hay, 'driving license')
+        || str_contains_ci($hay, 'voter')
+        || str_contains_ci($hay, 'nric')
+        || str_contains_ci($hay, 'ssn')
+        || str_contains_ci($hay, 'sin')
+        || str_contains_ci($hay, 'nin')
+        || str_contains_ci($hay, 'national id')
+    ) {
+        $pages[] = 'identification';
+    }
 
     // Education
     if (
@@ -151,13 +191,40 @@ try {
 
     $requiredCounts = [];
 
+    // Fallback map for setups where SP does not return required_count.
+    $requiredByTypeId = [];
+    if ($jobRoleId > 0) {
+        try {
+            $rcStmt = $pdo->prepare(
+                'SELECT verification_type_id, required_count
+                 FROM Vati_Payfiller_Job_Role_Verification_Types
+                 WHERE job_role_id = ?'
+            );
+            $rcStmt->execute([$jobRoleId]);
+            $rcRows = $rcStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+            foreach ($rcRows as $rr) {
+                $vtId = isset($rr['verification_type_id']) ? (int)$rr['verification_type_id'] : 0;
+                $rc = isset($rr['required_count']) ? (int)$rr['required_count'] : 1;
+                if ($vtId > 0) {
+                    $requiredByTypeId[$vtId] = $rc > 0 ? $rc : 1;
+                }
+            }
+        } catch (Throwable $e) {
+            $requiredByTypeId = [];
+        }
+    }
+
     foreach ($types as $t) {
         $name = (string)($t['type_name'] ?? '');
         $cat = (string)($t['type_category'] ?? '');
         $isEnabled = isset($t['is_enabled']) ? (int)$t['is_enabled'] : 1;
         if ($isEnabled !== 1) continue;
 
-        $req = isset($t['required_count']) ? (int)$t['required_count'] : 1;
+        $req = extract_required_count($t);
+        $vtId = isset($t['verification_type_id']) ? (int)$t['verification_type_id'] : 0;
+        if ($vtId > 0 && isset($requiredByTypeId[$vtId])) {
+            $req = (int)$requiredByTypeId[$vtId];
+        }
         if ($req <= 0) $req = 1;
 
         $pages = map_verification_type_to_pages($name, $cat);

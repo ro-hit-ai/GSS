@@ -129,6 +129,17 @@ class Social {
     /* ===================== PREFILL DATA ===================== */
 
     static prefillFormData() {
+        if (!window.SOCIAL_DATA) {
+            const dataEl = document.getElementById('socialData');
+            if (dataEl && dataEl.dataset && dataEl.dataset.social) {
+                try {
+                    window.SOCIAL_DATA = JSON.parse(dataEl.dataset.social || '{}');
+                } catch (e) {
+                    window.SOCIAL_DATA = null;
+                }
+            }
+        }
+
         // Prefill from window.SOCIAL_DATA if available
         if (window.SOCIAL_DATA) {
             const form = this.form;
@@ -245,14 +256,12 @@ class Social {
             localStorage.setItem("completed-social", "1");
         }
 
-        // Navigate to ecourt page after successful submission (SAME AS CONTACT)
-        setTimeout(() => {
-            if (window.Router?.navigateTo) {
-                Router.navigateTo("ecourt");
-            } else {
-                window.location.href = "?page=ecourt";
-            }
-        }, 600);
+        // Navigate to ecourt page after successful submission
+        if (window.Router?.navigateTo) {
+            Router.navigateTo("ecourt");
+        } else {
+            window.location.href = "?page=ecourt";
+        }
     }
 
     /* ===================== API ===================== */

@@ -18,6 +18,8 @@ echo json_encode([
         ['key' => 'contact', 'label' => 'Contact'],
         ['key' => 'education', 'label' => 'Education'],
         ['key' => 'employment', 'label' => 'Employment'],
+        ['key' => 'socialmedia', 'label' => 'SocialMedia'],
+        ['key' => 'ecourt', 'label' => 'ECourt'],
         ['key' => 'reference', 'label' => 'Reference'],
         ['key' => 'reports', 'label' => 'Authorization'],
         ['key' => 'timeline', 'label' => 'Timeline'],

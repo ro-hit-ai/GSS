@@ -19,6 +19,12 @@ function read_json_body(): array {
     return is_array($decoded) ? $decoded : [];
 }
 
+function is_local_debug(): bool {
+    $host = isset($_SERVER['HTTP_HOST']) ? strtolower((string)$_SERVER['HTTP_HOST']) : '';
+    $serverName = isset($_SERVER['SERVER_NAME']) ? strtolower((string)$_SERVER['SERVER_NAME']) : '';
+    return strpos($host, 'localhost') !== false || strpos($serverName, 'localhost') !== false;
+}
+
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         http_response_code(405);
@@ -51,9 +57,25 @@ try {
     }
 
     $addNew = $pdo->prepare('CALL SP_Vati_Payfiller_AddJobRoleVerificationType(?, ?, ?, ?, ?)');
-    $addOld = $pdo->prepare('CALL SP_Vati_Payfiller_AddJobRoleVerificationType(?, ?, ?, ?)');
+    $addOld = null;
+    try {
+        $addOld = $pdo->prepare('CALL SP_Vati_Payfiller_AddJobRoleVerificationType(?, ?, ?, ?)');
+    } catch (Throwable $e) {
+        $addOld = null;
+    }
+    $syncRequiredStmt = null;
+    try {
+        $syncRequiredStmt = $pdo->prepare(
+            'UPDATE Vati_Payfiller_Job_Role_Verification_Types
+             SET required_count = ?
+             WHERE job_role_id = ? AND verification_type_id = ?'
+        );
+    } catch (Throwable $e) {
+        $syncRequiredStmt = null;
+    }
 
     $sort = 1;
+    $savedCount = 0;
     foreach ($types as $t) {
         if (!is_array($t)) continue;
         $vtId = isset($t['verification_type_id']) ? (int)$t['verification_type_id'] : 0;
@@ -69,24 +91,54 @@ try {
             $addNew->execute([$jobRoleId, $vtId, $sortOrder, 1, $requiredCount]);
             while ($addNew->nextRowset()) {
             }
-        } catch (Throwable $e) {
-            $addOld->execute([$jobRoleId, $vtId, $sortOrder, 1]);
-            while ($addOld->nextRowset()) {
+        } catch (Throwable $eNew) {
+            $usedLegacy = false;
+            if ($addOld) {
+                try {
+                    $addOld->execute([$jobRoleId, $vtId, $sortOrder, 1]);
+                    while ($addOld->nextRowset()) {
+                    }
+                    $usedLegacy = true;
+                } catch (Throwable $eOld) {
+                    $msgOld = strtolower((string)$eOld->getMessage());
+                    // If legacy signature is invalid in this DB, ignore legacy path and surface original error.
+                    if (strpos($msgOld, 'incorrect number of arguments') === false) {
+                        throw $eOld;
+                    }
+                }
+            }
+            if (!$usedLegacy) {
+                throw $eNew;
+            }
+            // Legacy SP may not accept required_count; sync it directly when possible.
+            if ($syncRequiredStmt) {
+                try {
+                    $syncRequiredStmt->execute([$requiredCount, $jobRoleId, $vtId]);
+                } catch (Throwable $ignore) {
+                }
             }
         }
+        $savedCount++;
         $sort++;
     }
 
     $pdo->commit();
 
-    echo json_encode(['status' => 1, 'message' => 'Saved']);
+    echo json_encode(['status' => 1, 'message' => 'Saved', 'saved_count' => $savedCount]);
 
 } catch (PDOException $e) {
     if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {
         $pdo->rollBack();
     }
     http_response_code(500);
-    echo json_encode(['status' => 0, 'message' => 'Database error. Please try again.']);
+    $resp = ['status' => 0, 'message' => 'Database error. Please try again.'];
+    if (is_local_debug()) {
+        $resp['debug'] = [
+            'pdo_code' => (string)$e->getCode(),
+            'error' => (string)$e->getMessage()
+        ];
+    }
+    echo json_encode($resp);
 } catch (Throwable $e) {
     if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {
         $pdo->rollBack();

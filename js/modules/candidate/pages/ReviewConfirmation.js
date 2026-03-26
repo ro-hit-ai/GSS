@@ -86,13 +86,11 @@ class ReviewConfirmation {
             }
 
             // Navigate
-            setTimeout(() => {
-                if (window.Router && window.Router.navigateTo) {
-                    Router.navigateTo('basic-details');
-                } else {
-                    window.location.href = '?page=basic-details';
-                }
-            }, 800);
+            if (window.Router && window.Router.navigateTo) {
+                Router.navigateTo('basic-details');
+            } else {
+                window.location.href = '?page=basic-details';
+            }
         });
         
         validate(); // Initial validation

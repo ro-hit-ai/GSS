@@ -13,6 +13,7 @@ class EmploymentManager extends TabManager {
         this.isFresher = false;
         this.currentlyEmployed = 'no';
         this.contactEmployer = 'no';
+        this.requiredCount = 0;
     }
 
     async init() {
@@ -27,6 +28,7 @@ class EmploymentManager extends TabManager {
             if (this.isFresher) {
                 req = 1;
             }
+            this.requiredCount = req > 0 ? req : 0;
             if (req > 0 && this.countSelect) {
                 this.countSelect.value = String(req);
                 this.handleCountChange();
@@ -38,6 +40,10 @@ class EmploymentManager extends TabManager {
                     var wrap = this.countSelect.closest ? this.countSelect.closest('.form-control') : null;
                     if (wrap) {
                         wrap.style.display = 'none';
+                        var countWrap = wrap.closest ? wrap.closest('.employment-count') : null;
+                        if (countWrap) {
+                            countWrap.style.display = 'none';
+                        }
                     } else {
                         this.countSelect.style.display = 'none';
                     }
@@ -126,15 +132,13 @@ class EmploymentManager extends TabManager {
             // Store old file reference
             this.findOrCreateInput(card, `old_employment_doc[${index}]`, 'hidden').value = fileName;
             
-            // Show preview if it's a real file
+            // Show file info if it's a real file
             if (fileName !== 'INSUFFICIENT_DOCUMENTS') {
-                this.renderPreview(
-                    card,
-                    '.employment-doc-preview',
-                    fileName,
-                    '📄 Employment Document',
-                    'employment'
-                );
+                const input = card.querySelector('input[name="employment_doc[]"]');
+                const box = this.getUploadBoxFromInput(input);
+                const base = window.APP_BASE_URL || '';
+                const url = `${base}/uploads/employment/${fileName}`;
+                this.setUploadBox(box, fileName, url, false);
                 console.log(`   Added employment document preview: ${fileName}`);
             }
         }
@@ -234,16 +238,13 @@ class EmploymentManager extends TabManager {
 
     toggleEmploymentFileInput(card, isInsufficient) {
         const employmentFile = card.querySelector('input[name="employment_doc[]"]');
-        const previewArea = card.querySelector('.employment-doc-preview');
         
         if (employmentFile) {
             employmentFile.disabled = isInsufficient;
             employmentFile.required = !isInsufficient;
             if (isInsufficient) {
                 employmentFile.value = '';
-                if (previewArea) {
-                    previewArea.innerHTML = '';
-                }
+                this.clearUploadBox(this.getUploadBoxFromInput(employmentFile));
             }
         }
     }
@@ -273,20 +274,6 @@ class EmploymentManager extends TabManager {
             
             console.log(`✅ Radio ${name} set to: ${value}`);
         }, 50);
-    }
-
-    renderPreview(card, selector, file, label, folder = 'employment') {
-        const previewContainer = card.querySelector(selector);
-        if (!previewContainer) {
-            return null;
-        }
-        
-        if (!file || file.trim() === '') {
-            return null;
-        }
-        
-        // Use parent class renderPreview
-        return super.renderPreview(card, selector, file, label, folder);
     }
 
     setupInsufficientDocsHandlers() {
@@ -370,15 +357,59 @@ class EmploymentManager extends TabManager {
 
     setupFileHandlers() {
         console.log('🔧 Setting up file handlers');
-        
+
+        document.addEventListener('click', (e) => {
+            const trigger = e.target.closest('[data-file-choose]');
+            if (!trigger) return;
+            e.preventDefault();
+            const box = trigger.closest('[data-file-upload]');
+            const control = box ? box.closest('.form-control') : null;
+            const input = control ? control.querySelector('input[type="file"][data-file-input]') : null;
+            if (input) input.click();
+        });
+
         document.addEventListener('change', (e) => {
             if (e.target.matches('input[name="employment_doc[]"]')) {
                 const input = e.target;
                 const card = input.closest('.employment-card');
-                
+                const file = input.files && input.files[0] ? input.files[0] : null;
+                const box = this.getUploadBoxFromInput(input);
+                if (box) {
+                    const errEl = box.querySelector('[data-file-error]');
+                    if (errEl) errEl.textContent = '';
+                }
+
+                const allowed = ['pdf', 'jpg', 'jpeg', 'png'];
+                const validation = this.validateUploadFile(file, allowed, 10 * 1024 * 1024);
+                if (file && !validation.ok) {
+                    alert(validation.message);
+                    input.value = '';
+                    this.clearUploadBox(box);
+                    if (box) {
+                        const errEl = box.querySelector('[data-file-error]');
+                        if (errEl) errEl.textContent = validation.message;
+                    }
+                }
+
                 if (card && input.files.length > 0) {
                     console.log(`📄 Employment file selected in card:`, input.files[0].name);
-                    this.clearPreview(card, '.employment-doc-preview');
+                    const insufficientCheckbox =
+                        card.querySelector('input[name="insufficient_employment_docs[]"]');
+                    if (insufficientCheckbox) {
+                        insufficientCheckbox.checked = false;
+                        this.toggleEmploymentFileInput(card, false);
+                    }
+
+                    const oldEmploymentDoc =
+                        card.querySelector('[name^="old_employment_doc"]');
+                    if (oldEmploymentDoc && oldEmploymentDoc.value === 'INSUFFICIENT_DOCUMENTS') {
+                        oldEmploymentDoc.value = '';
+                    }
+
+                    if (file && box) {
+                        const url = URL.createObjectURL(file);
+                        this.setUploadBox(box, file.name, url, true);
+                    }
                     this.updateTabStatus();
                 }
             }
@@ -441,8 +472,13 @@ class EmploymentManager extends TabManager {
 
         // Update count selector
         if (this.countSelect) {
-            this.countSelect.value = 1;
-            this.countSelect.disabled = isFresher;
+            var targetCount = 1;
+            if (!isFresher && this.requiredCount > 0) {
+                targetCount = this.requiredCount;
+            }
+            this.countSelect.value = String(targetCount);
+            this.countSelect.disabled = true;
+            this.handleCountChange();
         }
 
         // Update tabs
@@ -473,9 +509,41 @@ class EmploymentManager extends TabManager {
         let isValid = true;
         const errors = [];
         
+        const isCardEmpty = (card) => {
+            if (!card) return true;
+            const inputs = card.querySelectorAll('input:not([type="hidden"]):not([type="file"]), select, textarea');
+            for (const input of inputs) {
+                if (input.value && input.value.trim() !== '' && !input.disabled) {
+                    return false;
+                }
+            }
+
+            const fileInput = card.querySelector('[name="employment_doc[]"]');
+            if (fileInput && fileInput.files && fileInput.files.length > 0) {
+                return false;
+            }
+
+            const oldEmploymentDoc = card.querySelector('[name^="old_employment_doc"]');
+            if (oldEmploymentDoc && oldEmploymentDoc.value && oldEmploymentDoc.value !== 'INSUFFICIENT_DOCUMENTS') {
+                return false;
+            }
+
+            const insufficientCheckbox = card.querySelector('input[name="insufficient_employment_docs[]"]');
+            if (insufficientCheckbox && insufficientCheckbox.checked) {
+                return false;
+            }
+
+            return true;
+        };
+
         for (let i = 0; i < this.cards.length; i++) {
             const card = this.cards[i];
             if (!card) continue;
+
+            // Skip completely empty tabs
+            if (isCardEmpty(card)) {
+                continue;
+            }
             
             // Skip validation for extra cards if fresher
             if (this.isFresher && i > 0) {
@@ -733,13 +801,11 @@ if (isFinalSubmit) {
                         }
                         
                         // Navigate to next page using Router
-                        setTimeout(() => {
-                            if (window.Router.navigateTo) {
-                                window.Router.navigateTo('reference');
-                            } else {
-                                window.location.href = `${window.APP_BASE_URL}/modules/candidate/reference.php`;
-                            }
-                        }, 500);
+                        if (window.Router.navigateTo) {
+                            window.Router.navigateTo('reference');
+                        } else {
+                            window.location.href = `${window.APP_BASE_URL}/modules/candidate/reference.php`;
+                        }
                     } else {
                         window.location.href = `${window.APP_BASE_URL}/modules/candidate/reference.php`;
                     }

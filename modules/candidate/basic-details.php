@@ -52,15 +52,52 @@ $lockMobile = false;
 $citizenshipOptions = ['Indian','American','British','Australian','Canadian','German','French','Chinese','Japanese','Other'];
 $countryOptions = ['India','United States','United Kingdom','Australia','Canada','Germany','France','China','Japan','Other'];
 $stateOptions = [
-    'Andhra Pradesh','Assam','Bihar','Chhattisgarh','Goa','Gujarat','Haryana','Himachal Pradesh',
-    'Jammu and Kashmir','Jharkhand','Karnataka','Kerala','Madhya Pradesh','Maharashtra','Manipur',
-    'Meghalaya','Mizoram','Nagaland','Odisha','Punjab','Rajasthan','Sikkim','Tamil Nadu',
-    'Telangana','Tripura','Uttar Pradesh','Uttarakhand','West Bengal'
+    'Andaman and Nicobar Islands',
+    'Andhra Pradesh',
+    'Arunachal Pradesh',
+    'Assam',
+    'Bihar',
+    'Chandigarh',
+    'Chhattisgarh',
+    'Dadra and Nagar Haveli and Daman and Diu',
+    'Delhi',
+    'Goa',
+    'Gujarat',
+    'Haryana',
+    'Himachal Pradesh',
+    'Jammu and Kashmir',
+    'Jharkhand',
+    'Karnataka',
+    'Kerala',
+    'Ladakh',
+    'Lakshadweep',
+    'Madhya Pradesh',
+    'Maharashtra',
+    'Manipur',
+    'Meghalaya',
+    'Mizoram',
+    'Nagaland',
+    'Odisha',
+    'Puducherry',
+    'Punjab',
+    'Rajasthan',
+    'Sikkim',
+    'Tamil Nadu',
+    'Telangana',
+    'Tripura',
+    'Uttar Pradesh',
+    'Uttarakhand',
+    'West Bengal'
 ];
 
-$todayMax = date('Y-m-d');
+$adultDobMax = date('Y-m-d', strtotime('-18 years'));
 $countryVal = trim((string)($row['country'] ?? ''));
 $stateVal = trim((string)($row['state'] ?? ''));
+$photoPathRaw = trim((string)($row['photo_path'] ?? ''));
+$photoPathForView = $photoPathRaw;
+if ($photoPathRaw !== '' && strpos($photoPathRaw, '/uploads/') === 0) {
+    $photoPathForView = app_url($photoPathRaw);
+}
 ?>
 
 
@@ -130,7 +167,7 @@ $stateVal = trim((string)($row['state'] ?? ''));
                     <div class="form-field">
                         <div class="form-control double-border compact-control">
                             <label class="compact-label">Date of Birth <span class="required">*</span></label>
-                            <input type="date" name="dob" required class="compact-input" max="<?= htmlspecialchars($todayMax) ?>"
+                            <input type="date" name="dob" required class="compact-input" max="<?= htmlspecialchars($adultDobMax) ?>"
                                    value="<?= htmlspecialchars($row['dob'] ?? '') ?>">
                         </div>
                     </div>
@@ -179,9 +216,9 @@ $stateVal = trim((string)($row['state'] ?? ''));
                     <div class="photo-wrapper compact-photo" id="photoUploadTrigger" 
                          style="height: 70px; margin-top: 2px;">
 
-                        <?php if (!empty($row['photo_path'])): ?>
+                        <?php if (!empty($photoPathRaw)): ?>
                             <div class="photo-preview" style="height: 100%;">
-                                <img src="<?= htmlspecialchars($row['photo_path']) ?>" alt="Profile Photo" style="height: 100%; object-fit: contain;">
+                                <img src="<?= htmlspecialchars($photoPathForView) ?>" alt="Profile Photo" style="height: 100%; object-fit: contain;">
                                 <button type="button" class="photo-remove-btn compact-btn" style="top: 4px; right: 4px;">
                                     <i class="fas fa-times"></i>
                                 </button>
@@ -190,7 +227,7 @@ $stateVal = trim((string)($row['state'] ?? ''));
                             <div class="photo-upload-box" style="padding: 4px;">
                                 <div class="upload-icon"><i class="fas fa-camera" style="font-size: 12px;"></i></div>
                                 <div class="upload-text compact-label" style="font-size: 11px; margin-top: 2px;">Upload Photo</div>
-                                <div class="upload-hint compact-hint" style="font-size: 9px; margin-top: 1px;">JPG/PNG (5MB max)</div>
+                                <div class="upload-hint compact-hint" style="font-size: 9px; margin-top: 1px;">JPG/JPEG only (5MB max)</div>
                             </div>
                         <?php endif; ?>
 
@@ -200,7 +237,7 @@ $stateVal = trim((string)($row['state'] ?? ''));
                 <input type="file"
                        name="photo"
                        id="photoInput"
-                       accept="image/jpeg,image/png"
+                       accept=".jpg,.jpeg,image/jpeg"
                        class="d-none">
             </div>
 
@@ -390,6 +427,7 @@ $stateVal = trim((string)($row['state'] ?? ''));
         const spouseNameInput = document.querySelector('input[name="spouse_name"]');
         const dobInput = document.querySelector('input[name="dob"]');
         const pincodeInput = document.querySelector('input[name="pincode"]');
+        const photoInput = document.getElementById('photoInput');
         
         if (maritalStatusSelect && spouseNameInput) {
             maritalStatusSelect.addEventListener('change', function() {
@@ -408,7 +446,7 @@ $stateVal = trim((string)($row['state'] ?? ''));
 
         if (dobInput) {
             try {
-                dobInput.max = dobInput.max || "<?= htmlspecialchars($todayMax) ?>";
+                dobInput.max = dobInput.max || "<?= htmlspecialchars($adultDobMax) ?>";
             } catch (e) {
             }
         }
@@ -417,6 +455,20 @@ $stateVal = trim((string)($row['state'] ?? ''));
             pincodeInput.addEventListener('input', function () {
                 var v = String(pincodeInput.value || '').replace(/\D/g, '').slice(0, 6);
                 if (pincodeInput.value !== v) pincodeInput.value = v;
+            });
+        }
+
+        if (photoInput) {
+            photoInput.addEventListener('change', function () {
+                var file = photoInput.files && photoInput.files[0] ? photoInput.files[0] : null;
+                if (!file) return;
+                var name = String(file.name || '').toLowerCase();
+                var type = String(file.type || '').toLowerCase();
+                var isJpeg = type === 'image/jpeg' || name.endsWith('.jpg') || name.endsWith('.jpeg');
+                if (!isJpeg) {
+                    alert('Only JPG/JPEG images are allowed for Profile Photo.');
+                    photoInput.value = '';
+                }
             });
         }
     });

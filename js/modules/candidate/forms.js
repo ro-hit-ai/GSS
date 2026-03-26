@@ -1,7 +1,7 @@
 class Forms {
 
     // Pages where Forms.js should do nothing at all
-    static ignorePages = ["review-confirmation", "success"];
+    static ignorePages = ["review-confirmation", "success", "identification", "education", "employment"];
 
     static initFormHandlers(page) {
         // Completely skip custom pages

@@ -114,6 +114,10 @@ if (!$jsAppBaseUrl) {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
+    <!-- Core UI styles -->
+    <link rel="stylesheet" href="<?php echo htmlspecialchars(app_url('/assets/css/style.css')); ?>">
+    <link rel="stylesheet" href="<?php echo htmlspecialchars(app_url('/assets/css/candidate.css')); ?>">
+
     <!-- Set APP_BASE_URL early -->
     <script>
         window.APP_BASE_URL = "<?php echo htmlspecialchars($jsAppBaseUrl); ?>";
@@ -122,7 +126,6 @@ if (!$jsAppBaseUrl) {
     </script>
 
     <!-- Candidate UI CSS -->
-    <link rel="stylesheet" href="<?php echo htmlspecialchars(app_url('/assets/css/candidate.css')); ?>">
 </head>
 
 <body class="candidate-page">
@@ -156,47 +159,22 @@ if (!$jsAppBaseUrl) {
 
 <header class="top-header">
     <div class="top-header-left">
-        <div class="brand-mark">VT</div>
+        <div class="brand-mark"><img class="brand-logo" src="<?php echo htmlspecialchars(app_url('/assets/img/gss-logo.svg')); ?>" alt="GSS"></div>
         <div class="brand-text">
             <span class="brand-title">VATI GSS</span>
             <span class="brand-subtitle">Verification Platform</span>
         </div>
-        <button type="button" class="btn-toggle-sidebar" id="sidebarToggle">
+        <button type="button" class="btn-toggle-sidebar" id="sidebarToggle" aria-label="Toggle navigation">
             <i class="fas fa-bars"></i>
         </button>
     </div>
 
-    <div class="top-header-right d-flex align-items-center gap-3">
-        <div class="text-end d-none d-md-block">
-            <small class="text-muted">Control No:</small><br>
-            <strong><?= htmlspecialchars($applicationId) ?></strong>
-        </div>
-
-        <div class="dropdown">
-            <button class="btn user-btn d-flex align-items-center" data-bs-toggle="dropdown">
-                <div class="user-icon"><i class="fas fa-user"></i></div>
-                <span class="d-none d-md-inline" style="max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                    <?= htmlspecialchars($userName) ?><?php if (!empty($userEmail)): ?> <span class="text-muted" style="font-size:12px;">(<?= htmlspecialchars($userEmail) ?>)</span><?php endif; ?>
-                </span>
-            </button>
-            <ul class="dropdown-menu dropdown-menu-end">
-                <li class="px-3 py-2" style="min-width:240px;">
-                    <div style="font-weight:600;"><?= htmlspecialchars($userName) ?></div>
-                    <?php if (!empty($userEmail)): ?>
-                        <div class="text-muted" style="font-size:12px; word-break:break-all;"><?= htmlspecialchars($userEmail) ?></div>
-                    <?php endif; ?>
-                </li>
-                <li><hr class="dropdown-divider"></li>
-                <li><a class="dropdown-item" href="#">Settings</a></li>
-                <li><a class="dropdown-item" href="#">Help</a></li>
-                <li><hr class="dropdown-divider"></li>
-                <li><a class="dropdown-item text-danger" href="<?php echo app_url('logout.php'); ?>">Logout</a></li>
-            </ul>
-        </div>
+    <div class="top-header-right">
+        <button type="button" class="btn btn-sm btn-logout" onclick="window.location.href='<?php echo htmlspecialchars(app_url('/logout.php')); ?>'">Logout</button>
     </div>
 </header>
 
-<div class="app-shell" style="display:flex;">
+<div class="app-shell">
     <?php include __DIR__ . '/../../api/candidate/aside.php'; ?>
 
     <div class="main" id="mainContent">
@@ -211,8 +189,9 @@ if (!$jsAppBaseUrl) {
             </div>
         </main>
 
-        <footer class="footer text-center py-2">
-            2025 VATI GSS. All rights reserved. Environment: Staging
+        <footer class="app-footer">
+            <span><?php echo date('Y'); ?> VATI GSS. All rights reserved.</span>
+            <span>Environment: Staging</span>
         </footer>
     </div>
 </div>

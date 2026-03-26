@@ -1,11 +1,17 @@
 <?php
 require_once __DIR__ . '/../config/env.php';
 require_once __DIR__ . '/mail_log.php';
+require_once __DIR__ . '/../config/nodemailer.php';
+
 
 $autoload = __DIR__ . '/../vendor/autoload.php';
 if (is_file($autoload)) {
     require_once $autoload;
 }
+
+define('NODE_API_URL', env_get('NODE_API_URL', 'http://localhost:3000'));
+define('NODE_API_KEY', env_get('NODE_API_KEY', '')); // Set this in your .env
+define('NODE_APP_HEADER', 'VATI-GSS-PHP');
 
 function app_mail_debug_enabled(): bool {
     return trim((string)(env_get('APP_MAIL_DEBUG', '0') ?? '0')) === '1';
@@ -46,10 +52,221 @@ function app_mail_get_log_meta(): array {
     return is_array($m) ? $m : [];
 }
 
+function app_mail_pick_queue_id(array $metadata): ?string {
+    $isObjectId = static function (string $v): bool {
+        return (bool)preg_match('/^[a-f0-9]{24}$/i', $v);
+    };
+    $normalize = static function ($v) use ($isObjectId): ?string {
+        $s = trim((string)$v);
+        if ($s === '') return null;
+        return $isObjectId($s) ? $s : null;
+    };
+
+    // Priority:
+    // 1) metadata['queueId']
+    // 2) metadata['queue_id']
+    // 3) metadata['queue']
+    // 4) NODE_QUEUE_ID
+    // 5) NODE_DEFAULT_QUEUE_ID
+    foreach (['queueId', 'queue_id', 'queue'] as $k) {
+        if (array_key_exists($k, $metadata)) {
+            $picked = $normalize($metadata[$k]);
+            if ($picked !== null) return $picked;
+        }
+    }
+
+    $envQueue = $normalize(env_get('NODE_QUEUE_ID', ''));
+    if ($envQueue !== null) return $envQueue;
+
+    $defaultQueue = $normalize(env_get('NODE_DEFAULT_QUEUE_ID', ''));
+    if ($defaultQueue !== null) return $defaultQueue;
+
+    return null;
+}
+
+function app_node_api_base_url(): string {
+    return rtrim(trim((string)NODE_API_URL), '/');
+}
+
+function app_node_api_url(string $path): string {
+    $base = app_node_api_base_url();
+    $path = '/' . ltrim($path, '/');
+    return $base . $path;
+}
+
+function app_node_api_validate_config(): ?string {
+    $base = app_node_api_base_url();
+    if ($base === '' || !filter_var($base, FILTER_VALIDATE_URL)) {
+        return 'Invalid NODE_API_URL: ' . (string)NODE_API_URL;
+    }
+    if (trim((string)NODE_API_KEY) === '') {
+        return 'NODE_API_KEY is empty';
+    }
+    return null;
+}
+
+function app_node_api_json_request(string $method, string $path, ?array $payload = null, int $timeout = 30): array {
+    if (!function_exists('curl_init')) {
+        return [
+            'success' => false,
+            'error' => 'cURL extension is not enabled',
+            'http_code' => 0
+        ];
+    }
+
+    $configError = app_node_api_validate_config();
+    if ($configError !== null) {
+        return [
+            'success' => false,
+            'error' => $configError,
+            'http_code' => 0
+        ];
+    }
+
+    $url = app_node_api_url($path);
+    $method = strtoupper(trim($method));
+    $jsonBody = null;
+    if ($payload !== null) {
+        $jsonBody = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if ($jsonBody === false) {
+            return [
+                'success' => false,
+                'error' => 'JSON encode failed: ' . json_last_error_msg(),
+                'http_code' => 0
+            ];
+        }
+    }
+
+    $scheme = (string)parse_url($url, PHP_URL_SCHEME);
+    $verifySsl = strtolower($scheme) === 'https'
+        ? trim((string)(env_get('NODE_API_VERIFY_SSL', '1') ?? '1')) !== '0'
+        : false;
+
+    $headers = [
+        'Accept: application/json',
+        'X-API-Key: ' . trim((string)NODE_API_KEY),
+        'X-Application: ' . NODE_APP_HEADER
+    ];
+    if ($jsonBody !== null) {
+        $headers[] = 'Content-Type: application/json';
+    }
+
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, max(1, $timeout));
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, $verifySsl);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, $verifySsl ? 2 : 0);
+    if ($jsonBody !== null) {
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $jsonBody);
+    }
+
+    $rawBody = curl_exec($ch);
+    $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlErrNo = curl_errno($ch);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($curlErrNo !== 0) {
+        return [
+            'success' => false,
+            'error' => 'cURL error #' . $curlErrNo . ': ' . $curlError,
+            'http_code' => $httpCode
+        ];
+    }
+
+    $responseBody = is_string($rawBody) ? trim($rawBody) : '';
+    $decoded = null;
+    if ($responseBody !== '') {
+        $decoded = json_decode($responseBody, true);
+        if (!is_array($decoded) && json_last_error() !== JSON_ERROR_NONE) {
+            return [
+                'success' => false,
+                'error' => 'Invalid JSON response: ' . json_last_error_msg(),
+                'http_code' => $httpCode,
+                'raw_response' => $responseBody
+            ];
+        }
+    }
+
+    $isHttpOk = $httpCode >= 200 && $httpCode < 300;
+    $apiSuccess = is_array($decoded) ? (($decoded['success'] ?? true) === true) : $isHttpOk;
+    $success = $isHttpOk && $apiSuccess;
+
+    return [
+        'success' => $success,
+        'http_code' => $httpCode,
+        'response' => is_array($decoded) ? $decoded : null,
+        'raw_response' => $responseBody
+    ];
+}
+
+/**
+ * Send email via Node.js service
+ */
+function send_via_node(string $to, string $subject, string $htmlBody, ?string $fromName = null, array $attachments = [], array $metadata = []): array {
+    if (!function_exists('sendNodeMailer')) {
+        return ['success' => false, 'error' => 'sendNodeMailer() not found'];
+    }
+
+    $queueId = app_mail_pick_queue_id($metadata);
+    $response = sendNodeMailer($to, $subject, $htmlBody, $queueId);
+    if (!is_array($response)) {
+        return ['success' => false, 'error' => 'Invalid Node mailer response'];
+    }
+
+    $ok = (bool)($response['success'] ?? false);
+    return [
+        'success' => $ok,
+        'error' => $ok ? null : (string)($response['error'] ?? $response['message'] ?? 'Unknown Node error'),
+        'response' => $response
+    ];
+}
+
+/**
+ * Send bulk emails via Node.js
+ */
+function send_bulk_via_node(array $emails): array {
+    $payload = ['emails' => []];
+    $fromEmail = (string)(env_get('APP_MAIL_FROM', '') ?? '');
+    
+    foreach ($emails as $email) {
+        $payload['emails'][] = [
+            'to' => $email['to'],
+            'subject' => $email['subject'],
+            'htmlBody' => $email['htmlBody'],
+            'html' => $email['htmlBody'],
+            'fromName' => $email['fromName'] ?? null,
+            'fromEmail' => $email['fromEmail'] ?? $fromEmail
+        ];
+    }
+
+    $result = app_node_api_json_request('POST', '/api/php/send-bulk', $payload, 60);
+    if ($result['success']) {
+        return $result['response'] ?? ['success' => true];
+    }
+
+    return [
+        'success' => false,
+        'error' => $result['error'] ?? ($result['response']['error'] ?? 'Bulk email failed'),
+        'http_code' => $result['http_code'] ?? 0
+    ];
+}
+
+/**
+ * Check Node.js service health
+ */
+function is_node_service_healthy(): bool {
+    $result = app_node_api_json_request('GET', '/api/php/health', null, 5);
+    return $result['success'] === true;
+}
+
 function send_app_mail(string $to, string $subject, string $htmlBody, ?string $fromName = null): bool {
     $to = trim($to);
     $meta = app_mail_get_log_meta();
-    $driver = strtolower(trim((string)(env_get('APP_MAIL_DRIVER', 'mail') ?? 'mail')));
+    $driver = 'node';
 
     if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL)) {
         mail_log_event('failed', $driver, (string)(env_get('APP_MAIL_FROM', '') ?? ''), $to, $subject, $meta, 'Invalid recipient email');
@@ -62,6 +279,50 @@ function send_app_mail(string $to, string $subject, string $htmlBody, ?string $f
         return false;
     }
 
+    // Check if Node service is available
+    $useNode = env_get('USE_NODE_EMAIL', '1') === '1';
+    
+    if ($useNode && NODE_API_KEY) {
+        app_mail_debug_log('Attempting to send via Node.js service');
+        
+        // Extract ticket ID from meta if present
+        $metadata = [
+            'template_id' => $meta['template_id'] ?? null,
+            'application_id' => $meta['application_id'] ?? null,
+            'case_id' => $meta['case_id'] ?? null,
+            'role' => $meta['role'] ?? null,
+            'queue_id' => $meta['queue_id'] ?? ($meta['queueId'] ?? ($meta['queue'] ?? null)),
+        ];
+
+        $result = send_via_node($to, $subject, $htmlBody, $fromName, [], $metadata);
+        
+        if ($result['success']) {
+            app_mail_debug_log('Email sent successfully via Node.js');
+            mail_log_event('sent', $driver, $fromEmail, $to, $subject, $meta, null);
+            return true;
+        } else {
+            $error = $result['error'] ?? ($result['response']['error'] ?? 'Unknown error');
+            app_mail_debug_log('Node.js service failed: ' . $error);
+            
+            // Fallback to PHP mail if configured
+            if (env_get('FALLBACK_TO_PHP_MAIL', '0') === '1') {
+                app_mail_debug_log('Falling back to PHP mail()');
+                return send_app_mail_php_fallback($to, $subject, $htmlBody, $fromName, $fromEmail, $meta);
+            }
+            
+            mail_log_event('failed', $driver, $fromEmail, $to, $subject, $meta, 'Node service error: ' . $error);
+            return false;
+        }
+    } else {
+        // Use PHP mail directly
+        return send_app_mail_php_fallback($to, $subject, $htmlBody, $fromName, $fromEmail, $meta);
+    }
+}
+
+/**
+ * Original PHP mail fallback
+ */
+function send_app_mail_php_fallback(string $to, string $subject, string $htmlBody, ?string $fromName, string $fromEmail, array $meta): bool {
     $envFromName = (string)(env_get('APP_MAIL_FROM_NAME', '') ?? '');
     $effectiveFromName = trim((string)($fromName ?? ''));
     if ($effectiveFromName === '' && $envFromName !== '') $effectiveFromName = $envFromName;
@@ -81,65 +342,9 @@ function send_app_mail(string $to, string $subject, string $htmlBody, ?string $f
     $headers[] = 'Reply-To: ' . $effectiveFromName . ' <' . $fromEmail . '>';
     $headers[] = 'X-Mailer: PHP/' . PHP_VERSION;
 
-    if (app_mail_debug_enabled()) {
-        app_mail_debug_log('autoload=' . (is_file(__DIR__ . '/../vendor/autoload.php') ? 'present' : 'missing') . ', driver=' . $driver);
-        app_mail_debug_log('php=' . PHP_VERSION);
-    }
-
-    if ($driver === 'smtp' && class_exists('PHPMailer\\PHPMailer\\PHPMailer')) {
-        try {
-            $host = trim((string)(env_get('APP_MAIL_HOST', '') ?? ''));
-            $port = (int)(env_get('APP_MAIL_PORT', '587') ?? '587');
-            $username = (string)(env_get('APP_MAIL_USERNAME', '') ?? '');
-            $password = (string)(env_get('APP_MAIL_PASSWORD', '') ?? '');
-            $encryption = strtolower(trim((string)(env_get('APP_MAIL_ENCRYPTION', 'tls') ?? 'tls')));
-
-            app_mail_debug_log('smtp host=' . $host . ', port=' . $port . ', user=' . $username . ', enc=' . $encryption);
-
-            if ($host === '' || $username === '' || $password === '') return false;
-
-            $mail = new PHPMailer\PHPMailer\PHPMailer(true);
-            $mail->isSMTP();
-            $mail->Host = $host;
-            $mail->SMTPAuth = true;
-            $mail->Username = $username;
-            $mail->Password = $password;
-            $mail->Port = $port;
-
-            if ($encryption === 'ssl' || $encryption === 'smtps') {
-                $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS;
-            } elseif ($encryption === 'tls' || $encryption === 'starttls') {
-                $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
-            } else {
-                $mail->SMTPSecure = false;
-                $mail->SMTPAutoTLS = false;
-            }
-
-            $mail->CharSet = 'UTF-8';
-            $mail->setFrom($fromEmail, $effectiveFromName);
-            $mail->addAddress($to);
-            $mail->addReplyTo($fromEmail, $effectiveFromName);
-            $mail->isHTML(true);
-            $mail->Subject = $subject;
-            $mail->Body = $htmlBody;
-            $mail->AltBody = strip_tags($htmlBody);
-
-            $ok = $mail->send();
-            mail_log_event($ok ? 'sent' : 'failed', $driver, $fromEmail, $to, $subject, $meta, $ok ? null : 'SMTP send failed');
-            return $ok;
-        } catch (Throwable $e) {
-            app_mail_debug_log('smtp exception: ' . $e->getMessage());
-            mail_log_event('failed', $driver, $fromEmail, $to, $subject, $meta, 'SMTP exception: ' . $e->getMessage());
-            return false;
-        }
-    }
-
-    if ($driver === 'smtp' && !class_exists('PHPMailer\\PHPMailer\\PHPMailer')) {
-        app_mail_debug_log('smtp requested but PHPMailer class not found. Did you upload vendor/?');
-    }
-
     $params = '-f' . $fromEmail;
     $ok = @mail($to, $encodedSubject, $htmlBody, implode("\r\n", $headers), $params);
-    mail_log_event($ok ? 'sent' : 'failed', $driver, $fromEmail, $to, $subject, $meta, $ok ? null : 'mail() returned false');
+    
+    mail_log_event($ok ? 'sent' : 'failed', 'php_fallback', $fromEmail, $to, $subject, $meta, $ok ? null : 'mail() returned false');
     return $ok;
 }

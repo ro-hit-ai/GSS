@@ -16,6 +16,7 @@ class BasicDetails {
         this.initForm();
         this.initMaritalLogic();
         this.initPhotoUpload();
+        this.initInputConstraints();
 
         console.log(" BasicDetails ready");
     }
@@ -113,7 +114,8 @@ class BasicDetails {
         if (!trigger || !input) return;
 
         // OPEN FILE PICKER
-        this.on(trigger, "click", () => {
+        this.on(trigger, "click", (e) => {
+            if (e.target.closest(".photo-remove-btn")) return;
             input.click();
         });
 
@@ -255,7 +257,57 @@ class BasicDetails {
             }
         }
 
+        // DOB validation (candidate must be 18 or older)
+        const dobInput = form.querySelector('input[name="dob"]');
+        if (final && dobInput) {
+            const dobValue = (dobInput.value || '').trim();
+            if (dobValue) {
+                const dob = new Date(dobValue + 'T00:00:00');
+                if (Number.isNaN(dob.getTime())) {
+                    this.showNotification("Please enter a valid date of birth", true);
+                    dobInput.focus();
+                    return false;
+                }
+
+                const cutoff = new Date();
+                cutoff.setHours(0, 0, 0, 0);
+                cutoff.setFullYear(cutoff.getFullYear() - 18);
+                if (dob > cutoff) {
+                    this.showNotification("Candidate must be at least 18 years old", true);
+                    dobInput.focus();
+                    return false;
+                }
+            }
+        }
+
         return true;
+    }
+
+    static initInputConstraints() {
+        const form = this.form;
+        if (!form) return;
+
+        const dobInput = form.querySelector('input[name="dob"]');
+        if (dobInput && dobInput.max && String(dobInput.max).trim() === '') {
+            // no-op, keep existing
+        }
+
+        if (dobInput && !dobInput.max) {
+            const cutoff = new Date();
+            cutoff.setHours(0, 0, 0, 0);
+            cutoff.setFullYear(cutoff.getFullYear() - 18);
+            const m = String(cutoff.getMonth() + 1).padStart(2, '0');
+            const d = String(cutoff.getDate()).padStart(2, '0');
+            dobInput.max = `${cutoff.getFullYear()}-${m}-${d}`;
+        }
+
+        const pincodeInput = form.querySelector('input[name="pincode"]');
+        if (pincodeInput) {
+            this.on(pincodeInput, 'input', () => {
+                const v = String(pincodeInput.value || '').replace(/\D/g, '').slice(0, 6);
+                if (pincodeInput.value !== v) pincodeInput.value = v;
+            });
+        }
     }
 
     /* ================= PREPARE FORM DATA ================= */
@@ -328,20 +380,12 @@ class BasicDetails {
 
             console.log("📥 Response status:", res.status);
             
-            const responseText = await res.text();
-            console.log("📥 Raw response:", responseText);
-
             if (!res.ok) {
+                const responseText = await res.text();
                 throw new Error(`HTTP ${res.status}: ${responseText}`);
             }
 
-            let data;
-            try {
-                data = JSON.parse(responseText);
-            } catch (e) {
-                console.error("❌ Failed to parse JSON:", responseText);
-                throw new Error("Invalid response from server");
-            }
+            const data = await res.json();
 
             if (!data.success) {
                 throw new Error(data.message || "Save failed");
@@ -402,3 +446,5 @@ class BasicDetails {
 
 /* ================= EXPORT ================= */
 window.BasicDetails = BasicDetails;
+
+

@@ -153,7 +153,16 @@ try {
     $mgrPhones = $_POST['manager_phone'] ?? [];
     $mgrEmails = $_POST['manager_email'] ?? [];
 
-    $count = count($employerNames);
+    $count = max(
+        count($employerNames),
+        count($jobTitles),
+        count($employeeIds),
+        count($joiningDates),
+        count($addresses),
+        count($reasons),
+        count($hrNames),
+        count($mgrNames)
+    );
 
     for ($i = 0; $i < $count; $i++) {
         $index = $i + 1;
@@ -178,6 +187,22 @@ try {
             'manager_email'    => trim($mgrEmails[$i] ?? ''),
         ];
 
+        $fileMeta = null;
+        if (!empty($_FILES['employment_doc']['name'][$i] ?? '')) {
+            $fileMeta = [
+                'name'     => $_FILES['employment_doc']['name'][$i],
+                'type'     => $_FILES['employment_doc']['type'][$i],
+                'tmp_name' => $_FILES['employment_doc']['tmp_name'][$i],
+                'error'    => $_FILES['employment_doc']['error'][$i],
+                'size'     => $_FILES['employment_doc']['size'][$i],
+            ];
+        }
+
+        if (isEmploymentRowEmpty($data, $fileMeta)) {
+            // Skip completely empty tabs (draft or final)
+            continue;
+        }
+
         validateSingleEmployment($data, $isFresher === 'yes', $index, $isDraft);
         $isInsufficient = isset($insufficientDocs[$i]) && 
                          ($insufficientDocs[$i] === 'on' || 
@@ -188,14 +213,8 @@ try {
         if ($isInsufficient) {
             $doc = 'INSUFFICIENT_DOCUMENTS';
         } else {
-            if (!empty($_FILES['employment_doc']['name'][$i] ?? '')) {
-                $doc = handleFileUpload([
-                    'name'     => $_FILES['employment_doc']['name'][$i],
-                    'type'     => $_FILES['employment_doc']['type'][$i],
-                    'tmp_name' => $_FILES['employment_doc']['tmp_name'][$i],
-                    'error'    => $_FILES['employment_doc']['error'][$i],
-                    'size'     => $_FILES['employment_doc']['size'][$i],
-                ], $applicationId, $index);
+            if ($fileMeta) {
+                $doc = handleFileUpload($fileMeta, $applicationId, $index);
             } elseif (!empty($_POST['old_employment_doc'][$i] ?? '')) {
                 $oldDoc = $_POST['old_employment_doc'][$i];
                 if ($oldDoc !== 'INSUFFICIENT_DOCUMENTS') {
@@ -271,4 +290,17 @@ try {
     error_log("store_employment.php ERROR: " . $e->getMessage());
     http_response_code(500);
     echo json_encode(['success' => false, 'message' => 'Server error: ' . $e->getMessage()]);
+}
+
+function isEmploymentRowEmpty(array $data, ?array $file): bool
+{
+    foreach ($data as $v) {
+        if (trim((string)$v) !== '') {
+            return false;
+        }
+    }
+    if ($file && !empty($file['name'])) {
+        return false;
+    }
+    return true;
 }
