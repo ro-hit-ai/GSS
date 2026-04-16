@@ -3,6 +3,7 @@ header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/integration.php';
 
 auth_require_login('team_lead');
 auth_session_start();
@@ -148,15 +149,38 @@ try {
     } catch (Throwable $e) {
     }
 
+    $links = integration_deep_links($applicationId, $caseId);
+    $webhook = integration_send_webhook('application.assigned', [
+        'applicationId' => $applicationId,
+        'caseId' => $caseId,
+        'currentStage' => $assignedRole,
+        'status' => 'ASSIGNED',
+        'triggeredBy' => [
+            'userId' => (int)($_SESSION['auth_user_id'] ?? 0),
+            'role' => integration_role_normalized((string)($_SESSION['auth_moduleAccess'] ?? 'team_lead')),
+        ],
+        'triggeredAt' => gmdate('c'),
+        'metadata' => array_merge([
+            'componentKey' => $componentKey,
+            'assignedRole' => $assignedRole,
+            'assignedUserId' => $assignedUserId,
+        ], $links),
+    ]);
+
     echo json_encode([
         'status' => 1,
         'message' => 'assigned',
         'data' => [
             'case_id' => $caseId,
             'application_id' => $applicationId,
+            'applicationId' => $applicationId,
             'component_key' => $componentKey,
             'assigned_role' => $assignedRole,
-            'assigned_user_id' => $assignedUserId
+            'assigned_user_id' => $assignedUserId,
+            'applicationUrl' => $links['applicationUrl'],
+            'candidateUrl' => $links['candidateUrl'],
+            'timelineUrl' => $links['timelineUrl'],
+            'webhook_event_id' => $webhook['eventId'] ?? null
         ]
     ]);
 

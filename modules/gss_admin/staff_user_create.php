@@ -11,7 +11,7 @@ ob_start();
 ?>
 <div class="card">
     <h3><?php echo !empty($_GET['user_id']) ? 'Edit Staff User' : 'Create Staff User'; ?></h3>
-    <p class="card-subtitle">Create staff users (GSS Admin / Validator / Verifier / DB Verifier / QA). Client + Location are required for user mapping.</p>
+    <p class="card-subtitle">Create staff users (GSS Admin / Validator / Verifier / DB Verifier / QA). Location is required for user mapping.</p>
 
     <div id="staffUserCreateMessage" style="display:none; margin-top: 10px;"></div>
 
@@ -23,8 +23,7 @@ ob_start();
     <form id="staffUserCreateForm" style="margin-top: 6px;">
         <input type="hidden" name="user_id" id="staffUserId" value="">
         <input type="hidden" name="form_action" id="staffUserFormAction" value="save">
-        <input type="hidden" name="client_id" id="staffUserClientId" value="1">
-
+        <input type="hidden" name="client_id" id="staffUserClientId" value="">
         <div id="tab-personal" class="tab-panel active">
             <div class="form-grid">
                 <div class="form-control">
@@ -88,13 +87,12 @@ ob_start();
             </div>
         </div>
 
-        <div class="form-actions">
+        <div class="form-actions" style="justify-content:flex-end;">
             <button type="button" class="btn" id="staffUserSaveNextBtn">Save &amp; Next</button>
             <button type="submit" class="btn" id="staffUserFinalSubmitBtn" style="margin-left:8px; display:none;">Final Submit</button>
         </div>
     </form>
 </div>
-<script src="<?php echo htmlspecialchars(app_url('/js/modules/gss_admin/staff_user_create.js?v=' . (string)@filemtime(__DIR__ . '/../../js/modules/gss_admin/staff_user_create.js'))); ?>"></script>
 <?php
 $content = ob_get_clean();
 render_layout('Create Staff User', 'GSS Admin', $menu, $content);

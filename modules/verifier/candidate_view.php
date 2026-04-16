@@ -1,5 +1,8 @@
 <?php
 require_once __DIR__ . '/../../includes/auth.php';
+auth_require_login('verifier');
+auth_session_start();
+
 $applicationId = isset($_GET['application_id']) ? trim((string)$_GET['application_id']) : '';
 $clientId = isset($_GET['client_id']) ? (int)$_GET['client_id'] : 0;
 $group = isset($_GET['group']) ? trim((string)$_GET['group']) : '';
@@ -29,7 +32,6 @@ if ($applicationId === '' && $caseId <= 0) {
 
 // Direct-open support from Candidate List: auto-claim case when group is provided.
 // This prevents Forbidden when opening an available row that wasn't claimed yet.
-auth_session_start();
 $userId = (int)($_SESSION['auth_user_id'] ?? 0);
 $groupKey = strtoupper(trim((string)$group));
 if ($userId > 0 && in_array($groupKey, ['BASIC', 'EDUCATION'], true)) {
@@ -79,7 +81,7 @@ if ($userId > 0 && in_array($groupKey, ['BASIC', 'EDUCATION'], true)) {
     }
 }
 
-$target = '../shared/candidate_report.php?role=verifier';
+$target = '../shared/candidate_report.php?role=verifier&fullscreen=0';
 if ($applicationId !== '') {
     $target .= '&application_id=' . urlencode($applicationId);
 } elseif ($caseId > 0) {

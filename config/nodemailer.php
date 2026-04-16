@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/env.php';
 
-function sendNodeMailer($to, $subject, $htmlBody, $queueId = null): array {
+function sendNodeMailer($to, $subject, $htmlBody, $queueId = null, array $headers = [], array $metadata = []): array {
     $nodeBase = trim((string)(function_exists('env_get') ? (env_get('NODE_API_URL', '') ?? '') : ''));
     if ($nodeBase === '') $nodeBase = trim((string)getenv('NODE_API_URL'));
     $nodeBase = rtrim($nodeBase, '/');
@@ -16,7 +16,7 @@ function sendNodeMailer($to, $subject, $htmlBody, $queueId = null): array {
         return ['success' => false, 'error' => 'NODE_API_KEY is empty'];
     }
 
-    $to = trim((string)$to);
+    $to = trim((string)$to);  
     $subject = trim((string)$subject);
     $htmlBody = (string)$htmlBody;
     if ($to === '' || $subject === '' || $htmlBody === '') {
@@ -39,6 +39,12 @@ function sendNodeMailer($to, $subject, $htmlBody, $queueId = null): array {
     // Always send queueId when resolved from any source.
     if ($effectiveQueueId !== '') {
         $payload['queueId'] = $effectiveQueueId;
+    }
+    if (!empty($headers)) {
+        $payload['headers'] = $headers;
+    }
+    if (!empty($metadata)) {
+        $payload['metadata'] = $metadata;
     }
 
     $jsonBody = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

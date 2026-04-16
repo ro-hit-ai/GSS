@@ -1,193 +1,35 @@
 <?php
 session_start();
+require_once __DIR__ . '/../../config/env.php';
+
+if (isset($_GET['action']) && $_GET['action'] === 'logout') {
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    header('Cache-Control: post-check=0, pre-check=0', false);
+    header('Pragma: no-cache');
+    header('Expires: 0');
+
+    $_SESSION = [];
+
+    if (ini_get('session.use_cookies')) {
+        $params = session_get_cookie_params();
+        setcookie(session_name(), '', time() - 42000,
+            $params['path'] ?? '/',
+            $params['domain'] ?? '',
+            (bool)($params['secure'] ?? false),
+            (bool)($params['httponly'] ?? true)
+        );
+    }
+
+    session_destroy();
+
+    header('Location: ' . app_url('/modules/candidate/login.php'));
+    exit;
+}
+
 $applicationId = $_SESSION['application_id'] ?? 'N/A';
 ?>
 
-<style>
-.success-wrapper {
-    max-width: 600px;
-    margin: 20px auto;
-    padding: 0 15px;
-    animation: fadeIn 0.6s ease;
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to   { opacity: 1; transform: translateY(0); }
-}
-
-.success-card {
-    background: #ffffff;
-    border-radius: 18px;
-    padding: 30px 25px;
-    box-shadow: 0 8px 28px rgba(0,0,0,0.07);
-    text-align: center;
-}
-
-.success-icon-circle {
-    height: 110px;
-    width: 110px;
-    border-radius: 50%;
-    background: #e8f9f1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0 auto 25px;
-}
-
-.success-icon-circle i {
-    font-size: 55px;
-    color: #1aae6f;
-}
-
-.success-title {
-    font-size: 32px;
-    font-weight: 700;
-    color: #1d1d1d;
-}
-
-.success-subtitle {
-    font-size: 18px;
-    color: #5f6c7b;
-    margin-top: 12px;
-}
-.reference-box {
-    margin-top: 35px;
-    padding: 18px;
-    border-left: 5px solid #1aae6f;
-    background: #f5fffa;
-    border-radius: 10px;
-}
-
-.reference-box i {
-    color: #1aae6f;
-}
-
-.logout-btn {
-    margin-top: 35px;
-    padding: 12px 32px;
-    font-size: 17px;
-}
-
-.action-buttons {
-    margin: 30px 0;
-    display: flex;
-    justify-content: center;
-    gap: 15px;
-    flex-wrap: wrap;
-}
-
-.download-btn {
-    background: #1aae6f;
-    border-color: #1aae6f;
-    padding: 12px 30px;
-    font-size: 17px;
-}
-
-.print-btn {
-    background: #6c757d;
-    border-color: #6c757d;
-    padding: 12px 30px;
-    font-size: 17px;
-}
-/* Mobile-first responsive design for success page */
-@media (max-width: 768px) {
-    .success-wrapper {
-        max-width: 100%;
-        margin: 10px auto;
-        padding: 0 10px;
-    }
-    
-    .success-card {
-        padding: 20px 15px;
-        border-radius: 12px;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.08);
-    }
-}
-
-@media (max-width: 480px) {
-    .success-wrapper {
-        margin: 5px auto;
-        padding: 0 8px;
-    }
-    
-    .success-card {
-        padding: 18px 12px;
-        border-radius: 8px;
-    }
-    
-    .success-icon-circle {
-        height: 70px !important;
-        width: 70px !important;
-        margin-bottom: 15px !important;
-    }
-    
-    .success-icon-circle i {
-        font-size: 35px !important;
-    }
-    
-    .success-title {
-        font-size: 20px !important;
-        line-height: 1.2 !important;
-        margin-bottom: 10px !important;
-    }
-    
-    .success-subtitle {
-        font-size: 14px !important;
-        line-height: 1.4 !important;
-        margin-bottom: 20px !important;
-    }
-    
-    .reference-box {
-        padding: 12px !important;
-        margin: 20px 0 !important;
-    }
-    
-    .reference-box h5 {
-        font-size: 15px !important;
-    }
-    
-    #applicationIdDisplay {
-        font-size: 16px !important;
-    }
-    
-    .action-buttons {
-        flex-direction: column !important;
-        gap: 10px !important;
-        margin: 20px 0 !important;
-    }
-    
-    .action-buttons .btn {
-        width: 100% !important;
-        padding: 12px !important;
-        font-size: 14px !important;
-        border-radius: 6px !important;
-    }
-    
-    .logout-btn {
-        width: 100% !important;
-        margin-top: 15px !important;
-        padding: 12px !important;
-        font-size: 14px !important;
-    }
-    
-    /* Modal adjustments for mobile */
-    .modal-dialog {
-        margin: 0 !important;
-        max-width: 100% !important;
-    }
-    
-    .modal-content {
-        border-radius: 0 !important;
-        height: 100vh !important;
-    }
-    
-    .modal-body {
-        padding: 0 !important;
-    }
-}
-</style>
-
+<div class="candidate-success">
 <div class="success-wrapper">
 
     <div class="success-card">
@@ -211,7 +53,7 @@ $applicationId = $_SESSION['application_id'] ?? 'N/A';
                 <?= htmlspecialchars($applicationId) ?>
             </p>
         </div>
-<div class="action-buttons">
+<!-- <div class="action-buttons">
     <button id="downloadApplicationBtn" class="btn download-btn">
         <i class="fas fa-eye me-2"></i> View Application
     </button>
@@ -219,24 +61,23 @@ $applicationId = $_SESSION['application_id'] ?? 'N/A';
     <!-- <button class="btn print-btn">
         <i class="fas fa-print me-2"></i> Print Application
     </button> -->
-</div>
+<!-- </div> --> 
 
         <!-- Logout -->
-        <a href="logout.php" class="btn btn-outline-danger logout-btn">
+        <a href="<?= htmlspecialchars(app_url('/modules/candidate/success.php?action=logout')) ?>" class="btn btn-outline-danger logout-btn">
             <i class="fas fa-sign-out-alt me-2"></i> Logout
         </a>
 
     </div>
 </div>
-
-
+ </div>
 <!-- Update the action buttons section in success.php -->
 
 
 <!-- Update the script section -->
 <script>
 // Set global base URL
-window.APP_BASE_URL = '<?= dirname(dirname($_SERVER['PHP_SELF'])) ?>';
+window.APP_BASE_URL = <?= json_encode(app_base_url()) ?>;
 
 // Load dependencies first, then Success.js
 (function() {

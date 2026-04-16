@@ -25,6 +25,21 @@ function is_local_debug(): bool {
     return strpos($host, 'localhost') !== false || strpos($serverName, 'localhost') !== false;
 }
 
+function table_has_column(PDO $pdo, string $tableName, string $columnName): bool {
+    try {
+        $stmt = $pdo->prepare(
+            'SELECT COUNT(*) FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = ?
+               AND COLUMN_NAME = ?'
+        );
+        $stmt->execute([$tableName, $columnName]);
+        return (int)($stmt->fetchColumn() ?: 0) > 0;
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         http_response_code(405);
@@ -38,6 +53,8 @@ try {
     }
 
     $jobRoleId = isset($data['job_role_id']) ? (int)$data['job_role_id'] : 0;
+    $stageKey = isset($data['stage_key']) ? trim((string)$data['stage_key']) : '';
+    $levelKey = isset($data['level_key']) ? trim((string)$data['level_key']) : '';
     $types = $data['types'] ?? [];
     if (!is_array($types)) $types = [];
 
@@ -50,32 +67,56 @@ try {
     $pdo = getDB();
     $pdo->beginTransaction();
 
-    // New SPs. If missing, hard fail with clear message.
-    $del = $pdo->prepare('CALL SP_Vati_Payfiller_DeleteJobRoleVerificationTypes(?)');
-    $del->execute([$jobRoleId]);
-    while ($del->nextRowset()) {
+    $savedCount = 0;
+    $requestedContextualMode = ($stageKey !== '' || $levelKey !== '');
+    $hasStageKeyColumn = table_has_column($pdo, 'Vati_Payfiller_Job_Role_Verification_Types', 'stage_key');
+    $hasLevelKeyColumn = table_has_column($pdo, 'Vati_Payfiller_Job_Role_Verification_Types', 'level_key');
+    $contextualMode = $requestedContextualMode && $hasStageKeyColumn && $hasLevelKeyColumn;
+
+    if (!$contextualMode) {
+        $del = $pdo->prepare('CALL SP_Vati_Payfiller_DeleteJobRoleVerificationTypes(?)');
+        $del->execute([$jobRoleId]);
+        while ($del->nextRowset()) {
+        }
     }
 
-    $addNew = $pdo->prepare('CALL SP_Vati_Payfiller_AddJobRoleVerificationType(?, ?, ?, ?, ?)');
-    $addOld = null;
+    $upsertStmt = null;
+    $deleteContextStmt = null;
     try {
-        $addOld = $pdo->prepare('CALL SP_Vati_Payfiller_AddJobRoleVerificationType(?, ?, ?, ?)');
-    } catch (Throwable $e) {
-        $addOld = null;
-    }
-    $syncRequiredStmt = null;
-    try {
-        $syncRequiredStmt = $pdo->prepare(
-            'UPDATE Vati_Payfiller_Job_Role_Verification_Types
-             SET required_count = ?
-             WHERE job_role_id = ? AND verification_type_id = ?'
+        $upsertStmt = $pdo->prepare(
+            'INSERT INTO Vati_Payfiller_Job_Role_Verification_Types
+                (job_role_id, verification_type_id, stage_key, level_key, sort_order, is_enabled, required_count)
+             VALUES (?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE
+                sort_order = VALUES(sort_order),
+                is_enabled = VALUES(is_enabled),
+                required_count = VALUES(required_count)'
+        );
+        $deleteContextStmt = $pdo->prepare(
+            'DELETE FROM Vati_Payfiller_Job_Role_Verification_Types
+             WHERE job_role_id = ?
+               AND stage_key = ?
+               AND level_key = ?'
         );
     } catch (Throwable $e) {
-        $syncRequiredStmt = null;
+        $upsertStmt = null;
+        $deleteContextStmt = null;
     }
 
-    $sort = 1;
-    $savedCount = 0;
+    if ($contextualMode && !$upsertStmt) {
+        throw new RuntimeException('Contextual verification mapping schema is not available. Please apply the required database update first.');
+    }
+
+    if ($contextualMode && $deleteContextStmt) {
+        if ($stageKey === '') {
+            throw new RuntimeException('stage_key is required for contextual verification mapping save');
+        }
+        if ($levelKey === '') {
+            throw new RuntimeException('level_key is required for contextual verification mapping save');
+        }
+        $deleteContextStmt->execute([$jobRoleId, $stageKey, $levelKey]);
+    }
+
     foreach ($types as $t) {
         if (!is_array($t)) continue;
         $vtId = isset($t['verification_type_id']) ? (int)$t['verification_type_id'] : 0;
@@ -83,48 +124,39 @@ try {
         $isEnabled = !empty($t['is_enabled']) ? 1 : 0;
         if ($isEnabled !== 1) continue;
 
-        $sortOrder = isset($t['sort_order']) ? (int)$t['sort_order'] : $sort;
+        $itemStageKey = isset($t['stage_key']) ? trim((string)$t['stage_key']) : $stageKey;
+        $itemLevelKey = isset($t['level_key']) ? trim((string)$t['level_key']) : $levelKey;
+        $sortOrder = isset($t['sort_order']) ? (int)$t['sort_order'] : ($savedCount + 1);
         $requiredCount = isset($t['required_count']) ? (int)$t['required_count'] : 1;
         if ($requiredCount <= 0) $requiredCount = 1;
 
-        try {
+        if ($contextualMode && $itemStageKey === '') {
+            throw new RuntimeException('stage_key is required for contextual verification mapping save');
+        }
+        if ($contextualMode && $itemLevelKey === '') {
+            throw new RuntimeException('level_key is required for contextual verification mapping save');
+        }
+
+        if ($upsertStmt && $contextualMode) {
+            $upsertStmt->execute([$jobRoleId, $vtId, $itemStageKey, $itemLevelKey, $sortOrder, 1, $requiredCount]);
+        } else {
+            $addNew = $pdo->prepare('CALL SP_Vati_Payfiller_AddJobRoleVerificationType(?, ?, ?, ?, ?)');
             $addNew->execute([$jobRoleId, $vtId, $sortOrder, 1, $requiredCount]);
             while ($addNew->nextRowset()) {
             }
-        } catch (Throwable $eNew) {
-            $usedLegacy = false;
-            if ($addOld) {
-                try {
-                    $addOld->execute([$jobRoleId, $vtId, $sortOrder, 1]);
-                    while ($addOld->nextRowset()) {
-                    }
-                    $usedLegacy = true;
-                } catch (Throwable $eOld) {
-                    $msgOld = strtolower((string)$eOld->getMessage());
-                    // If legacy signature is invalid in this DB, ignore legacy path and surface original error.
-                    if (strpos($msgOld, 'incorrect number of arguments') === false) {
-                        throw $eOld;
-                    }
-                }
-            }
-            if (!$usedLegacy) {
-                throw $eNew;
-            }
-            // Legacy SP may not accept required_count; sync it directly when possible.
-            if ($syncRequiredStmt) {
-                try {
-                    $syncRequiredStmt->execute([$requiredCount, $jobRoleId, $vtId]);
-                } catch (Throwable $ignore) {
-                }
-            }
         }
-        $savedCount++;
-        $sort++;
-    }
 
+        $savedCount++;
+    }
     $pdo->commit();
 
-    echo json_encode(['status' => 1, 'message' => 'Saved', 'saved_count' => $savedCount]);
+    echo json_encode([
+        'status' => 1,
+        'message' => 'Saved',
+        'saved_count' => $savedCount,
+        'contextual_mode' => $contextualMode ? 1 : 0,
+        'legacy_mode' => $contextualMode ? 0 : 1
+    ]);
 
 } catch (PDOException $e) {
     if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {

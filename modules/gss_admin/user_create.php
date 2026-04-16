@@ -29,7 +29,30 @@ ob_start();
         <div class="form-grid" style="margin-bottom:10px;">
             <div class="form-control">
                 <label>Client *</label>
-                <select name="client_id" id="userClientSelect" required></select>
+                <div id="userClientDropdown" style="position:relative;">
+                    <button
+                        type="button"
+                        id="userClientDropdownToggle"
+                        style="width:100%; min-height:44px; padding:10px 14px; border:1px solid #cfd8e3; border-radius:12px; background:#fff; text-align:left; cursor:pointer;"
+                    >Select Client</button>
+                    <div
+                        id="userClientDropdownMenu"
+                        style="display:none; position:absolute; top:calc(100% + 6px); left:0; right:0; z-index:30; background:#fff; border:1px solid #d6dfeb; border-radius:12px; box-shadow:0 12px 30px rgba(15, 23, 42, 0.12); padding:10px;"
+                    >
+                        <input
+                            type="text"
+                            id="userClientSearch"
+                            placeholder="Search client"
+                            autocomplete="off"
+                            style="margin-bottom:8px;"
+                        >
+                        <div
+                            id="userClientDropdownList"
+                            style="max-height:260px; overflow-y:auto; display:flex; flex-direction:column; gap:4px;"
+                        ></div>
+                    </div>
+                </div>
+                <select name="client_id" id="userClientSelect" required style="display:none;"></select>
             </div>
         </div>
         <div id="tab-personal" class="tab-panel active">
@@ -91,7 +114,7 @@ ob_start();
             </div>
         </div>
 
-        <div class="form-actions">
+        <div class="form-actions" style="justify-content:flex-end;">
             <button type="button" class="btn" id="userSaveNextBtn">Save &amp; Next</button>
             <button type="submit" class="btn" id="userFinalSubmitBtn" style="margin-left:8px; display:none;">Final Submit</button>
         </div>

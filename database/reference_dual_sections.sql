@@ -1,0 +1,15 @@
+ALTER TABLE `Vati_Payfiller_Candidate_Reference_details`
+    ADD COLUMN `education_reference_name` VARCHAR(255) NULL AFTER `years_known`,
+    ADD COLUMN `education_reference_designation` VARCHAR(255) NULL AFTER `education_reference_name`,
+    ADD COLUMN `education_reference_company` VARCHAR(255) NULL AFTER `education_reference_designation`,
+    ADD COLUMN `education_reference_mobile` VARCHAR(20) NULL AFTER `education_reference_company`,
+    ADD COLUMN `education_reference_email` VARCHAR(255) NULL AFTER `education_reference_mobile`,
+    ADD COLUMN `education_reference_relationship` VARCHAR(255) NULL AFTER `education_reference_email`,
+    ADD COLUMN `education_reference_years_known` INT NULL AFTER `education_reference_relationship`,
+    ADD COLUMN `employment_reference_name` VARCHAR(255) NULL AFTER `education_reference_years_known`,
+    ADD COLUMN `employment_reference_designation` VARCHAR(255) NULL AFTER `employment_reference_name`,
+    ADD COLUMN `employment_reference_company` VARCHAR(255) NULL AFTER `employment_reference_designation`,
+    ADD COLUMN `employment_reference_mobile` VARCHAR(20) NULL AFTER `employment_reference_company`,
+    ADD COLUMN `employment_reference_email` VARCHAR(255) NULL AFTER `employment_reference_mobile`,
+    ADD COLUMN `employment_reference_relationship` VARCHAR(255) NULL AFTER `employment_reference_email`,
+    ADD COLUMN `employment_reference_years_known` INT NULL AFTER `employment_reference_relationship`;

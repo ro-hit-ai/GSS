@@ -1,11 +1,9 @@
 <?php
-header('Content-Type: application/json');
-
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/integration.php';
 
-auth_require_login(null);
-
+integration_bootstrap_json_api();
 auth_session_start();
 
 header('Access-Control-Allow-Origin: *');
@@ -16,6 +14,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit;
 }
+
+integration_resolve_actor(true);
 
 function get_str(string $key, string $default = ''): string {
     return trim((string)($_GET[$key] ?? $default));
@@ -66,11 +66,9 @@ try {
         exit;
     }
 
-    $applicationId = get_str('application_id', '');
+    $applicationId = integration_normalize_application_id(get_str('application_id', ''));
     if ($applicationId === '') {
-        http_response_code(400);
-        echo json_encode(['status' => 0, 'message' => 'application_id is required']);
-        exit;
+        integration_json_error(400, 'application_id is required', [], 'integration_failures');
     }
 
     $limit = get_int('limit', 200);
@@ -92,8 +90,28 @@ try {
     $stmt = $pdo->prepare($sql);
     $stmt->execute([$applicationId]);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $events = [];
+    foreach ($rows as $row) {
+        $actorName = trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? ''));
+        $events[] = [
+            'timelineId' => isset($row['timeline_id']) ? (int)$row['timeline_id'] : null,
+            'applicationId' => integration_normalize_application_id((string)($row['application_id'] ?? $applicationId)),
+            'eventType' => integration_nullable_string($row['event_type'] ?? null),
+            'eventTimestamp' => integration_iso_datetime($row['created_at'] ?? null),
+            'sectionKey' => integration_nullable_string($row['section_key'] ?? null),
+            'componentKey' => integration_nullable_string($row['section_key'] ?? null),
+            'message' => integration_nullable_string($row['message'] ?? null),
+            'metadata' => json_decode((string)($row['meta_json'] ?? ''), true) ?: null,
+            'actor' => [
+                'userId' => isset($row['actor_user_id']) && (int)$row['actor_user_id'] > 0 ? (int)$row['actor_user_id'] : null,
+                'role' => integration_nullable_string($row['actor_role'] ?? null),
+                'username' => integration_nullable_string($row['username'] ?? null),
+                'name' => integration_nullable_string($actorName),
+            ],
+        ];
+    }
 
-    echo json_encode(['status' => 1, 'message' => 'ok', 'data' => $rows]);
+    echo json_encode(['status' => 1, 'message' => 'ok', 'data' => $events]);
 
 } catch (PDOException $e) {
     http_response_code(500);

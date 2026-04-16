@@ -1,10 +1,10 @@
 <?php
-header('Content-Type: application/json');
-header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
-header('Pragma: no-cache');
-header('Expires: 0');
 
 require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../../includes/integration.php';
+require_once __DIR__ . '/case_component_binding.php';
+
+integration_bootstrap_json_api();
 
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, OPTIONS');
@@ -14,6 +14,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit;
 }
+
+integration_resolve_actor(true);
 
 function workflow_table_available(PDO $pdo): bool {
     try {
@@ -266,7 +268,7 @@ try {
     if (session_status() === PHP_SESSION_NONE) session_start();
     $userId = isset($_SESSION['auth_user_id']) ? (int)$_SESSION['auth_user_id'] : 0;
     $clientId = resolve_client_id();
-    $applicationId = get_str('application_id', '');
+    $applicationId = integration_normalize_application_id(get_str('application_id', ''));
     $caseId = get_int('case_id', 0);
     $groupKey = strtoupper(get_str('group', ''));
 
@@ -274,7 +276,7 @@ try {
 
     if ($applicationId === '' && $caseId > 0) {
         $row = sp_call_one($pdo, 'CALL SP_Vati_Payfiller_ReportResolveApplicationId(?)', [$caseId]);
-        $applicationId = $row && isset($row['application_id']) ? trim((string)$row['application_id']) : '';
+        $applicationId = $row && isset($row['application_id']) ? integration_normalize_application_id((string)$row['application_id']) : '';
     }
 
     if ($applicationId === '') {
@@ -404,6 +406,17 @@ try {
     }
 
     $requiredComponents = array_values(array_unique($requiredComponents));
+
+    try {
+        $caseIdInt = isset($case['case_id']) ? (int)$case['case_id'] : 0;
+        if ($caseIdInt > 0) {
+            $bindingConfig = case_component_binding_sync_case_components($pdo, $caseIdInt, $applicationId);
+            if (!empty($bindingConfig['required_components']) && is_array($bindingConfig['required_components'])) {
+                $requiredComponents = array_values(array_unique(array_merge($requiredComponents, $bindingConfig['required_components'])));
+            }
+        }
+    } catch (Throwable $e) {
+    }
 
     $allowedSet = session_allowed_sections($pdo);
 
@@ -701,10 +714,24 @@ try {
         }
     }
 
+    $case['application_id'] = integration_normalize_application_id((string)($case['application_id'] ?? $applicationId));
+    if (isset($case['candidate_email'])) {
+        $case['candidate_email'] = integration_normalize_email((string)$case['candidate_email']);
+    }
+    if (isset($application['application_id'])) {
+        $application['application_id'] = integration_normalize_application_id((string)$application['application_id']);
+    }
+    if (isset($basic['email'])) {
+        $basic['email'] = integration_normalize_email((string)$basic['email']);
+    }
+    $links = integration_deep_links($case['application_id'], isset($case['case_id']) ? (int)$case['case_id'] : null);
+
     echo json_encode([
         'status' => 1,
         'message' => 'ok',
         'data' => [
+            'applicationId' => $case['application_id'],
+            'caseId' => isset($case['case_id']) ? (int)$case['case_id'] : null,
             'case' => $case,
             'application' => $application,
             'basic' => $basic,
@@ -718,7 +745,12 @@ try {
             'authorization' => $authorization,
             'uploaded_docs' => $uploadedDocs,
             'assigned_components' => $visibleAssigned,
-            'component_workflow' => $workflowByComponent
+            'assignedComponents' => $visibleAssigned,
+            'component_workflow' => $workflowByComponent,
+            'componentWorkflow' => $workflowByComponent,
+            'applicationUrl' => $links['applicationUrl'],
+            'candidateUrl' => $links['candidateUrl'],
+            'timelineUrl' => $links['timelineUrl']
         ]
     ]);
 

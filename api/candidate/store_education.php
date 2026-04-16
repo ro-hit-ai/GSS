@@ -7,12 +7,31 @@ require_once __DIR__ . "/../../config/db.php";
 
 class ValidationException extends Exception {}
 
+function normalizeQualificationRule($qualification) {
+    $normalized = trim((string)$qualification);
+
+    $rules = [
+        '10th' => ['require_marksheet' => true, 'require_degree' => false],
+        '12th' => ['require_marksheet' => true, 'require_degree' => false],
+        'Diploma' => ['require_marksheet' => true, 'require_degree' => true],
+        'UG' => ['require_marksheet' => true, 'require_degree' => true],
+        'PG' => ['require_marksheet' => true, 'require_degree' => true],
+    ];
+
+    return $rules[$normalized] ?? ['require_marksheet' => false, 'require_degree' => false];
+}
+
 function validateSingle($data) {
+    $allowedQualifications = ['10th', '12th', 'Diploma', 'UG', 'PG'];
     $required = ['qualification', 'college_name', 'university_board', 'roll_number', 'college_address', 'year_from', 'year_to'];
     foreach ($required as $field) {
         if (empty(trim($data[$field] ?? ''))) {
             throw new ValidationException(ucwords(str_replace('_', ' ', $field)) . " is required");
         }
+    }
+
+    if (!in_array($data['qualification'], $allowedQualifications, true)) {
+        throw new ValidationException("Invalid qualification selected");
     }
 
     $education_index = (int)($data['education_index'] ?? 0);
@@ -42,10 +61,10 @@ function handleFile($fileArray, $application_id, $index, $type) {
         throw new ValidationException("File upload error for $type (card $index)");
     }
 
-    $allowed = ['pdf', 'jpg', 'jpeg'];
+    $allowed = ['pdf', 'jpg', 'jpeg', 'png'];
     $ext = strtolower(pathinfo($fileArray['name'][$index], PATHINFO_EXTENSION));
     if (!in_array($ext, $allowed)) {
-        throw new ValidationException("Invalid file type for $type. Only PDF, JPG, JPEG allowed");
+        throw new ValidationException("Invalid file type for $type. Only PDF, JPG, JPEG, PNG allowed");
     }
 
     if ($fileArray['size'][$index] > 5 * 1024 * 1024) {
@@ -94,7 +113,13 @@ try {
         throw new ValidationException("No education data received");
     }
 
-    error_log("Processing $qualCount education records");
+    $visibleEducationCount = (int)($_POST['visibleEducationCount'] ?? $qualCount);
+    if ($visibleEducationCount < 1) {
+        $visibleEducationCount = 1;
+    }
+    $processCount = min($qualCount, $visibleEducationCount);
+
+    error_log("Processing $processCount visible education records out of $qualCount submitted");
 
 $stmt = $pdo->prepare("CALL SP_Vati_Payfiller_save_education_details(
     :application_id,
@@ -115,7 +140,7 @@ $stmt = $pdo->prepare("CALL SP_Vati_Payfiller_save_education_details(
 
     $processed = [];
 
-    for ($i = 0; $i < $qualCount; $i++) {
+    for ($i = 0; $i < $processCount; $i++) {
         $insufficientDocs = $_POST['insufficient_education_docs'] ?? [];
 if (!is_array($insufficientDocs)) {
     $insufficientDocs = [$insufficientDocs];
@@ -154,6 +179,7 @@ $isInsufficient = isset($insufficientDocs[$i]) &&
         }
 
         validateSingle($data);
+        $qualificationRules = normalizeQualificationRule($data['qualification']);
 
 
         $year_from = $data['year_from'] ? $data['year_from'] . '-01' : null;
@@ -205,6 +231,20 @@ if ($isInsufficient) {
     } elseif (!empty($old_degree)) {
         $degree_file = $old_degree;
     }
+
+    if (
+        $qualificationRules['require_marksheet'] &&
+        (empty($marksheet_file) || $marksheet_file === 'INSUFFICIENT_DOCUMENTS')
+    ) {
+        throw new ValidationException("Marksheet is required for education card " . ($i + 1));
+    }
+
+    if (
+        $qualificationRules['require_degree'] &&
+        (empty($degree_file) || $degree_file === 'INSUFFICIENT_DOCUMENTS')
+    ) {
+        throw new ValidationException("Degree certificate is required for education card " . ($i + 1));
+    }
 }
 
       
@@ -237,7 +277,13 @@ $stmt->execute([
 
     // Enforce exact count by removing any rows not present in this submission
     $isDraft = ($_POST['draft'] ?? '0') === '1';
-    if (!$isDraft && !empty($processed)) {
+    if (!$isDraft) {
+        if (empty($processed)) {
+            $deleteStmt = $pdo->prepare(
+                "DELETE FROM Vati_Payfiller_Candidate_Education_details WHERE application_id = ?"
+            );
+            $deleteStmt->execute([$application_id]);
+        } else {
         $placeholders = implode(',', array_fill(0, count($processed), '?'));
         $deleteStmt = $pdo->prepare(
             "DELETE FROM Vati_Payfiller_Candidate_Education_details\n"
@@ -246,6 +292,7 @@ $stmt->execute([
         );
         $params = array_merge([$application_id], $processed);
         $deleteStmt->execute($params);
+        }
     }
 
     $pdo->commit();

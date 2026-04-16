@@ -447,10 +447,17 @@ clearPreview(card, selector) {
         if (errorEl) errorEl.textContent = '';
     }
 
-    setUploadBox(box, fileName, previewUrl, isLocal = false) {
+    setUploadBox(box, fileName, previewUrl, isLocal = false, fileSizeBytes = null) {
         if (!box) return;
         const nameEl = box.querySelector('[data-file-name]');
         const errorEl = box.querySelector('[data-file-error]');
+        let metaEl = box.querySelector('[data-file-meta]');
+        if (!metaEl) {
+            metaEl = document.createElement('div');
+            metaEl.className = 'file-upload-meta';
+            metaEl.setAttribute('data-file-meta', '');
+            box.appendChild(metaEl);
+        }
 
         if (errorEl) errorEl.textContent = '';
         if (nameEl) {
@@ -480,6 +487,14 @@ clearPreview(card, selector) {
             }
         }
 
+        if (metaEl) {
+            if (fileName && fileSizeBytes && Number.isFinite(fileSizeBytes)) {
+                metaEl.textContent = `Size: ${this.formatBytes(fileSizeBytes)}`;
+            } else {
+                metaEl.textContent = '';
+            }
+        }
+
         if (isLocal) {
             const prevUrl = box.getAttribute('data-object-url');
             if (prevUrl && prevUrl !== previewUrl) {
@@ -500,6 +515,15 @@ clearPreview(card, selector) {
             return { ok: false, message: 'File too large. Maximum 10MB allowed.' };
         }
         return { ok: true };
+    }
+
+    formatBytes(bytes = 0) {
+        const b = Number(bytes) || 0;
+        if (b < 1024) return `${b} B`;
+        const kb = b / 1024;
+        if (kb < 1024) return `${kb.toFixed(1)} KB`;
+        const mb = kb / 1024;
+        return `${mb.toFixed(1)} MB`;
     }
 
     findInput(card, name) {
@@ -545,6 +569,16 @@ clearPreview(card, selector) {
     }
     
     showNotification(message, isError = false) {
+        if (window.CandidateNotify && typeof window.CandidateNotify.show === 'function') {
+            window.CandidateNotify.show({
+                type: isError ? 'error' : 'success',
+                title: isError ? 'Action failed' : 'Saved',
+                message: String(message || '').replace(/^[^\w]+/, ''),
+                sticky: !!isError
+            });
+            return;
+        }
+
         // Use Router's alert system if available
         if (window.Router && typeof window.Router.showAlert === 'function') {
             window.Router.showAlert(isError ? 'error' : 'success', message);

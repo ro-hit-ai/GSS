@@ -353,7 +353,15 @@ ob_start();
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Password</label>
-                            <input type="password" class="form-control" name="password" placeholder="Enter password" required>
+                            <div style="position:relative;">
+                                <input type="password" class="form-control" id="candidatePassword" name="password" placeholder="Enter password" required style="padding-right:44px;">
+                                <button type="button" data-password-toggle="candidatePassword" aria-label="Show password" aria-pressed="false" style="position:absolute; top:50%; right:10px; transform:translateY(-50%); border:0; background:transparent; color:#64748b; width:28px; height:28px; padding:0; display:inline-flex; align-items:center; justify-content:center; cursor:pointer;">
+                                    <svg aria-hidden="true" viewBox="0 0 24 24" style="width:18px; height:18px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round;">
+                                        <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z"></path>
+                                        <circle cx="12" cy="12" r="3"></circle>
+                                    </svg>
+                                </button>
+                            </div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Captcha</label>
@@ -390,6 +398,7 @@ ob_start();
         
     </div>
 </div>
+<script src="<?php echo htmlspecialchars(app_url('/js/modules/candidate/login.js?v=' . (string)@filemtime(__DIR__ . '/../../js/modules/candidate/login.js'))); ?>"></script>
 <?php
 $content = ob_get_clean();
 render_layout('Candidate Login', 'Candidate', $menu, $content);

@@ -6,42 +6,50 @@
         <a href="#" data-page="basic-details" class="sidebar-item">
             <i class="fas fa-user"></i>
             <span class="sidebar-label">Basic Details</span>
+            <span class="sidebar-status"></span>
         </a>
 
         <a href="#" data-page="identification" class="sidebar-item">
             <i class="fas fa-id-card"></i>
             <span class="sidebar-label">Identification</span>
+            <span class="sidebar-status"></span>
         </a>
 
         <a href="#" data-page="contact" class="sidebar-item">
             <i class="fas fa-address-book"></i>
             <span class="sidebar-label">Address</span>
+            <span class="sidebar-status"></span>
         </a>
 
                 <a href="#" data-page="social" class="sidebar-item">
             <i class="fas fa-users"></i>
             <span class="sidebar-label">Social Media</span>
+            <span class="sidebar-status"></span>
         </a>
 
          <a href="#" data-page="ecourt" class="sidebar-item">
             <i class="fas fa-gavel"></i>
             <span class="sidebar-label">E-Court</span>
+            <span class="sidebar-status"></span>
         </a>
 
 
         <a href="#" data-page="education" class="sidebar-item">
             <i class="fas fa-graduation-cap"></i>
             <span class="sidebar-label">Education</span>
+            <span class="sidebar-status"></span>
         </a>
 
         <a href="#" data-page="employment" class="sidebar-item">
             <i class="fas fa-briefcase"></i>
             <span class="sidebar-label">Employment</span>
+            <span class="sidebar-status"></span>
         </a>
 
         <a href="#" data-page="reference" class="sidebar-item">
             <i class="fas fa-users"></i>
             <span class="sidebar-label">Reference</span>
+            <span class="sidebar-status"></span>
 </a>
 
     </nav>

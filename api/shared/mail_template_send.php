@@ -203,9 +203,13 @@ try {
         'application_id' => $applicationId,
         'case_id' => $caseId,
         'role' => $role,
-        'group' => $groupKey
+        'group' => $groupKey,
+        'event_type' => 'application.update.email'
     ]);
-    $ok = send_app_mail($to, $subject, $html);
+    $ok = send_app_mail($to, $subject, $html, null, [
+        'application_id' => $applicationId,
+        'event_type' => 'application.update.email',
+    ]);
     app_mail_clear_log_meta();
     if (!$ok) {
         http_response_code(400);

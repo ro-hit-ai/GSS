@@ -29,6 +29,28 @@ $redirect = isset($_GET['redirect']) ? (string)$_GET['redirect'] : '';
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"
           integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
     <link rel="stylesheet" href="<?php echo htmlspecialchars(app_url('/assets/css/login.css')); ?>">
+    <style>
+        .password-toggle-wrap { position: relative; }
+        .password-toggle-wrap .form-control { padding-right: 44px; }
+        .password-toggle-btn {
+            position: absolute;
+            top: 50%;
+            right: 10px;
+            transform: translateY(-50%);
+            border: 0;
+            background: transparent;
+            color: #64748b;
+            width: 28px;
+            height: 28px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        .password-toggle-btn:hover { color: #0f172a; }
+        .password-toggle-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    </style>
 </head>
 <body>
 <script>
@@ -58,7 +80,15 @@ $redirect = isset($_GET['redirect']) ? (string)$_GET['redirect'] : '';
                         </div>
                         <div class="mb-3">
                             <label for="password" class="form-label">Password</label>
-                            <input type="password" class="form-control" id="password" name="password" autocomplete="current-password" required>
+                            <div class="password-toggle-wrap">
+                                <input type="password" class="form-control" id="password" name="password" autocomplete="current-password" required>
+                                <button type="button" class="password-toggle-btn" data-password-toggle="password" aria-label="Show password" aria-pressed="false">
+                                    <svg aria-hidden="true" viewBox="0 0 24 24">
+                                        <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z"></path>
+                                        <circle cx="12" cy="12" r="3"></circle>
+                                    </svg>
+                                </button>
+                            </div>
                         </div>
                         <div class="mb-3">
                             <label for="captcha" class="form-label">Captcha</label>
@@ -67,6 +97,9 @@ $redirect = isset($_GET['redirect']) ? (string)$_GET['redirect'] : '';
                                 <input type="text" class="form-control" id="captcha" name="captcha" placeholder="Enter code" required>
                             </div>
                             <div class="form-text" style="color:#9ca3af; font-size:11px; text-align:left;">Type the characters shown to prove you are a real user.</div>
+                        </div>
+                        <div class="mb-3" style="text-align:right; font-size:12px;">
+                            <a href="<?php echo htmlspecialchars(app_url('/modules/shared/forgot_password.php')); ?>" style="color:#2563eb; text-decoration:none;">Forgot Password?</a>
                         </div>
                         <button type="submit" class="btn w-100" style="border-radius:999px; background:#eef2ff; border:none; color:#111827; font-weight:500; box-shadow: 6px 6px 16px rgba(148,163,184,0.7), -6px -6px 18px rgba(255,255,255,1); height:42px;">Request OTP</button>
                     </form>
@@ -82,6 +115,10 @@ $redirect = isset($_GET['redirect']) ? (string)$_GET['redirect'] : '';
                         </div>
                         <button type="submit" class="btn w-100" style="border-radius:999px; background:#e0fbe2; border:none; color:#166534; font-weight:500; box-shadow: 6px 6px 16px rgba(148,163,184,0.4), -6px -6px 18px rgba(255,255,255,1); height:40px;">Verify &amp; Continue</button>
                     </form>
+                    <div style="margin-top:10px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+                        <button type="button" id="resendOtpBtn" class="btn btn-link p-0" style="font-size:12px; text-decoration:none;">Resend OTP</button>
+                        <button type="button" id="backToLoginBtn" class="btn btn-link p-0" style="font-size:12px; text-decoration:none;">Back to login</button>
+                    </div>
                 </div>
             </div>
         </div>

@@ -44,7 +44,7 @@ ob_start();
             <div style="margin-left:auto; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
                 <span id="usersListExportButtons" style="display:inline-flex; gap:6px; vertical-align:middle;"></span>
                 <?php if ($isStaffView): ?>
-                    <a href="staff_user_create.php" class="btn btn-secondary" style="text-decoration:none;">Create Staff User</a>
+                    <a href="staff_user_create.php" id="staffUsersCreateBtn" class="btn btn-secondary" style="text-decoration:none;">Create Staff User</a>
                 <?php else: ?>
                     <a href="user_create.php" id="usersCreateBtn" class="btn" style="text-decoration:none;">Create New User</a>
                 <?php endif; ?>

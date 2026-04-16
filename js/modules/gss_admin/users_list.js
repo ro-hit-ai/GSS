@@ -3,6 +3,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var searchEl = document.getElementById('usersListSearch');
     var refreshBtn = document.getElementById('usersListRefreshBtn');
     var createBtn = document.getElementById('usersCreateBtn');
+    var staffCreateBtn = document.getElementById('staffUsersCreateBtn');
     var tableEl = document.getElementById('usersListTable');
     var exportButtonsHostEl = document.getElementById('usersListExportButtons');
     var messageEl = document.getElementById('usersListMessage');
@@ -35,9 +36,13 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function updateCreateLink() {
-        if (!createBtn) return;
         var cid = getSelectedClientId();
-        createBtn.href = cid > 0 ? ('user_create.php?client_id=' + encodeURIComponent(cid)) : 'user_create.php';
+        if (createBtn) {
+            createBtn.href = cid > 0 ? ('user_create.php?client_id=' + encodeURIComponent(cid)) : 'user_create.php';
+        }
+        if (staffCreateBtn) {
+            staffCreateBtn.href = cid > 0 ? ('staff_user_create.php?client_id=' + encodeURIComponent(cid)) : 'staff_user_create.php';
+        }
     }
 
     function loadCss(href) {
@@ -147,7 +152,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         var uid = row && row.user_id ? row.user_id : '';
                         var cid = row && row.client_id ? row.client_id : '';
                         var href = isStaffView
-                            ? ('staff_user_create.php?user_id=' + encodeURIComponent(uid))
+                            ? ('staff_user_create.php?user_id=' + encodeURIComponent(uid) + '&client_id=' + encodeURIComponent(cid))
                             : ('user_create.php?user_id=' + encodeURIComponent(uid) + '&client_id=' + encodeURIComponent(cid));
                         return '<a href="' + href + '" style="text-decoration:none; color:#2563eb;">' + escapeHtml(row.username || '') + '</a>';
                     }

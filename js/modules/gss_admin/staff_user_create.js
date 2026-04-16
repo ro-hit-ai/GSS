@@ -8,8 +8,8 @@ document.addEventListener('DOMContentLoaded', function () {
     var finalSubmitBtn = document.getElementById('staffUserFinalSubmitBtn');
     var userIdField = document.getElementById('staffUserId');
     var tabButtons = document.querySelectorAll('.tab');
-
     var ALLOWED_SECTIONS_MASTER = [];
+    var pendingAllowedSectionsValue = '';
 
     function setMessage(text, type) {
         if (!messageEl) return;
@@ -59,12 +59,9 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    function getFixedClientId() {
-        var cid = 1;
-        if (clientIdField && clientIdField.value) {
-            cid = parseInt(clientIdField.value || '1', 10) || 1;
-        }
-        return cid;
+    function getSelectedClientId() {
+        if (!clientIdField) return 0;
+        return parseInt(clientIdField.value || '0', 10) || 0;
     }
 
     function loadLocationsForClient(selectedClientId, selectedLocationName) {
@@ -198,9 +195,12 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    function loadAllowedSectionsMaster() {
+    function loadAllowedSectionsForClient(clientId, selectedSections) {
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-        var url = base + '/api/shared/allowed_sections_master.php';
+        var cid = parseInt(clientId || '0', 10) || 0;
+        var url = cid > 0
+            ? (base + '/api/gssadmin/client_allowed_sections.php?client_id=' + encodeURIComponent(String(cid)))
+            : (base + '/api/shared/allowed_sections_master.php');
         return fetch(url, { credentials: 'same-origin' })
             .then(function (res) { return res.json(); })
             .then(function (data) {
@@ -210,6 +210,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
                 ALLOWED_SECTIONS_MASTER = Array.isArray(data.data) ? data.data : [];
                 renderAllowedSectionsMaster(ALLOWED_SECTIONS_MASTER);
+                if (selectedSections) {
+                    setAllowedSectionsFromString(selectedSections);
+                }
 
                 // After rendering, apply enabled/disabled state for current selected role.
                 var roleSel = form ? form.querySelector('[name="role"]') : null;
@@ -242,23 +245,6 @@ document.addEventListener('DOMContentLoaded', function () {
             if (!enabled) cb.checked = false;
         });
 
-        // Validator should always include these two components.
-        if (enabled && r === 'validator') {
-            ensureValidatorExtraSections();
-        }
-    }
-
-    function ensureValidatorExtraSections() {
-        if (!form) return;
-        var boxes = form.querySelectorAll('input[name="allowed_sections[]"]');
-        Array.prototype.slice.call(boxes).forEach(function (cb) {
-            var k = String(cb && cb.value ? cb.value : '').toLowerCase().trim();
-            if (k === 'social_media' || k === 'social-media') k = 'socialmedia';
-            if (k === 'e_court' || k === 'e-court') k = 'ecourt';
-            if (k === 'socialmedia' || k === 'ecourt') {
-                cb.checked = true;
-            }
-        });
     }
 
     function loadUserForEdit(userIdToLoad) {
@@ -280,11 +266,19 @@ document.addEventListener('DOMContentLoaded', function () {
                 setInput('email', u.email || '');
                 setSelectValue('role', u.role || '');
 
-                syncAllowedSectionsEnabledForRole(u.role || '');
-                setAllowedSectionsFromString(u.allowed_sections || '');
+                if (clientIdField && u.client_id) {
+                    clientIdField.value = String(u.client_id);
+                }
 
-                var selectedLocs = Array.isArray(u.locations) ? u.locations : (u.location ? [u.location] : []);
-                return loadLocationsForClient(String(clientId), selectedLocs);
+                pendingAllowedSectionsValue = String(u.allowed_sections || '');
+                return loadAllowedSectionsForClient(getSelectedClientId(), pendingAllowedSectionsValue)
+                    .then(function () {
+                        syncAllowedSectionsEnabledForRole(u.role || '');
+                        setAllowedSectionsFromString(pendingAllowedSectionsValue);
+
+                        var selectedLocs = Array.isArray(u.locations) ? u.locations : (u.location ? [u.location] : []);
+                        return loadLocationsForClient(String(getSelectedClientId()), selectedLocs);
+                    });
             })
             .catch(function () {
                 setMessage('Failed to load user details.', 'danger');
@@ -293,7 +287,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (!form) return;
 
-    var clientId = getFixedClientId();
+    var clientId = parseInt(getQueryParam('client_id') || '0', 10) || 0;
     var userId = parseInt(getQueryParam('user_id') || '0', 10) || 0;
 
     if (userIdField && userId > 0) {
@@ -320,6 +314,15 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    if (clientIdField) {
+        clientIdField.addEventListener('change', function () {
+            var selectedClientId = getSelectedClientId();
+            var prevSections = getAllowedSectionsStringFromUI();
+            loadLocationsForClient(String(selectedClientId), null);
+            loadAllowedSectionsForClient(selectedClientId, prevSections);
+        });
+    }
+
     if (tabButtons && tabButtons.length) {
         tabButtons.forEach(function (btn) {
             btn.addEventListener('click', function () {
@@ -329,10 +332,18 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // Load master allowed sections, then locations, then optionally user details (edit mode)
-    loadAllowedSectionsMaster()
+    if (clientIdField && clientId > 0) {
+        clientIdField.value = String(clientId);
+    }
+
+    // Load client-scoped configuration from hidden client_id, then optionally user details (edit mode)
+    Promise.resolve()
         .then(function () {
-            return loadLocationsForClient(String(clientId), null);
+            var selectedClientId = getSelectedClientId();
+            return loadAllowedSectionsForClient(selectedClientId, pendingAllowedSectionsValue)
+                .then(function () {
+                    return loadLocationsForClient(String(selectedClientId), null);
+                });
         })
         .then(function () {
             if (userId > 0) {
@@ -346,7 +357,7 @@ document.addEventListener('DOMContentLoaded', function () {
         saveNextBtn.addEventListener('click', function () {
             setMessage('', '');
 
-            var requiredFields = ['client_id', 'username', 'first_name', 'last_name', 'phone', 'email'];
+            var requiredFields = ['username', 'first_name', 'last_name', 'phone', 'email'];
             for (var i = 0; i < requiredFields.length; i++) {
                 var f = requiredFields[i];
                 var el = form.querySelector('[name="' + f + '"]');
@@ -378,10 +389,6 @@ document.addEventListener('DOMContentLoaded', function () {
         } catch (e2) {
             roleNow = '';
         }
-        if (roleNow === 'validator') {
-            ensureValidatorExtraSections();
-        }
-
         var fd = new FormData(form);
 
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');

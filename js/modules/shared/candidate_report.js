@@ -77,7 +77,7 @@ function closeBsModal(id) {
             });
 
             // Restore validator overflow lock if needed
-            if (document.querySelector('.cr-report-root.cr-role-validator') &&
+            if (document.querySelector('.cr-report-root.cr-validator-workspace') &&
                 String(qs('print') || '') !== '1') {
                 document.body.style.overflow = 'hidden';
             }
@@ -510,18 +510,38 @@ function closeBsModal(id) {
         panel.dataset.compToolsBound = '1';
         var wrap = document.createElement('div');
         wrap.innerHTML = componentToolbarHtml(section);
+        var toolsEl = wrap.firstElementChild || wrap;
 
-        // Keep evidence/upload block at bottom of the left content column when chat layout exists.
+        // Insert the evidence/upload block inside the main section card instead of below it.
         var leftCol = panel.querySelector('.cr-comp-left');
         var hostForInsert = leftCol || panel;
-        var firstRemarks = hostForInsert.querySelector('.cr-remarks');
-        var remarksRow = firstRemarks && firstRemarks.closest ? firstRemarks.closest('.form-control') : null;
-        if (remarksRow && remarksRow.parentElement) {
-            remarksRow.parentElement.insertBefore(wrap, remarksRow);
-        } else if (firstRemarks && firstRemarks.parentElement) {
-            firstRemarks.parentElement.insertBefore(wrap, firstRemarks);
-        } else {
-            hostForInsert.appendChild(wrap);
+        var inserted = false;
+
+        var tabPanel = hostForInsert.querySelector('.cr-record-panel.active .cr-kv2-wrap') ||
+            hostForInsert.querySelector('.cr-record-panel .cr-kv2-wrap');
+        if (tabPanel) {
+            tabPanel.appendChild(toolsEl);
+            inserted = true;
+        }
+
+        if (!inserted) {
+            var lastKvWrap = hostForInsert.querySelector('.cr-kv2-wrap:last-of-type');
+            if (lastKvWrap) {
+                lastKvWrap.appendChild(toolsEl);
+                inserted = true;
+            }
+        }
+
+        if (!inserted) {
+            var formGrid = hostForInsert.querySelector('.form-grid');
+            if (formGrid) {
+                formGrid.appendChild(toolsEl);
+                inserted = true;
+            }
+        }
+
+        if (!inserted) {
+            hostForInsert.appendChild(toolsEl);
         }
 
         var docsHost2 = panel.querySelector('[data-comp-docs]');
@@ -529,7 +549,7 @@ function closeBsModal(id) {
             loadUploadedDocsForComponent(CURRENT_APP_ID, section, docsHost2);
         }
 
-        wrap.addEventListener('click', function (e) {
+        toolsEl.addEventListener('click', function (e) {
             var t = e && e.target ? e.target : null;
             if (!t) return;
 
@@ -560,6 +580,21 @@ function closeBsModal(id) {
                     });
             }
         });
+
+        if (hostForInsert.dataset.recordTabsBound !== '1') {
+            hostForInsert.dataset.recordTabsBound = '1';
+            hostForInsert.addEventListener('click', function (e) {
+                var t = e && e.target ? e.target : null;
+                var btn = t && t.closest ? t.closest('[data-record-tab]') : null;
+                if (!btn) return;
+                var idx = String(btn.getAttribute('data-record-tab') || '0');
+                var activePanel = hostForInsert.querySelector('.cr-record-panel[data-record-panel="' + idx + '"] .cr-kv2-wrap');
+                if (activePanel && toolsEl.parentElement !== activePanel) {
+                    activePanel.appendChild(toolsEl);
+                    loadUploadedDocsForComponent(CURRENT_APP_ID, section, toolsEl.querySelector('[data-comp-docs]'));
+                }
+            });
+        }
     }
 
     function renderComponentNav(payload) {
@@ -850,10 +885,11 @@ function closeBsModal(id) {
                 var activeBtn = document.querySelector('.list-group-item[data-section].active');
                 var activeSec = activeBtn ? (activeBtn.getAttribute('data-section') || '') : '';
                 renderRemarksPanel(activeSec);
-                if (activeSec) {
+                if (activeSec && !document.querySelector('.cr-report-root.cr-validator-workspace')) {
                     var activePanel = document.getElementById('section-' + String(activeSec).toLowerCase());
                     if (activePanel) ensureComponentChat(activePanel, activeSec);
                 }
+                updateValidatorWorkspace(activeSec);
             } catch (_e) {
             }
 
@@ -926,6 +962,138 @@ function closeBsModal(id) {
                     '</div>' +
                 '</div>';
         }).join('');
+    }
+
+    function renderValidatorRemarksPanel(section) {
+        var host = document.getElementById('cvValidatorRemarksPanel');
+        if (!host) return;
+
+        var items = chatItemsForSection(section);
+        if (!items.length) {
+            host.innerHTML = 'No remarks added for this section yet.';
+            return;
+        }
+
+        host.innerHTML = items.slice(-12).reverse().map(function (it) {
+            var actorName = ((it.first_name || '') + ' ' + (it.last_name || '')).trim();
+            var actorUser = (it.username || '') ? String(it.username) : '';
+            var role2 = it.actor_role || '';
+            var actor = actorName || actorUser || (role2 ? String(role2).toUpperCase() : '') || 'System';
+            var ts = '';
+            try {
+                ts = it.created_at ? window.GSS_DATE.formatDbDateTime(it.created_at) : '';
+            } catch (_e) {
+                ts = it.created_at ? String(it.created_at) : '';
+            }
+
+            return '' +
+                '<div class="cr-validator-remark">' +
+                    '<div class="cr-validator-remark-meta"><span>' + esc(actor) + '</span><span>' + esc(ts) + '</span></div>' +
+                    '<div class="cr-validator-remark-text">' + esc(it.message || '') + '</div>' +
+                '</div>';
+        }).join('');
+    }
+
+    function renderValidatorTimelinePanel(section) {
+        var host = document.getElementById('cvValidatorTimeline');
+        if (!host) return;
+        host.innerHTML = timelineHtml(filterTimeline(TL_CACHE, section).slice(-8).reverse());
+    }
+
+    function reviewedSectionCount(payload) {
+        var assigned = getAssignedComponentKeys(payload || {});
+        if (!assigned.length) return { reviewed: 0, total: 0 };
+
+        var reviewed = 0;
+        assigned.forEach(function (key) {
+            var label = String(getWorkflowStageLabel(payload || {}, key) || '').toLowerCase().trim();
+            if (label && label !== 'pending candidate') {
+                reviewed++;
+            }
+        });
+
+        return { reviewed: reviewed, total: assigned.length };
+    }
+
+    function setValidatorWorkspaceSummary(payload) {
+        var d = payload || REPORT_PAYLOAD || {};
+        var cs = d.case_summary || {};
+        var app = d.application || {};
+        var clientEl = document.getElementById('cvHeaderClient');
+        var reviewedEl = document.getElementById('cvHeaderReviewed');
+        if (clientEl) {
+            clientEl.textContent = String(cs.client_name || cs.customer_name || app.client_name || app.customer_name || '-');
+        }
+        if (reviewedEl) {
+            var counts = reviewedSectionCount(d);
+            reviewedEl.textContent = counts.total ? (counts.reviewed + ' / ' + counts.total + ' sections') : '0 / 0 sections';
+        }
+    }
+
+    function updateValidatorWorkspace(section) {
+        var role = getRole();
+        if (!(role === 'validator' || role === 'verifier')) return;
+
+        section = normSection(section || CURRENT_SECTION_KEY);
+        renderValidatorRemarksPanel(section);
+        renderValidatorTimelinePanel(section);
+        setValidatorWorkspaceSummary(REPORT_PAYLOAD || {});
+    }
+
+    function initValidatorWorkspace() {
+        var role = getRole();
+        if (!(role === 'validator' || role === 'verifier')) return;
+
+        var saveBtn = document.getElementById('cvValidatorRemarkSave');
+        if (saveBtn && !saveBtn.dataset.bound) {
+            saveBtn.dataset.bound = '1';
+            saveBtn.addEventListener('click', function () {
+                if (!CURRENT_APP_ID) return;
+
+                var section = normSection(CURRENT_SECTION_KEY);
+                var ta = document.getElementById('cvValidatorRemarkText');
+                var msg = ta ? String(ta.value || '').trim() : '';
+                if (!section) {
+                    setBoxMessage('cvTopMessage', 'Select a section first.', 'danger');
+                    return;
+                }
+                if (!msg) {
+                    setBoxMessage('cvTopMessage', 'Remark is required.', 'danger');
+                    return;
+                }
+
+                saveBtn.disabled = true;
+                var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
+                fetch(base + '/api/shared/case_timeline_add.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({
+                        application_id: CURRENT_APP_ID,
+                        event_type: 'comment',
+                        section_key: section,
+                        message: msg
+                    })
+                })
+                    .then(function (res) { return res.json().catch(function () { return { status: 0, message: 'Invalid server response.' }; }); })
+                    .then(function (data) {
+                        if (!data || data.status !== 1) {
+                            throw new Error((data && data.message) ? data.message : 'Failed to save remark.');
+                        }
+                        if (ta) ta.value = '';
+                        setBoxMessage('cvTopMessage', 'Remark saved.', 'success');
+                        return loadTimeline(CURRENT_APP_ID);
+                    })
+                    .catch(function (e) {
+                        setBoxMessage('cvTopMessage', (e && e.message) ? e.message : 'Failed to save remark.', 'danger');
+                    })
+                    .finally(function () {
+                        saveBtn.disabled = false;
+                    });
+            });
+        }
+
+        updateValidatorWorkspace(CURRENT_SECTION_KEY);
     }
 
     function ensureComponentChat(panel, section) {
@@ -1348,7 +1516,7 @@ function closeBsModal(id) {
 
     function initValidatorRemarks() {
         var role = getRole();
-        if (role !== 'validator') return;
+        if (!(role === 'validator' || role === 'verifier')) return;
 
         var map = [
             { section: 'basic', ta: 'cvRemarksBasic', btn: 'cvSaveRemarksBasic' },
@@ -1488,7 +1656,7 @@ function closeBsModal(id) {
 
     function renderDocPreviewPanel(rows) {
         var role = getRole();
-        if (role !== 'validator') return;
+        if (!(role === 'validator' || role === 'verifier')) return;
 
         var frameHost = document.getElementById('cvDocPreviewFrameHost');
         var listHost = document.getElementById('cvDocPreviewList');
@@ -1587,8 +1755,21 @@ function closeBsModal(id) {
         var href = fileUrlForField(fieldKey, v);
         if (!href) return esc(v);
 
-        return '<a href="' + esc(href) + '" class="js-cv-doc-view" data-doc-label="' + esc(v) + '" style="text-decoration:none; color:#2563eb; font-weight:600;">View</a>' +
-            '<div style="color:#64748b; font-size:12px; margin-top:2px;">' + esc(v) + '</div>';
+        var lower = v.toLowerCase();
+        var icon = '<i>FILE</i>';
+        if (lower.endsWith('.pdf')) icon = '<i>PDF</i>';
+        if (lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png') || lower.endsWith('.gif') || lower.endsWith('.webp')) icon = '<i>IMG</i>';
+
+        return '' +
+            '<div class="cr-doc-uploadbox">' +
+                '<div class="cr-doc-uploadrow">' +
+                    '<span class="cr-doc-uploadbtn">Uploaded</span>' +
+                    '<a href="' + esc(href) + '" class="js-cv-doc-view cr-doc-uploadname" data-doc-label="' + esc(v) + '">' +
+                        icon +
+                        '<span>' + esc(v) + '</span>' +
+                    '</a>' +
+                '</div>' +
+            '</div>';
     }
 
     function setBadge(id, kind, text) {
@@ -1638,6 +1819,8 @@ function closeBsModal(id) {
     function normalizeStageLabelForRole(stageLabel) {
         var raw = String(stageLabel || '').trim();
         var low = raw.toLowerCase();
+        var role = getRole();
+        if (role === 'validator' && low === 'pending candidate') return 'Pending Validator';
         if (low === 'pendingverifier') return 'Pending Verifier';
         if (low === 'pendingvalidator') return 'Pending Validator';
         if (low === 'pendingqa') return 'Pending QA';
@@ -1765,6 +1948,7 @@ function closeBsModal(id) {
     }
 
     function updateSectionBadges(d) {
+        var role = getRole();
         d = d || {};
         var basic = d.basic || {};
         var contact = d.contact || {};
@@ -1820,17 +2004,22 @@ function closeBsModal(id) {
         if (!forcedRejected.ecourt) usedWorkflow = setStageBadge('cvNavBadgeEcourt', getWorkflowStageLabel(d, 'ecourt')) || usedWorkflow;
 
         if (!usedWorkflow) {
-            setBadge('cvNavBadgeBasic', basicDone ? 'done' : 'pending');
-            setBadge('cvNavBadgeId', idDone ? 'done' : 'pending');
-            setBadge('cvNavBadgeContact', contactDone ? 'done' : 'pending');
-            setBadge('cvNavBadgeEducation', eduDone ? 'done' : 'pending');
-            setBadge('cvNavBadgeEmployment', empDone ? 'done' : 'pending');
-            setBadge('cvNavBadgeReference', refDone ? 'done' : 'pending');
-            setBadge('cvNavBadgeSocialmedia', socialDone ? 'done' : 'pending');
-            setBadge('cvNavBadgeEcourt', ecourtDone ? 'done' : 'pending');
+            var pendingLabel = (role === 'validator') ? 'Pending Validator' : 'Pending Candidate';
+            setBadge('cvNavBadgeBasic', basicDone ? 'wip' : 'pending', basicDone ? pendingLabel : 'Pending');
+            setBadge('cvNavBadgeId', idDone ? 'wip' : 'pending', idDone ? pendingLabel : 'Pending');
+            setBadge('cvNavBadgeContact', contactDone ? 'wip' : 'pending', contactDone ? pendingLabel : 'Pending');
+            setBadge('cvNavBadgeEducation', eduDone ? 'wip' : 'pending', eduDone ? pendingLabel : 'Pending');
+            setBadge('cvNavBadgeEmployment', empDone ? 'wip' : 'pending', empDone ? pendingLabel : 'Pending');
+            setBadge('cvNavBadgeReference', refDone ? 'wip' : 'pending', refDone ? pendingLabel : 'Pending');
+            setBadge('cvNavBadgeSocialmedia', socialDone ? 'wip' : 'pending', socialDone ? pendingLabel : 'Pending');
+            setBadge('cvNavBadgeEcourt', ecourtDone ? 'wip' : 'pending', ecourtDone ? pendingLabel : 'Pending');
         }
 
-        setBadge('cvNavBadgeReports', reportsDone ? 'done' : 'pending');
+        if (reportsDone) {
+            setBadge('cvNavBadgeReports', role === 'validator' ? 'wip' : 'done', role === 'validator' ? 'Pending Validator' : 'Completed');
+        } else {
+            setBadge('cvNavBadgeReports', 'pending', 'Pending');
+        }
     }
 
     function setVal(id, value) {
@@ -2096,6 +2285,69 @@ function closeBsModal(id) {
         }).join('');
     }
 
+    function renderTabbedTable(hostId, rows, columns, tabPrefix) {
+        var host = document.getElementById(hostId);
+        if (!host) return;
+
+        if (!Array.isArray(rows) || rows.length === 0) {
+            host.innerHTML = '<div style="color:#6b7280; font-size:13px;">No data.</div>';
+            return;
+        }
+
+        rows = rows.map(window.GSS_DATE.formatRowDates);
+
+        if (rows.length === 1) {
+            renderTable(hostId, rows, columns);
+            return;
+        }
+
+        var tabsHtml = rows.map(function (_r, idx) {
+            return '<button type="button" class="cr-record-tab' + (idx === 0 ? ' active' : '') + '" data-record-tab="' + esc(String(idx)) + '">' +
+                esc((tabPrefix || 'Item') + ' ' + String(idx + 1)) +
+            '</button>';
+        }).join('');
+
+        var panelsHtml = rows.map(function (r, idx) {
+            var body = columns.map(function (c) {
+                var key = c && c.key ? String(c.key) : '';
+                var label = c && c.label ? String(c.label) : key;
+                var v = r ? r[key] : '';
+                var href = fileUrlForField(key, v);
+                var valHtml = href ? fileCellHtml(key, v) : ('<span style="font-weight:800; color:#0f172a;">' + esc(v) + '</span>');
+                return '<div class="cr-kv2-cell">' +
+                    '<div class="cr-kv2-k">' + esc(label) + '</div>' +
+                    '<div class="cr-kv2-v">' + valHtml + '</div>' +
+                '</div>';
+            }).join('');
+
+            return '<div class="cr-record-panel' + (idx === 0 ? ' active' : '') + '" data-record-panel="' + esc(String(idx)) + '">' +
+                '<div class="cr-kv2-wrap">' +
+                    '<div style="font-size:12px; font-weight:950; color:#0f172a; margin-bottom:4px;">' + esc((tabPrefix || 'Item') + ' ' + String(idx + 1)) + '</div>' +
+                    '<div class="cr-kv2-grid">' + body + '</div>' +
+                '</div>' +
+            '</div>';
+        }).join('');
+
+        host.innerHTML = '<div class="cr-record-tabs">' + tabsHtml + '</div>' + panelsHtml;
+
+        if (!host.dataset.tabsBound) {
+            host.dataset.tabsBound = '1';
+            host.addEventListener('click', function (e) {
+                var t = e && e.target ? e.target : null;
+                var btn = t && t.closest ? t.closest('[data-record-tab]') : null;
+                if (!btn) return;
+
+                var idx = String(btn.getAttribute('data-record-tab') || '0');
+                Array.prototype.slice.call(host.querySelectorAll('[data-record-tab]')).forEach(function (el) {
+                    el.classList.toggle('active', String(el.getAttribute('data-record-tab')) === idx);
+                });
+                Array.prototype.slice.call(host.querySelectorAll('[data-record-panel]')).forEach(function (el) {
+                    el.classList.toggle('active', String(el.getAttribute('data-record-panel')) === idx);
+                });
+            });
+        }
+    }
+
     function toTitle(key) {
         var s = String(key || '');
         if (!s) return '';
@@ -2331,7 +2583,7 @@ function closeBsModal(id) {
     }
 
     function setActionsDisabled(disabled) {
-        ['cvActionHold', 'cvActionReject', 'cvActionStopBgv', 'cvActionApprove'].forEach(function (id) {
+        ['cvActionHold', 'cvActionReject', 'cvActionStopBgv', 'cvActionApprove', 'cvValidatorActionHold', 'cvValidatorActionReject', 'cvValidatorActionApprove'].forEach(function (id) {
             var b = document.getElementById(id);
             if (!b) return;
             b.disabled = !!disabled;
@@ -2405,7 +2657,7 @@ function closeBsModal(id) {
         }
 
         function setComponentActionButtonsEnabled(enabled) {
-            ['cvActionHold', 'cvActionReject', 'cvActionApprove'].forEach(function (id) {
+            ['cvActionHold', 'cvActionReject', 'cvActionApprove', 'cvValidatorActionHold', 'cvValidatorActionReject', 'cvValidatorActionApprove'].forEach(function (id) {
                 var b = document.getElementById(id);
                 if (!b) return;
                 b.disabled = !enabled;
@@ -2601,7 +2853,7 @@ function askActionConfirm(label) {
                 });
 
                 // Restore validator-specific overflow if needed
-                if (document.querySelector('.cr-report-root.cr-role-validator') &&
+                if (document.querySelector('.cr-report-root.cr-validator-workspace') &&
                     String(qs('print') || '') !== '1') {
                     document.body.style.overflow = 'hidden';
                 }
@@ -2822,6 +3074,7 @@ function askActionConfirm(label) {
                     } catch (_e) {
                     }
                     applyComponentActionLock();
+                    updateValidatorWorkspace(componentKey2);
                 }
                 setBoxMessage('cvTopMessage', 'Updated successfully.', 'success');
             } catch (e) {
@@ -2838,6 +3091,9 @@ function askActionConfirm(label) {
         var rejectBtn = document.getElementById('cvActionReject');
         var stopBtn = document.getElementById('cvActionStopBgv');
         var approveBtn = document.getElementById('cvActionApprove');
+        var validatorHoldBtn = document.getElementById('cvValidatorActionHold');
+        var validatorRejectBtn = document.getElementById('cvValidatorActionReject');
+        var validatorApproveBtn = document.getElementById('cvValidatorActionApprove');
 
         if (holdBtn && !holdBtn.dataset.bound) {
             holdBtn.dataset.bound = '1';
@@ -2854,6 +3110,18 @@ function askActionConfirm(label) {
         if (approveBtn && !approveBtn.dataset.bound) {
             approveBtn.dataset.bound = '1';
             approveBtn.addEventListener('click', function () { run('approve', 'Approve'); });
+        }
+        if (validatorHoldBtn && !validatorHoldBtn.dataset.bound) {
+            validatorHoldBtn.dataset.bound = '1';
+            validatorHoldBtn.addEventListener('click', function () { run('hold', 'Hold'); });
+        }
+        if (validatorRejectBtn && !validatorRejectBtn.dataset.bound) {
+            validatorRejectBtn.dataset.bound = '1';
+            validatorRejectBtn.addEventListener('click', function () { run('reject', 'Reject'); });
+        }
+        if (validatorApproveBtn && !validatorApproveBtn.dataset.bound) {
+            validatorApproveBtn.dataset.bound = '1';
+            validatorApproveBtn.addEventListener('click', function () { run('approve', 'Approve'); });
         }
 
         // Initial lock based on current component + stage status
@@ -2937,12 +3205,19 @@ function askActionConfirm(label) {
 
             try {
                 var panel = document.getElementById('section-' + String(section));
-                ensureComponentChat(panel, section);
+                if (!document.querySelector('.cr-report-root.cr-validator-workspace')) {
+                    ensureComponentChat(panel, section);
+                }
             } catch (_e) {
             }
 
             try {
                 renderRemarksPanel(section);
+            } catch (_e) {
+            }
+
+            try {
+                updateValidatorWorkspace(section);
             } catch (_e) {
             }
 
@@ -3475,6 +3750,7 @@ function askActionConfirm(label) {
         CURRENT_APP_ID = applicationId || '';
 
         initHeaderModals(applicationId);
+        initValidatorWorkspace();
         loadTimeline(applicationId);
 
         renderDocPreviewPanel(d.uploaded_docs || []);
@@ -3556,6 +3832,7 @@ function askActionConfirm(label) {
         var tatDays = cs && typeof cs.internal_tat !== 'undefined' ? (parseInt(cs.internal_tat || '20', 10) || 20) : 20;
         var rules = cs && cs.weekend_rules ? cs.weekend_rules : 'exclude';
         setText('cvHeaderTat', tatLabelFromCreated(cs.created_at || '', { internal_tat: tatDays, weekend_rules: rules }));
+        setValidatorWorkspaceSummary(d);
 
         var tatLabel = tatLabelFromCreated(cs.created_at || '', { internal_tat: tatDays, weekend_rules: rules });
         setText('cvSectionTatBasic', tatLabel ? ('Component TAT: ' + tatLabel) : '');
@@ -3665,15 +3942,15 @@ function askActionConfirm(label) {
 
         simplifyAllReadonlyFields();
 
-        renderTable('cv_identification_table', d.identification || [], [
+        renderTabbedTable('cv_identification_table', d.identification || [], [
             { key: 'document_index', label: '#' },
             { key: 'documentId_type', label: 'Document Type' },
             { key: 'id_number', label: 'ID Number' },
             { key: 'name', label: 'Name on ID' },
             { key: 'upload_document', label: 'Uploaded File' }
-        ]);
+        ], 'ID');
 
-        renderTable('cv_education_table', d.education || [], [
+        renderTabbedTable('cv_education_table', d.education || [], [
             { key: 'education_index', label: '#' },
             { key: 'qualification', label: 'Qualification' },
             { key: 'college_name', label: 'College' },
@@ -3683,9 +3960,9 @@ function askActionConfirm(label) {
             { key: 'roll_number', label: 'Roll No' },
             { key: 'marksheet_file', label: 'Marksheet' },
             { key: 'degree_file', label: 'Degree' }
-        ]);
+        ], 'Education');
 
-        renderTable('cv_employment_table', d.employment || [], [
+        renderTabbedTable('cv_employment_table', d.employment || [], [
             { key: 'employment_index', label: '#' },
             { key: 'employer_name', label: 'Employer' },
             { key: 'job_title', label: 'Job Title' },
@@ -3695,7 +3972,7 @@ function askActionConfirm(label) {
             { key: 'currently_employed', label: 'Currently Employed' },
             { key: 'contact_employer', label: 'Contact Employer' },
             { key: 'employment_doc', label: 'Document' }
-        ]);
+        ], 'Employment');
 
         var uploadTypeEl = document.getElementById('cvUploadDocType');
         var currentType = uploadTypeEl ? String(uploadTypeEl.value || '') : '';
@@ -3744,7 +4021,7 @@ function askActionConfirm(label) {
         initUploadPicker();
         initValidatorRemarks();
         initDocViewModal();
-        if (document.querySelector('.cr-report-root.cr-role-validator') && String(qs('print') || '') !== '1') {
+        if (document.querySelector('.cr-report-root.cr-validator-workspace') && String(qs('print') || '') !== '1') {
             document.body.style.overflow = 'hidden';
         }
         loadReport().then(function (payload) {

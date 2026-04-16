@@ -125,7 +125,7 @@ $permanent_address = !empty($ecourt_row['permanent_address'])
 $adultDobMax = date('Y-m-d', strtotime('-18 years'));
 ?>
 
-<div class="candidate-form compact-form">
+<div class="candidate-form compact-form create-like-spacing">
 
     <?php if ($fatalError !== ''): ?>
         <div class="alert alert-danger" style="font-size:13px;">
@@ -179,31 +179,19 @@ $adultDobMax = date('Y-m-d', strtotime('-18 years'));
             <div class="form-field">
                 <div class="form-control double-border compact-control">
                     <label class="compact-label">Evidence Document <span class="required">*</span></label>
-                    <input type="file" name="evidence_document" accept=".pdf,.jpg,.jpeg,image/jpeg,application/pdf" class="compact-file" required>
-                    <p class="upload-hint compact-hint">
-                        Court documents, judgments, or evidence (PDF/JPG/JPEG, Max 5MB)
-                    </p>
-
-                    <div id="evidenceDocumentPreview" class="mt-2">
-                        <?php if (!empty($ecourt_row['evidence_document'])): 
-                            $file_path = "/uploads/ecourt/" . htmlspecialchars($ecourt_row['evidence_document']);
-                            $full_path = $_SERVER['DOCUMENT_ROOT'] . $file_path;
-                            $file_exists = file_exists($full_path);
-                        ?>
-                            <div class="file-preview-pill">
-                                <i class="fas <?= $file_exists ? 'fa-check-circle text-success' : 'fa-exclamation-triangle text-warning' ?> me-2"></i>
-                                <?= $file_exists ? 'Current file:' : 'File missing:' ?>
-                               <a href="#"
-   class="preview-btn text-primary ms-1 text-decoration-none"
-   data-url="<?= $file_path ?>"
-   data-name="<?= htmlspecialchars($ecourt_row['evidence_document']) ?>"
-   data-type="pdf">
-    <?= htmlspecialchars($ecourt_row['evidence_document']) ?>
-</a>
-
-                            </div>
-                        <?php endif; ?>
+                    <div class="file-upload-box" data-file-upload>
+                        <div class="file-upload-row">
+                            <button type="button" class="file-upload-btn" data-file-choose>Choose File</button>
+                            <button type="button" class="file-upload-name" data-file-name disabled>No file chosen</button>
+                        </div>
+                        <div class="file-upload-error" data-file-error></div>
                     </div>
+                    <input type="file"
+                           name="evidence_document"
+                           accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                           class="compact-file d-none"
+                           data-file-input
+                           required>
                 </div>
             </div>
         </div>
@@ -254,9 +242,9 @@ $adultDobMax = date('Y-m-d', strtotime('-18 years'));
             </button>
             
             <div class="footer-actions-right">
-                <button type="button" class="btn-secondary save-draft-btn" data-page="ecourt">
+                <!-- <button type="button" class="btn-secondary save-draft-btn" data-page="ecourt">
                     Save Draft
-                </button>
+                </button> -->
                 
                 <button type="button" class="btn-primary external-submit-btn" data-form="ecourtForm">
                     Next <i class="fas fa-arrow-right ms-2"></i>

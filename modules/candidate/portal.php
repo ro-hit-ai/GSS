@@ -13,26 +13,9 @@
     
     <!-- Custom CSS -->
     <link href="assets/css/style.css" rel="stylesheet">
-    
-    <style>
-        .global-notification {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 9999;
-            min-width: 300px;
-        }
-        
-        /* Bootstrap handles layout */
-        .sidebar-sticky {
-            position: sticky;
-            top: 0;
-            height: 100vh;
-            overflow-y: auto;
-        }
-    </style>
+    <link href="assets/css/candidate.css" rel="stylesheet">
 </head>
-<body>
+<body class="candidate-portal">
     <div class="container-fluid">
         <div class="row flex-nowrap">
             <!-- Sidebar -->

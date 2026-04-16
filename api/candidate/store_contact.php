@@ -63,22 +63,19 @@ try {
 
     /* ================= FLAGS ================= */
 
-    $same_as_current        = !empty($post['same_as_current']) ? 1 : 0;
+    $same_as_current        = isset($post['same_as_current']) && (string)$post['same_as_current'] === '1' ? 1 : 0;
     $insufficient_documents = !empty($post['insufficient_address_proof']) ? 1 : 0;
     $is_draft               = !empty($post['save_draft']);
+    $hasCurrentAddress      = isset($post['has_current_address']) && (string)$post['has_current_address'] === '1';
+    $hasPermanentAddress    = isset($post['has_permanent_address']) && (string)$post['has_permanent_address'] === '1';
 
     /* ================= CONTACT ================= */
 
-    $mobile_country_code = $post['mobile_country_code'] ?? '';
-    $mobile              = $post['mobile'] ?? '';
-    $alternative_mobile  = $post['alternative_mobile'] ?? '';
-    $email               = $post['email'] ?? '';
-    $alternative_email   = $post['alternative_email'] ?? '';
-
-    if (!$is_draft) {
-        validateRequired($mobile, 'Mobile');
-        validateRequired($email, 'Email');
-    }
+    $mobile_country_code = '';
+    $mobile              = '';
+    $alternative_mobile  = '';
+    $email               = '';
+    $alternative_email   = '';
 
     /* ================= CURRENT ADDRESS ================= */
 
@@ -89,7 +86,7 @@ try {
     $country     = $post['current_country'] ?? 'India';
     $postal_code = $post['current_postal_code'] ?? '';
 
-    if (!$is_draft) {
+    if (!$is_draft && $hasCurrentAddress) {
         validateRequired($address1, 'Current Address');
         validateRequired($city, 'City');
         validateRequired($state, 'State');
@@ -98,7 +95,30 @@ try {
 
     /* ================= PERMANENT ADDRESS ================= */
 
-    if ($same_as_current) {
+    if ($hasCurrentAddress && !$hasPermanentAddress) {
+        $same_as_current = 1;
+        $p_address1    = $address1;
+        $p_address2    = $address2;
+        $p_city        = $city;
+        $p_state       = $state;
+        $p_country     = $country;
+        $p_postal_code = $postal_code;
+    } elseif (!$hasCurrentAddress && $hasPermanentAddress) {
+        $same_as_current = 0;
+        $p_address1    = $post['permanent_address1'] ?? '';
+        $p_address2    = $post['permanent_address2'] ?? '';
+        $p_city        = $post['permanent_city'] ?? '';
+        $p_state       = $post['permanent_state'] ?? '';
+        $p_country     = $post['permanent_country'] ?? 'India';
+        $p_postal_code = $post['permanent_postal_code'] ?? '';
+
+        if (!$is_draft) {
+            validateRequired($p_address1, 'Permanent Address');
+            validateRequired($p_city, 'Permanent City');
+            validateRequired($p_state, 'Permanent State');
+            validateRequired($p_postal_code, 'Permanent Postal Code');
+        }
+    } elseif ($same_as_current) {
         $p_address1    = $address1;
         $p_address2    = $address2;
         $p_city        = $city;
@@ -113,7 +133,7 @@ try {
         $p_country     = $post['permanent_country'] ?? 'India';
         $p_postal_code = $post['permanent_postal_code'] ?? '';
 
-        if (!$is_draft) {
+        if (!$is_draft && $hasPermanentAddress) {
             validateRequired($p_address1, 'Permanent Address');
             validateRequired($p_city, 'Permanent City');
             validateRequired($p_state, 'Permanent State');

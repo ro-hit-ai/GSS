@@ -51,8 +51,8 @@ ob_start();
         </div>
         <div class="form-control">
             <label>Upload File *</label>
-            <input type="file" name="file" id="bulk_file" accept=".csv,.xlsx" required>
-            <small>Upload CSV / Excel file (sample format below). If the file includes Location/Job Role/Recruiter columns, those values will be used row-wise.</small>
+            <input type="file" name="file" id="bulk_file" accept=".csv,text/csv" required>
+            <small>Upload CSV file only (sample format below). If the file includes Location/Job Role/Recruiter columns, those values will be used row-wise.</small>
         </div>
     </form>
     <div class="form-actions">

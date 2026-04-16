@@ -25,6 +25,26 @@ session_start();
 
 $response = ['success' => false, 'message' => ''];
 require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../../includes/integration.php';
+require_once __DIR__ . '/../shared/case_component_binding.php';
+require_once __DIR__ . '/../shared/candidate_account_notify.php';
+
+function submission_mail_debug_log(string $message): void
+{
+    $root = realpath(__DIR__ . '/../..');
+    $logFile = $root ? ($root . DIRECTORY_SEPARATOR . 'tmp' . DIRECTORY_SEPARATOR . 'submission_mail_debug.log') : '';
+    $line = '[' . date('Y-m-d H:i:s') . '] ' . $message . "\r\n";
+
+    if ($logFile !== '') {
+        $dir = dirname($logFile);
+        if (is_dir($dir) && is_writable($dir)) {
+            @error_log($line, 3, $logFile);
+            return;
+        }
+    }
+
+    @error_log($line);
+}
 
 try {
 
@@ -32,7 +52,7 @@ try {
         throw new Exception("Session expired. Please restart your application.");
     }
 
-    $application_id = $_SESSION['application_id'];
+    $application_id = integration_normalize_application_id((string)$_SESSION['application_id']);
     $pdo = getDB();
 
     if (!$pdo) {
@@ -41,10 +61,10 @@ try {
 
     $pdo->query("SELECT 1");
 
-   //check application exists
+   // Check application exists in the actual Payfiller applications table
     $stmt = $pdo->prepare("
         SELECT application_id
-        FROM applications
+        FROM Vati_Payfiller_Candidate_Applications
         WHERE application_id = ?
     ");
     $stmt->execute([$application_id]);
@@ -54,7 +74,7 @@ try {
     }
 
     $update = $pdo->prepare("
-        UPDATE applications
+        UPDATE Vati_Payfiller_Candidate_Applications
         SET status = 'submitted',
             submitted_at = NOW()
         WHERE application_id = ?
@@ -69,6 +89,7 @@ try {
         if ($c && !empty($c['case_id'])) {
             $caseId = (int)$c['case_id'];
             $clientId = isset($c['client_id']) ? (int)$c['client_id'] : null;
+            case_component_binding_sync_case_components($pdo, $caseId, $application_id);
             $ensure = $pdo->prepare('CALL SP_Vati_Payfiller_VAL_EnsureQueue(?)');
             $ensure->execute([$clientId]);
             while ($ensure->nextRowset()) {
@@ -112,9 +133,94 @@ try {
         // ignore
     }
 
+    try {
+        submission_mail_debug_log('submit notify: start application_id=' . $application_id);
+        $notifyStmt = $pdo->prepare(
+            "SELECT c.client_id,
+                    c.candidate_first_name,
+                    c.candidate_middle_name,
+                    c.candidate_last_name,
+                    c.candidate_email,
+                    c.job_role,
+                    cl.customer_name,
+                    a.submitted_at
+               FROM Vati_Payfiller_Cases c
+               LEFT JOIN Vati_Payfiller_Clients cl ON cl.client_id = c.client_id
+               LEFT JOIN Vati_Payfiller_Candidate_Applications a ON a.application_id = c.application_id
+              WHERE c.application_id = ?
+              LIMIT 1"
+        );
+        $notifyStmt->execute([$application_id]);
+        $notifyRow = $notifyStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        submission_mail_debug_log('submit notify: row_found=' . (!empty($notifyRow) ? 'yes' : 'no'));
+
+        if (!empty($notifyRow)) {
+            $candidateName = trim(
+                (string)($notifyRow['candidate_first_name'] ?? '') . ' '
+                . (string)($notifyRow['candidate_middle_name'] ?? '') . ' '
+                . (string)($notifyRow['candidate_last_name'] ?? '')
+            );
+
+            $candidateEmail = integration_normalize_email((string)($notifyRow['candidate_email'] ?? ''));
+            submission_mail_debug_log(
+                'submit notify: candidate_email=' . $candidateEmail
+                . ' client_id=' . (int)($notifyRow['client_id'] ?? 0)
+                . ' job_role=' . (string)($notifyRow['job_role'] ?? '')
+            );
+
+            $candidateSent = send_candidate_submission_confirmation($pdo, [
+                'client_id' => (int)($notifyRow['client_id'] ?? 0),
+                'application_id' => $application_id,
+                'candidate_name' => $candidateName,
+                'candidate_email' => $candidateEmail,
+                'job_role' => (string)($notifyRow['job_role'] ?? ''),
+                'client_name' => (string)($notifyRow['customer_name'] ?? ''),
+                'submitted_at' => (string)($notifyRow['submitted_at'] ?? ''),
+            ]);
+            submission_mail_debug_log('submit notify: candidate_confirmation_sent=' . ($candidateSent ? 'yes' : 'no'));
+
+            $internalMeta = send_candidate_submitted_notifications($pdo, [
+                'client_id' => (int)($notifyRow['client_id'] ?? 0),
+                'application_id' => $application_id,
+                'candidate_name' => $candidateName,
+                'candidate_email' => $candidateEmail,
+                'job_role' => (string)($notifyRow['job_role'] ?? ''),
+                'client_name' => (string)($notifyRow['customer_name'] ?? ''),
+                'submitted_at' => (string)($notifyRow['submitted_at'] ?? ''),
+            ]);
+            submission_mail_debug_log(
+                'submit notify: internal_recipient_count=' . (int)($internalMeta['recipient_count'] ?? 0)
+                . ' internal_sent_count=' . (int)($internalMeta['sent_count'] ?? 0)
+            );
+        }
+    } catch (Throwable $e) {
+        submission_mail_debug_log('submit notify: exception=' . $e->getMessage());
+        // ignore notification failures so candidate submission still succeeds
+    }
+
   // success
     $response['success'] = true;
     $response['message'] = "Application submitted successfully!";
+    try {
+        $summary = integration_fetch_case_summary($pdo, $application_id);
+        $webhook = integration_send_webhook('candidate.responded', [
+            'applicationId' => $application_id,
+            'caseId' => $summary['caseId'] ?? null,
+            'candidateEmail' => $summary['candidateEmail'] ?? '',
+            'candidateName' => $summary['candidateName'] ?? '',
+            'currentStage' => 'Candidate Submitted',
+            'status' => 'PENDING_VALIDATOR',
+            'triggeredBy' => [
+                'userId' => 0,
+                'role' => 'candidate',
+            ],
+            'triggeredAt' => gmdate('c'),
+            'metadata' => integration_deep_links($application_id, isset($summary['caseId']) ? (int)$summary['caseId'] : null),
+        ]);
+        $response['eventId'] = $webhook['eventId'] ?? null;
+    } catch (Throwable $e) {
+        submission_mail_debug_log('submit webhook: exception=' . $e->getMessage());
+    }
 
 } catch (Throwable $e) {
 

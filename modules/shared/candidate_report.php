@@ -392,54 +392,54 @@ ob_start();
 
     /* Validator: fixed sidebar + stable content flow */
     /* Validator layout: internal scrolling only */
-    .cr-report-root.cr-role-validator{
+    .cr-report-root.cr-validator-workspace{
         height:100vh;
         overflow:hidden;
         display:flex;
         flex-direction:column;
     }
-    .cr-report-root.cr-role-validator .cr-hero{flex-shrink:0;}
-    .cr-report-root.cr-role-validator .cr-shell{
+    .cr-report-root.cr-validator-workspace .cr-hero{flex-shrink:0;}
+    .cr-report-root.cr-validator-workspace .cr-shell{
         flex:1;
         min-height:0;
         display:flex;
         gap:12px;
         overflow:hidden;
     }
-    .cr-report-root.cr-role-validator .cr-sidebar{
+    .cr-report-root.cr-validator-workspace .cr-sidebar{
         width:250px;
         flex-shrink:0;
         overflow-y:auto;
         height:fit-content;
         max-height:100%;
     }
-    .cr-report-root.cr-role-validator .cr-main{
+    .cr-report-root.cr-validator-workspace .cr-main{
         flex:1;
         min-width:0;
         display:flex;
         flex-direction:column;
         overflow:hidden;
     }
-    .cr-report-root.cr-role-validator .cr-upload-inline{flex-shrink:0;}
-    .cr-report-root.cr-role-validator .cr-sections-scroll{
+    .cr-report-root.cr-validator-workspace .cr-upload-inline{flex-shrink:0;}
+    .cr-report-root.cr-validator-workspace .cr-sections-scroll{
         flex:1;
         overflow-y:auto;
         padding-right:6px;
         max-height:none;
     }
-    body.cr-fullscreen-validator .cr-report-root.cr-role-validator .cr-sidebar{
+    body.cr-fullscreen-validator .cr-report-root.cr-validator-workspace .cr-sidebar{
         top:12px;
         height:calc(100vh - 24px);
     }
-    .cr-report-root.cr-role-validator .cr-main{
+    .cr-report-root.cr-validator-workspace .cr-main{
         min-width:0;
     }
-    .cr-report-root.cr-role-validator{
+    .cr-report-root.cr-validator-workspace{
         position:relative;
         height:auto;
         overflow:visible;
     }
-    .cr-report-root.cr-role-validator .cr-sections-scroll{
+    .cr-report-root.cr-validator-workspace .cr-sections-scroll{
         max-height:none;
         overflow:visible;
         padding-right:0;
@@ -487,7 +487,458 @@ ob_start();
 }
 
 
-    .cr-report-root.cr-role-validator .cr-remarks{display:none !important;}
+    .cr-report-root.cr-validator-workspace .cr-remarks{display:none !important;}
+    .cr-report-root.cr-validator-workspace{
+        background:#f8fafc;
+        border:1px solid rgba(203,213,225,0.9);
+        border-top:4px solid #1d4ed8;
+        padding:14px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-hero{
+        margin-top:0 !important;
+        padding:12px 14px;
+        border:1px solid rgba(203,213,225,0.9);
+        border-radius:16px;
+        background:#ffffff;
+        box-shadow:0 10px 24px rgba(15,23,42,0.04);
+    }
+    .cr-report-root.cr-validator-workspace .cr-hero-top{
+        align-items:center;
+        gap:12px;
+        flex-wrap:nowrap;
+    }
+    .cr-validator-case-main{
+        display:flex;
+        flex-direction:column;
+        gap:10px;
+        flex:1;
+        min-width:0;
+    }
+    .cr-validator-case-copy{
+        display:flex;
+        flex-direction:column;
+        gap:0;
+    }
+    .cr-report-root.cr-validator-workspace .cr-hero-head{
+        align-items:center;
+        gap:12px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-avatar{
+        width:42px;
+        height:42px;
+        border-radius:12px;
+        background:#0f172a;
+        box-shadow:none;
+        flex:0 0 42px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-hero-title{
+        font-size:17px;
+        line-height:1.2;
+        margin:0;
+        display:flex;
+        align-items:center;
+        gap:10px;
+        flex-wrap:wrap;
+    }
+    .cr-report-root.cr-validator-workspace .cr-hero-sub{
+        margin-top:0;
+        font-size:12px;
+        font-weight:500;
+        color:#64748b;
+        white-space:nowrap;
+    }
+    .cr-validator-case-grid{
+        display:grid;
+        grid-template-columns:repeat(6, minmax(0, 1fr));
+        gap:8px;
+        margin-top:0;
+    }
+    .cr-report-root.cr-validator-workspace .cr-stat{
+        display:flex;
+        flex-direction:column;
+        align-items:flex-start;
+        gap:3px;
+        padding:10px 12px;
+        border-radius:12px;
+        border:1px solid rgba(226,232,240,0.95);
+        background:#f8fafc;
+        min-width:0;
+    }
+    .cr-report-root.cr-validator-workspace .cr-stat b{
+        font-size:11px;
+        letter-spacing:.08em;
+        text-transform:uppercase;
+        color:#64748b;
+    }
+    .cr-report-root.cr-validator-workspace .cr-stat span{
+        font-size:14px;
+        font-weight:800;
+        color:#0f172a;
+        overflow:hidden;
+        text-overflow:ellipsis;
+        white-space:nowrap;
+        width:100%;
+    }
+    .cr-report-root.cr-validator-workspace .cr-actions{
+        align-self:flex-start;
+        gap:8px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-shell.cr-layout{
+        display:grid;
+        grid-template-columns:320px minmax(0, 1fr) 290px;
+        gap:16px;
+        align-items:start;
+        margin-top:14px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-sidebar{
+        width:auto;
+        padding:16px 15px;
+        border-radius:16px;
+        border:1px solid rgba(203,213,225,0.95);
+        background:#ffffff;
+        box-shadow:0 10px 24px rgba(15,23,42,0.04);
+        top:14px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-sidebar-title{
+        margin-bottom:14px;
+        color:#475569;
+    }
+    .cr-report-root.cr-validator-workspace .cr-nav{
+        gap:8px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-nav .list-group-item{
+        display:flex;
+        flex-direction:row;
+        align-items:center;
+        justify-content:space-between;
+        gap:10px;
+        padding:10px 14px;
+        min-height:58px;
+        border:1px solid rgba(226,232,240,0.9);
+        background:#fbfdff;
+        transform:none;
+        border-radius:16px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-nav .list-group-item:hover{
+        transform:none;
+        background:#f8fafc;
+        border-color:rgba(148,163,184,0.42);
+    }
+    .cr-report-root.cr-validator-workspace .cr-nav .list-group-item.active{
+        background:rgba(37,99,235,0.08);
+        border-color:rgba(37,99,235,0.35);
+        box-shadow:inset 0 0 0 1px rgba(37,99,235,0.10);
+    }
+    .cr-report-root.cr-validator-workspace .cr-nav-label{
+        min-width:0;
+        flex:1;
+        align-items:center;
+        gap:10px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-nav-label span:last-child{
+        line-height:1.2;
+        font-weight:700;
+        color:#0f172a;
+    }
+    .cr-report-root.cr-validator-workspace .cr-nav .badge{
+        align-self:center;
+        margin-left:10px;
+        margin-top:0;
+        max-width:142px;
+        padding:3px 9px;
+        font-size:10px;
+        flex:0 0 auto;
+        white-space:nowrap;
+        overflow:hidden;
+        text-overflow:ellipsis;
+    }
+    .cr-report-root.cr-validator-workspace .cr-main{
+        min-width:0;
+        display:flex;
+        flex-direction:column;
+        gap:16px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-sections-scroll{
+        order:1;
+        max-height:none;
+        overflow:visible;
+        padding-right:0;
+        border-radius:0;
+    }
+    .cr-report-root.cr-validator-workspace .cr-upload-inline{
+        display:none !important;
+    }
+    .cr-report-root.cr-validator-workspace .cr-upload-inline h3{
+        margin:0 0 10px;
+        font-size:14px;
+        font-weight:800;
+        color:#0f172a;
+    }
+    .cr-report-root.cr-validator-workspace .candidate-section{
+        margin-top:0 !important;
+        border-radius:16px !important;
+        border:1px solid rgba(203,213,225,0.95) !important;
+        box-shadow:0 10px 24px rgba(15,23,42,0.04) !important;
+        overflow:hidden;
+    }
+    .cr-report-root.cr-validator-workspace .cr-secbar{
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:12px;
+        padding:13px 16px;
+        background:linear-gradient(180deg,#ffffff,#fbfdff);
+        border-bottom:1px solid rgba(226,232,240,0.95);
+    }
+    .cr-secbar-titleblock{
+        display:flex;
+        align-items:flex-start;
+        gap:12px;
+        min-width:0;
+    }
+    .cr-secbar-icon{
+        width:34px;
+        height:34px;
+        border-radius:12px;
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        flex:0 0 34px;
+        background:rgba(37,99,235,0.08);
+        border:1px solid rgba(37,99,235,0.14);
+        color:#1d4ed8;
+        font-size:11px;
+        font-weight:900;
+        letter-spacing:.04em;
+    }
+    .cr-secbar-copy{
+        display:flex;
+        flex-direction:column;
+        min-width:0;
+    }
+    .cr-report-root.cr-validator-workspace .cr-secbar-title{
+        font-size:14px;
+        font-weight:800;
+        color:#0f172a;
+        line-height:1.2;
+    }
+    .cr-secbar-sub{
+        margin-top:2px;
+        font-size:11px;
+        color:#64748b;
+        font-weight:600;
+        line-height:1.3;
+    }
+    .cr-report-root.cr-validator-workspace .cr-secbar-meta{
+        font-size:12px;
+        font-weight:800;
+        color:#166534;
+        text-align:right;
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        padding:6px 10px;
+        border-radius:999px;
+        background:rgba(34,197,94,0.12);
+        border:1px solid rgba(34,197,94,0.18);
+        white-space:nowrap;
+    }
+    .cr-report-root.cr-validator-workspace .candidate-section > .form-grid,
+    .cr-report-root.cr-validator-workspace .candidate-section > div[id$="_table"]{
+        margin-top:0 !important;
+        padding:16px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-comp-layout{
+        display:grid !important;
+        grid-template-columns:minmax(0, 1fr);
+        gap:12px !important;
+        padding:12px;
+        margin-top:0 !important;
+    }
+    .cr-report-root.cr-validator-workspace .cr-comp-right{
+        display:none !important;
+    }
+    .cr-validator-side{
+        position:sticky;
+        top:14px;
+        display:flex;
+        flex-direction:column;
+        gap:12px;
+        align-self:start;
+    }
+    .cr-validator-side .cr-case-actions-card{
+        margin-bottom:0;
+        border:1px solid rgba(203,213,225,0.95);
+        border-radius:16px;
+        background:#ffffff;
+        box-shadow:0 10px 24px rgba(15,23,42,0.04);
+        padding:12px;
+    }
+    .cr-validator-side .cr-case-actions-head{
+        margin-bottom:12px;
+        color:#475569;
+    }
+    .cr-validator-side-meta{
+        display:grid;
+        gap:10px;
+    }
+    .cr-validator-side-item{
+        display:flex;
+        flex-direction:column;
+        gap:4px;
+        padding:10px 12px;
+        border:1px solid rgba(226,232,240,0.95);
+        border-radius:14px;
+        background:#f8fafc;
+    }
+    .cr-validator-side-item span{
+        font-size:11px;
+        letter-spacing:.08em;
+        text-transform:uppercase;
+        color:#64748b;
+        font-weight:800;
+    }
+    .cr-validator-side-item strong{
+        font-size:14px;
+        color:#0f172a;
+        font-weight:800;
+    }
+    .cr-validator-action-grid{
+        display:grid;
+        grid-template-columns:repeat(3, minmax(0, 1fr));
+        gap:8px;
+    }
+    .cr-validator-action-grid .cr-action-btn{
+        width:100%;
+        justify-content:center;
+        min-height:40px;
+    }
+    .cr-validator-remarks-list{
+        display:flex;
+        flex-direction:column;
+        gap:10px;
+        max-height:280px;
+        overflow:auto;
+        padding-right:4px;
+        color:#64748b;
+        font-size:13px;
+    }
+    .cr-validator-remark{
+        padding:10px 12px;
+        border:1px solid rgba(226,232,240,0.95);
+        border-radius:14px;
+        background:#f8fafc;
+    }
+    .cr-validator-remark-meta{
+        display:flex;
+        justify-content:space-between;
+        gap:10px;
+        font-size:11px;
+        color:#64748b;
+        margin-bottom:6px;
+    }
+    .cr-validator-remark-text{
+        font-size:12px;
+        line-height:1.5;
+        color:#0f172a;
+        white-space:pre-wrap;
+    }
+    .cr-validator-remark-entry{
+        margin-top:12px;
+    }
+    .cr-validator-remark-entry textarea{
+        width:100%;
+        min-height:96px;
+        resize:vertical;
+        border:1px solid rgba(203,213,225,0.95);
+        border-radius:14px;
+        padding:10px 12px;
+        font-size:13px;
+        color:#0f172a;
+        background:#ffffff;
+    }
+    .cr-validator-remark-actions{
+        display:flex;
+        justify-content:flex-end;
+        margin-top:10px;
+    }
+    .cr-validator-timeline{
+        max-height:320px;
+        overflow:auto;
+        padding-right:4px;
+    }
+    .cr-validator-timeline .cr-flow-date{
+        font-size:10px;
+    }
+    .cr-validator-timeline .cr-flow-card{
+        max-width:none;
+    }
+    .cr-validator-timeline .cr-flow-list:before{
+        left:10px;
+        transform:none;
+    }
+    .cr-validator-timeline .cr-flow-item{
+        padding-left:26px;
+        padding-right:0 !important;
+        justify-content:flex-start !important;
+    }
+    .cr-validator-timeline .cr-flow-dot{
+        left:10px;
+        transform:none;
+    }
+    .cr-validator-timeline .cr-flow-left .cr-flow-card,
+    .cr-validator-timeline .cr-flow-right .cr-flow-card{
+        margin-left:14px;
+        margin-right:0;
+    }
+    .cr-validator-timeline .cr-flow-left .cr-flow-card:before,
+    .cr-validator-timeline .cr-flow-right .cr-flow-card:before{
+        left:-8px;
+        right:auto;
+        transform:rotate(225deg);
+    }
+    @media (max-width: 1400px){
+        .cr-report-root.cr-validator-workspace .cr-shell.cr-layout{
+            grid-template-columns:290px minmax(0, 1fr) 280px;
+        }
+    }
+    @media (max-width: 1180px){
+        .cr-report-root.cr-validator-workspace .cr-validator-case-grid{
+            grid-template-columns:repeat(3, minmax(0, 1fr));
+        }
+        .cr-report-root.cr-validator-workspace .cr-shell.cr-layout{
+            grid-template-columns:220px minmax(0, 1fr);
+        }
+        .cr-validator-side{
+            position:relative;
+            top:auto;
+            grid-column:1 / -1;
+        }
+    }
+    @media (max-width: 900px){
+        .cr-report-root.cr-validator-workspace{
+            padding:12px;
+        }
+        .cr-report-root.cr-validator-workspace .cr-validator-case-grid{
+            grid-template-columns:repeat(2, minmax(0, 1fr));
+        }
+        .cr-report-root.cr-validator-workspace .cr-shell.cr-layout{
+            grid-template-columns:1fr;
+        }
+        .cr-report-root.cr-validator-workspace .cr-sidebar,
+        .cr-validator-side{
+            position:relative;
+            top:auto;
+        }
+        .cr-validator-action-grid{
+            grid-template-columns:1fr;
+        }
+    }
+    @media (max-width: 640px){
+        .cr-report-root.cr-validator-workspace .cr-validator-case-grid{
+            grid-template-columns:1fr;
+        }
+    }
     .cr-tl-filters{display:flex; flex-wrap:wrap; gap:6px; margin-top:10px;}
     .cr-tl-pill{border:1px solid rgba(148,163,184,0.35); background:#fff; color:#0f172a; border-radius:999px; padding:6px 10px; font-size:12px; font-weight:800; cursor:pointer; line-height:1;}
     .cr-tl-pill.active{background:rgba(59,130,246,0.12); border-color:rgba(59,130,246,0.34); color:#1d4ed8;}
@@ -679,6 +1130,8 @@ ob_start();
     .cr-comp-left > .form-grid{margin-top:0 !important;}
     .cr-kv2-wrap{margin-bottom:8px;}
     #cv_basic_table .cr-kv2-wrap,
+    #cv_identification_table .cr-kv2-wrap,
+    #cv_education_table .cr-kv2-wrap,
     #cv_employment_table .cr-kv2-wrap{
         border:1px solid rgba(148,163,184,0.22);
         border-radius:12px;
@@ -692,10 +1145,101 @@ ob_start();
     .cr-kv2-cell:nth-last-child(-n+2):after{display:none;}
     .cr-kv2-k{font-size:11px; font-weight:900; color:#475569; margin-bottom:1px;}
     .cr-kv2-v{font-size:13px; color:#0f172a;}
-
-    /* Education details: keep sequential order for validator */
-    .cr-report-root.cr-role-validator #section-education .cr-kv2-grid{
-        grid-template-columns:1fr;
+    .cr-record-tabs{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;}
+    .cr-record-tab{
+        border:1px solid rgba(148,163,184,0.28);
+        background:#fff;
+        color:#0f172a;
+        border-radius:999px;
+        padding:7px 12px;
+        font-size:12px;
+        font-weight:800;
+        cursor:pointer;
+        line-height:1;
+    }
+    .cr-record-tab:hover{background:rgba(59,130,246,0.06); border-color:rgba(59,130,246,0.28);}
+    .cr-record-tab.active{background:rgba(37,99,235,0.10); border-color:rgba(37,99,235,0.34); color:#1d4ed8;}
+    .cr-record-panel{display:none;}
+    .cr-record-panel.active{display:block;}
+    .cr-doc-uploadbox{
+        border:1px solid rgba(148,163,184,0.22);
+        border-radius:12px;
+        background:#f8fafc;
+        padding:8px;
+        margin-top:4px;
+    }
+    .cr-doc-uploadrow{
+        display:flex;
+        align-items:center;
+        gap:8px;
+        flex-wrap:wrap;
+    }
+    .cr-doc-uploadbtn{
+        border:1px solid rgba(148,163,184,0.32);
+        background:#ffffff;
+        color:#334155;
+        border-radius:10px;
+        padding:6px 10px;
+        font-size:11px;
+        font-weight:800;
+        line-height:1;
+    }
+    .cr-doc-uploadname{
+        display:inline-flex;
+        align-items:center;
+        gap:8px;
+        min-width:0;
+        max-width:100%;
+        border:1px solid rgba(37,99,235,0.18);
+        background:rgba(255,255,255,0.98);
+        color:#1d4ed8;
+        border-radius:10px;
+        padding:6px 10px;
+        font-size:12px;
+        font-weight:800;
+        text-decoration:none;
+    }
+    .cr-doc-uploadname i{font-style:normal; opacity:.9;}
+    .cr-doc-uploadname span{
+        min-width:0;
+        overflow:hidden;
+        text-overflow:ellipsis;
+        white-space:nowrap;
+    }
+    .cr-report-root.cr-validator-workspace .cr-comp-tools{
+        margin-top:10px;
+        border:0;
+        border-top:1px solid rgba(226,232,240,0.95);
+        border-radius:0;
+        padding:12px 0 0;
+        background:transparent;
+        box-shadow:none;
+    }
+    .cr-report-root.cr-validator-workspace .cr-comp-tools-title{
+        font-size:12px;
+        color:#334155;
+        letter-spacing:.06em;
+    }
+    .cr-report-root.cr-validator-workspace .cr-comp-evidence{
+        margin-top:8px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-comp-evidence [data-comp-docs]{
+        display:flex;
+        flex-direction:column;
+        gap:8px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-comp-upload-row{
+        margin-top:10px;
+        padding-top:10px;
+        border-top:1px solid rgba(226,232,240,0.95);
+        justify-content:flex-start;
+    }
+    .cr-report-root.cr-validator-workspace .cr-comp-upload-label{
+        min-width:auto;
+        margin-right:4px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-comp-file{
+        max-width:240px;
     }
 
     /* Force modal backdrop cleanup - prevents unclickable screen */
@@ -1196,7 +1740,7 @@ ob_start();
 
 
 </style>
-<div class="card cr-report-root cr-role-<?php echo htmlspecialchars($role); ?><?php echo $isPrint ? ' cr-print' : ''; ?>" data-ui-ready="<?php echo $isPrint ? '1' : '0'; ?>">
+<div class="card cr-report-root cr-role-<?php echo htmlspecialchars($role); ?><?php echo $isPrint ? ' cr-print' : ''; ?><?php echo (in_array($role, ['validator', 'verifier'], true) && !$isPrint && !$isEmbed) ? ' cr-validator-workspace' : ''; ?>" data-ui-ready="<?php echo $isPrint ? '1' : '0'; ?>">
     <!-- <h3>Candidate Report</h3>
     <p class="card-subtitle">Individual candidate report with quick navigation across all verification sections.</p> -->
 
@@ -1241,9 +1785,9 @@ ob_start();
     </div>
 <?php endif; ?>
 
-    <div class="cr-hero" style="margin-top:10px;">
+    <div class="cr-hero cr-validator-case-strip" style="margin-top:10px;">
         <div class="cr-hero-top">
-            <div style="min-width:260px;">
+            <div class="cr-validator-case-main" style="min-width:260px;">
                 <div class="cr-hero-head">
                     <div class="cr-avatar" aria-hidden="true">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -1251,7 +1795,17 @@ ob_start();
                             <circle cx="12" cy="7" r="4" />
                         </svg>
                     </div>
-                     
+                    <div class="cr-validator-case-copy">
+                        <h2 class="cr-hero-title">Candidate Review Workspace <span class="cr-hero-sub">Review submitted details, evidence, and section-level decisions.</span></h2>
+                    </div>
+                </div>
+                <div class="cr-stat-row cr-validator-case-grid">
+                    <div class="cr-stat"><b>Candidate</b><span id="cvHeaderCandidate"></span></div>
+                    <div class="cr-stat"><b>Application</b><span id="cvHeaderAppId"></span></div>
+                    <div class="cr-stat"><b>Client</b><span id="cvHeaderClient">-</span></div>
+                    <div class="cr-stat"><b>Status</b><span id="cvHeaderStatus"></span></div>
+                    <div class="cr-stat"><b>TAT</b><span id="cvHeaderTat">-</span></div>
+                    <div class="cr-stat"><b>Reviewed</b><span id="cvHeaderReviewed">0 / 0 sections</span></div>
                 </div>
             </div>
             <div class="cr-actions">
@@ -1273,12 +1827,6 @@ ob_start();
                 </button>
             </div>
         </div>
-        <div class="cr-stat-row">
-            <div class="cr-stat"><b>Candidate</b><span id="cvHeaderCandidate"></span></div>
-            <div class="cr-stat"><b>Application</b><span id="cvHeaderAppId"></span></div>
-            <div class="cr-stat"><b>Status</b><span id="cvHeaderStatus"></span></div>
-            <div class="cr-stat"><b>TAT</b><span id="cvHeaderTat">-</span></div>
-        </div>
     </div>
 
     <div class="cr-compnav" id="cvComponentNav" aria-label="Components">
@@ -1287,7 +1835,7 @@ ob_start();
     </div>
 
     <div class="cr-shell cr-layout">
-        <aside class="cr-sidebar">
+        <aside class="cr-sidebar cr-validator-nav">
             <div class="cr-sidebar-title">Sections</div>
             <div class="cr-nav" style="font-size:13px;">
                 <button type="button" class="list-group-item active" data-section="basic" style="text-align:left;">
@@ -1392,7 +1940,7 @@ ob_start();
             </div>
         </aside>
         <div class="cr-main cr-content">
-            <?php if ($role === 'validator' && !$isPrint && !$isEmbed): ?>
+            <?php if (in_array($role, ['validator', 'verifier'], true) && !$isPrint && !$isEmbed): ?>
                 <div class="cr-upload-inline">
                     <h3>Upload Documents</h3>
 
@@ -1454,11 +2002,17 @@ ob_start();
                 <?php endif; ?>
                 <div class="card candidate-section cr-panel" id="section-basic" style="margin-top:12px; display:none;">
                     <div class="cr-secbar">
-                        <div class="cr-secbar-title">Basic Details</div>
+                        <div class="cr-secbar-titleblock">
+                            <div class="cr-secbar-icon">BD</div>
+                            <div class="cr-secbar-copy">
+                                <div class="cr-secbar-title">Basic Details</div>
+                                <div class="cr-secbar-sub">Candidate submitted personal information</div>
+                            </div>
+                        </div>
                         <div class="cr-secbar-meta" id="cvSectionTatBasic"></div>
                     </div>
                     <div id="cv_basic_table" style="margin-top:10px;"></div>
-                    <?php if ($role === 'validator' && !$isPrint && !$isEmbed): ?>
+                    <?php if (in_array($role, ['validator', 'verifier'], true) && !$isPrint && !$isEmbed): ?>
                         <div class="cr-remarks">
                             <label>Comments / Remarks</label>
                             <textarea id="cvRemarksBasic" rows="2" placeholder="Enter comments..." style="width:100%; resize:vertical;"></textarea>
@@ -1471,11 +2025,17 @@ ob_start();
 
                 <div class="card candidate-section cr-panel" id="section-id" style="margin-top:12px; display:none;">
                     <div class="cr-secbar">
-                        <div class="cr-secbar-title">Identification</div>
+                        <div class="cr-secbar-titleblock">
+                            <div class="cr-secbar-icon">ID</div>
+                            <div class="cr-secbar-copy">
+                                <div class="cr-secbar-title">Identification</div>
+                                <div class="cr-secbar-sub">Government ID details and supporting documents</div>
+                            </div>
+                        </div>
                         <div class="cr-secbar-meta" id="cvSectionTatId"></div>
                     </div>
                     <div id="cv_identification_table" style="margin-top:10px;"></div>
-                    <?php if ($role === 'validator' && !$isPrint && !$isEmbed): ?>
+                    <?php if (in_array($role, ['validator', 'verifier'], true) && !$isPrint && !$isEmbed): ?>
                         <div class="cr-remarks">
                             <label>Comments / Remarks</label>
                             <textarea id="cvRemarksId" rows="2" placeholder="Enter comments..." style="width:100%; resize:vertical;"></textarea>
@@ -1488,7 +2048,13 @@ ob_start();
 
                 <div class="card candidate-section cr-panel" id="section-contact" style="margin-top:12px; display:none;">
                     <div class="cr-secbar">
-                        <div class="cr-secbar-title">Contact Information</div>
+                        <div class="cr-secbar-titleblock">
+                            <div class="cr-secbar-icon">CT</div>
+                            <div class="cr-secbar-copy">
+                                <div class="cr-secbar-title">Contact Information</div>
+                                <div class="cr-secbar-sub">Current and permanent address information</div>
+                            </div>
+                        </div>
                         <div class="cr-secbar-meta" id="cvSectionTatContact"></div>
                     </div>
                     <div class="form-grid" style="margin-top:10px;">
@@ -1509,7 +2075,7 @@ ob_start();
                             <input type="text" id="cv_contact_proof_file" value="" disabled>
                         </div>
 
-                        <?php if ($role === 'validator' && !$isPrint && !$isEmbed): ?>
+                        <?php if (in_array($role, ['validator', 'verifier'], true) && !$isPrint && !$isEmbed): ?>
                             <div class="form-control" style="grid-column:1/-1;">
                                 <div class="cr-remarks">
                                     <label>Comments / Remarks</label>
@@ -1525,11 +2091,17 @@ ob_start();
 
                 <div class="card candidate-section cr-panel" id="section-education" style="margin-top:12px; display:none;">
                     <div class="cr-secbar">
-                        <div class="cr-secbar-title">Education Details</div>
+                        <div class="cr-secbar-titleblock">
+                            <div class="cr-secbar-icon">ED</div>
+                            <div class="cr-secbar-copy">
+                                <div class="cr-secbar-title">Education Details</div>
+                                <div class="cr-secbar-sub">Academic history, institutions, and certificates</div>
+                            </div>
+                        </div>
                         <div class="cr-secbar-meta" id="cvSectionTatEducation"></div>
                     </div>
                     <div id="cv_education_table" style="margin-top:10px;"></div>
-                    <?php if ($role === 'validator' && !$isPrint && !$isEmbed): ?>
+                    <?php if (in_array($role, ['validator', 'verifier'], true) && !$isPrint && !$isEmbed): ?>
                         <div class="cr-remarks">
                             <label>Comments / Remarks</label>
                             <textarea id="cvRemarksEducation" rows="2" placeholder="Enter comments..." style="width:100%; resize:vertical;"></textarea>
@@ -1542,11 +2114,17 @@ ob_start();
 
                 <div class="card candidate-section cr-panel" id="section-employment" style="margin-top:12px; display:none;">
                     <div class="cr-secbar">
-                        <div class="cr-secbar-title">Employment Details</div>
+                        <div class="cr-secbar-titleblock">
+                            <div class="cr-secbar-icon">EM</div>
+                            <div class="cr-secbar-copy">
+                                <div class="cr-secbar-title">Employment Details</div>
+                                <div class="cr-secbar-sub">Employer history, tenure, and proof documents</div>
+                            </div>
+                        </div>
                         <div class="cr-secbar-meta" id="cvSectionTatEmployment"></div>
                     </div>
                     <div id="cv_employment_table" style="margin-top:10px;"></div>
-                    <?php if ($role === 'validator' && !$isPrint && !$isEmbed): ?>
+                    <?php if (in_array($role, ['validator', 'verifier'], true) && !$isPrint && !$isEmbed): ?>
                         <div class="cr-remarks">
                             <label>Comments / Remarks</label>
                             <textarea id="cvRemarksEmployment" rows="2" placeholder="Enter comments..." style="width:100%; resize:vertical;"></textarea>
@@ -1559,7 +2137,13 @@ ob_start();
 
                 <div class="card candidate-section cr-panel" id="section-reference" style="margin-top:12px; display:none;">
                     <div class="cr-secbar">
-                        <div class="cr-secbar-title">Reference</div>
+                        <div class="cr-secbar-titleblock">
+                            <div class="cr-secbar-icon">RF</div>
+                            <div class="cr-secbar-copy">
+                                <div class="cr-secbar-title">Reference</div>
+                                <div class="cr-secbar-sub">Professional reference and relationship details</div>
+                            </div>
+                        </div>
                         <div class="cr-secbar-meta" id="cvSectionTatReference"></div>
                     </div>
                     <div class="form-grid" style="margin-top:10px;">
@@ -1592,7 +2176,7 @@ ob_start();
                             <input type="text" id="cv_reference_years_known" value="" disabled>
                         </div>
 
-                        <?php if ($role === 'validator' && !$isPrint && !$isEmbed): ?>
+                        <?php if (in_array($role, ['validator', 'verifier'], true) && !$isPrint && !$isEmbed): ?>
                             <div class="form-control" style="grid-column:1/-1;">
                                 <div class="cr-remarks">
                                     <label>Comments / Remarks</label>
@@ -1608,7 +2192,13 @@ ob_start();
 
                 <div class="card candidate-section cr-panel" id="section-socialmedia" style="margin-top:12px; display:none;">
                     <div class="cr-secbar">
-                        <div class="cr-secbar-title">Social Media</div>
+                        <div class="cr-secbar-titleblock">
+                            <div class="cr-secbar-icon">SM</div>
+                            <div class="cr-secbar-copy">
+                                <div class="cr-secbar-title">Social Media</div>
+                                <div class="cr-secbar-sub">Online profile details shared by the candidate</div>
+                            </div>
+                        </div>
                         <div class="cr-secbar-meta" id="cvSectionTatSocialmedia"></div>
                     </div>
                     <div class="form-grid" style="margin-top:10px;">
@@ -1645,7 +2235,13 @@ ob_start();
 
                 <div class="card candidate-section cr-panel" id="section-ecourt" style="margin-top:12px; display:none;">
                     <div class="cr-secbar">
-                        <div class="cr-secbar-title">E-Court</div>
+                        <div class="cr-secbar-titleblock">
+                            <div class="cr-secbar-icon">EC</div>
+                            <div class="cr-secbar-copy">
+                                <div class="cr-secbar-title">E-Court</div>
+                                <div class="cr-secbar-sub">Court-related declarations and supporting evidence</div>
+                            </div>
+                        </div>
                         <div class="cr-secbar-meta" id="cvSectionTatEcourt"></div>
                     </div>
                     <div class="form-grid" style="margin-top:10px;">
@@ -1686,7 +2282,13 @@ ob_start();
 
                 <div class="card candidate-section cr-panel" id="section-reports" style="margin-top:12px; display:none;">
                     <div class="cr-secbar">
-                        <div class="cr-secbar-title">Reports</div>
+                        <div class="cr-secbar-titleblock">
+                            <div class="cr-secbar-icon">RP</div>
+                            <div class="cr-secbar-copy">
+                                <div class="cr-secbar-title">Reports</div>
+                                <div class="cr-secbar-sub">Submission milestones and authorization details</div>
+                            </div>
+                        </div>
                         <div class="cr-secbar-meta" id="cvSectionTatReports"></div>
                     </div>
                     <div class="form-grid" style="margin-top:10px;">
@@ -1707,7 +2309,7 @@ ob_start();
                             <input type="text" id="cv_auth_uploaded_at" value="" disabled>
                         </div>
 
-                        <?php if ($role === 'validator' && !$isPrint && !$isEmbed): ?>
+                        <?php if (in_array($role, ['validator', 'verifier'], true) && !$isPrint && !$isEmbed): ?>
                             <div class="form-control" style="grid-column:1/-1;">
                                 <div class="cr-remarks">
                                     <label>Comments / Remarks</label>
@@ -1723,6 +2325,35 @@ ob_start();
 
             </div>
         </div>
+
+        <?php if (in_array($role, ['validator', 'verifier'], true) && !$isPrint && !$isEmbed): ?>
+            <aside class="cr-validator-side" aria-label="Validator Review Panel">
+                <div class="cr-case-actions-card">
+                    <div class="cr-case-actions-head">Section Decision</div>
+                    <div class="cr-validator-action-grid">
+                        <button type="button" class="cr-action-btn cr-dark" id="cvValidatorActionHold">Hold</button>
+                        <button type="button" class="cr-action-btn cr-danger" id="cvValidatorActionReject">Reject</button>
+                        <button type="button" class="cr-action-btn cr-ok" id="cvValidatorActionApprove">Approve</button>
+                    </div>
+                </div>
+
+                <div class="cr-case-actions-card">
+                    <div class="cr-case-actions-head">Remarks</div>
+                    <div id="cvValidatorRemarksPanel" class="cr-validator-remarks-list">No remarks yet.</div>
+                    <div class="cr-validator-remark-entry">
+                        <textarea id="cvValidatorRemarkText" rows="4" placeholder="Enter section remark..."></textarea>
+                        <div class="cr-validator-remark-actions">
+                            <button type="button" class="btn btn-sm" id="cvValidatorRemarkSave">Save Remark</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="cr-case-actions-card">
+                    <div class="cr-case-actions-head">Recent Activity</div>
+                    <div id="cvValidatorTimeline" class="cr-validator-timeline">No activity yet.</div>
+                </div>
+            </aside>
+        <?php endif; ?>
 
         <!-- <?php if (in_array($role, ['qa', 'verifier', 'validator', 'db_verifier'], true) && !$isPrint && !$isEmbed): ?>
             <aside class="cr-remarksbar" aria-label="Remarks">
@@ -2079,7 +2710,7 @@ render_layout('Candidate Report', $roleLabel, $menu, $content);
     window.VR_GROUP = <?php echo json_encode($group); ?>;
 </script>
 
-<?php if ($role === 'validator' && !$isPrint && !$isEmbed && $fullscreen): ?>
+<?php if (in_array($role, ['validator', 'verifier'], true) && !$isPrint && !$isEmbed && $fullscreen): ?>
 <script>
     try { document.body.classList.add('cr-fullscreen-validator'); } catch (e) {}
 </script>

@@ -2,6 +2,7 @@
 header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../../includes/component_resolver.php';
 
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, OPTIONS');
@@ -69,6 +70,10 @@ try {
             'verification_type_id' => $typeId,
             'type_name' => $typeNameNorm,
             'type_category' => $typeCategory,
+            'component_key' => resolve_component_key($typeNameNorm, $typeCategory),
+            'display_label' => resolve_component_label($typeNameNorm, $typeCategory),
+            'candidate_page' => resolve_component_page($typeNameNorm, $typeCategory),
+            'candidate_subsection' => resolve_component_subsection($typeNameNorm, $typeCategory),
             'sort_order' => $sortOrder,
         ];
     }

@@ -126,6 +126,7 @@ $access = strtolower(trim($maccess));
 $defaultMap = [
     'gss_admin' => 'modules/gss_admin/dashboard.php',
     'client_admin' => 'modules/client_admin/dashboard.php',
+    'company_recruiter' => 'modules/hr_recruiter/dashboard.php',
     'team_lead' => 'modules/team_lead/dashboard.php',
     'verifier' => 'modules/verifier/dashboard.php',
     'db_verifier' => 'modules/db_verifier/candidates_list.php',
@@ -141,6 +142,7 @@ if ($candidate !== '' && strpos($candidate, '..') === false) {
     $allowedPrefixes = [
         'gss_admin' => ['modules/gss_admin/'],
         'client_admin' => ['modules/client_admin/'],
+        'company_recruiter' => ['modules/hr_recruiter/'],
         'team_lead' => ['modules/team_lead/'],
         'verifier' => ['modules/verifier/'],
         'db_verifier' => ['modules/db_verifier/'],

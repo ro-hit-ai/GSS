@@ -85,6 +85,17 @@
             .replace(/'/g, '&#039;');
     }
 
+    function getSelectedFile() {
+        var input = el('bulk_file');
+        if (!input || !input.files || !input.files.length) return null;
+        return input.files[0] || null;
+    }
+
+    function isCsvFile(file) {
+        if (!file || !file.name) return false;
+        return /\.csv$/i.test(String(file.name));
+    }
+
     function renderResults(items) {
         var card = el('bulkResultsCard');
         var table = el('bulkResultsTable');
@@ -122,6 +133,17 @@
         if (!form) return;
 
         setMessage('', '');
+
+        var selectedFile = getSelectedFile();
+        if (!selectedFile) {
+            setMessage('Please choose a CSV file to upload.', 'error');
+            return;
+        }
+
+        if (!isCsvFile(selectedFile)) {
+            setMessage('Only CSV files are supported on this page right now.', 'error');
+            return;
+        }
 
         var btn = el('btnBulkUpload');
         if (btn) {

@@ -107,20 +107,6 @@ try {
         exit;
     }
 
-    if ($role === 'validator') {
-        $set = [];
-        foreach (preg_split('/[\s,|]+/', strtolower($allowedSections)) as $k) {
-            $k = trim((string)$k);
-            if ($k === '') continue;
-            if ($k === 'social_media' || $k === 'social-media' || $k === 'social media') $k = 'socialmedia';
-            if ($k === 'e_court' || $k === 'e-court' || $k === 'e court') $k = 'ecourt';
-            $set[$k] = true;
-        }
-        $set['socialmedia'] = true;
-        $set['ecourt'] = true;
-        $allowedSections = implode(',', array_keys($set));
-    }
-
     $locations = post_locations();
     $location = !empty($locations) ? (string)$locations[0] : post_str('location');
 

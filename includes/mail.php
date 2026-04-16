@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/env.php';
 require_once __DIR__ . '/mail_log.php';
+require_once __DIR__ . '/integration.php';
 require_once __DIR__ . '/../config/nodemailer.php';
 
 
@@ -206,13 +207,13 @@ function app_node_api_json_request(string $method, string $path, ?array $payload
 /**
  * Send email via Node.js service
  */
-function send_via_node(string $to, string $subject, string $htmlBody, ?string $fromName = null, array $attachments = [], array $metadata = []): array {
+function send_via_node(string $to, string $subject, string $htmlBody, ?string $fromName = null, array $attachments = [], array $metadata = [], array $headers = []): array {
     if (!function_exists('sendNodeMailer')) {
         return ['success' => false, 'error' => 'sendNodeMailer() not found'];
     }
 
     $queueId = app_mail_pick_queue_id($metadata);
-    $response = sendNodeMailer($to, $subject, $htmlBody, $queueId);
+    $response = sendNodeMailer($to, $subject, $htmlBody, $queueId, $headers, $metadata);
     if (!is_array($response)) {
         return ['success' => false, 'error' => 'Invalid Node mailer response'];
     }
@@ -263,10 +264,11 @@ function is_node_service_healthy(): bool {
     return $result['success'] === true;
 }
 
-function send_app_mail(string $to, string $subject, string $htmlBody, ?string $fromName = null): bool {
+function send_app_mail(string $to, string $subject, string $htmlBody, ?string $fromName = null, array $options = []): bool {
     $to = trim($to);
     $meta = app_mail_get_log_meta();
     $driver = 'node';
+    $headersMap = integration_mail_headers($meta, $options);
 
     if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL)) {
         mail_log_event('failed', $driver, (string)(env_get('APP_MAIL_FROM', '') ?? ''), $to, $subject, $meta, 'Invalid recipient email');
@@ -291,10 +293,11 @@ function send_app_mail(string $to, string $subject, string $htmlBody, ?string $f
             'application_id' => $meta['application_id'] ?? null,
             'case_id' => $meta['case_id'] ?? null,
             'role' => $meta['role'] ?? null,
+            'event_type' => $meta['event_type'] ?? ($options['event_type'] ?? null),
             'queue_id' => $meta['queue_id'] ?? ($meta['queueId'] ?? ($meta['queue'] ?? null)),
         ];
 
-        $result = send_via_node($to, $subject, $htmlBody, $fromName, [], $metadata);
+        $result = send_via_node($to, $subject, $htmlBody, $fromName, [], $metadata, $headersMap);
         
         if ($result['success']) {
             app_mail_debug_log('Email sent successfully via Node.js');
@@ -307,7 +310,7 @@ function send_app_mail(string $to, string $subject, string $htmlBody, ?string $f
             // Fallback to PHP mail if configured
             if (env_get('FALLBACK_TO_PHP_MAIL', '0') === '1') {
                 app_mail_debug_log('Falling back to PHP mail()');
-                return send_app_mail_php_fallback($to, $subject, $htmlBody, $fromName, $fromEmail, $meta);
+                return send_app_mail_php_fallback($to, $subject, $htmlBody, $fromName, $fromEmail, $meta, $headersMap);
             }
             
             mail_log_event('failed', $driver, $fromEmail, $to, $subject, $meta, 'Node service error: ' . $error);
@@ -315,14 +318,14 @@ function send_app_mail(string $to, string $subject, string $htmlBody, ?string $f
         }
     } else {
         // Use PHP mail directly
-        return send_app_mail_php_fallback($to, $subject, $htmlBody, $fromName, $fromEmail, $meta);
+        return send_app_mail_php_fallback($to, $subject, $htmlBody, $fromName, $fromEmail, $meta, $headersMap);
     }
 }
 
 /**
  * Original PHP mail fallback
  */
-function send_app_mail_php_fallback(string $to, string $subject, string $htmlBody, ?string $fromName, string $fromEmail, array $meta): bool {
+function send_app_mail_php_fallback(string $to, string $subject, string $htmlBody, ?string $fromName, string $fromEmail, array $meta, array $extraHeaders = []): bool {
     $envFromName = (string)(env_get('APP_MAIL_FROM_NAME', '') ?? '');
     $effectiveFromName = trim((string)($fromName ?? ''));
     if ($effectiveFromName === '' && $envFromName !== '') $effectiveFromName = $envFromName;
@@ -341,6 +344,14 @@ function send_app_mail_php_fallback(string $to, string $subject, string $htmlBod
     $headers[] = 'From: ' . $effectiveFromName . ' <' . $fromEmail . '>';
     $headers[] = 'Reply-To: ' . $effectiveFromName . ' <' . $fromEmail . '>';
     $headers[] = 'X-Mailer: PHP/' . PHP_VERSION;
+    foreach ($extraHeaders as $headerName => $headerValue) {
+        $safeName = trim(str_replace(["\r", "\n"], '', (string)$headerName));
+        $safeValue = trim(str_replace(["\r", "\n"], '', (string)$headerValue));
+        if ($safeName === '' || $safeValue === '') {
+            continue;
+        }
+        $headers[] = $safeName . ': ' . $safeValue;
+    }
 
     $params = '-f' . $fromEmail;
     $ok = @mail($to, $encodedSubject, $htmlBody, implode("\r\n", $headers), $params);

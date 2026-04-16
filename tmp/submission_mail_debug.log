@@ -1,0 +1,15 @@
+[2026-04-09 12:03:22] submit notify: start application_id=APP-20260409120006888
+[2026-04-09 12:03:22] submit notify: row_found=yes
+[2026-04-09 12:03:22] submit notify: candidate_email=256testingtest123@gmail.com client_id=3 job_role=SDE78
+[2026-04-09 12:03:27] submit notify: candidate_confirmation_sent=yes
+[2026-04-09 12:03:31] submit notify: internal_recipient_count=1 internal_sent_count=1
+[2026-04-10 06:48:33] submit notify: start application_id=APP-20260409152306290
+[2026-04-10 06:48:33] submit notify: row_found=yes
+[2026-04-10 06:48:33] submit notify: candidate_email=256testingtest123@gmail.com client_id=3 job_role=SDE78
+[2026-04-10 06:48:38] submit notify: candidate_confirmation_sent=yes
+[2026-04-10 06:48:42] submit notify: internal_recipient_count=1 internal_sent_count=1
+[2026-04-11 15:12:54] submit notify: start application_id=APP-20260411150358249
+[2026-04-11 15:12:54] submit notify: row_found=yes
+[2026-04-11 15:12:54] submit notify: candidate_email=256testingtest123@gmail.com client_id=3 job_role=SDE78
+[2026-04-11 15:12:59] submit notify: candidate_confirmation_sent=yes
+[2026-04-11 15:13:04] submit notify: internal_recipient_count=1 internal_sent_count=1

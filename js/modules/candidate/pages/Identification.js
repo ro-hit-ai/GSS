@@ -205,7 +205,7 @@ class IdentificationManager extends TabManager {
                 if (optionFound) {
                     console.log(`   Document type set to: ${typeSelect.value}`);
                     this.updateIdNumberHint(card);
-                    this.updateExpiryFieldForCard(card);
+                    this.updateDateFieldsForCard(card);
                     // Trigger change event to update UI
                     typeSelect.dispatchEvent(new Event('change'));
                 } else {
@@ -269,13 +269,22 @@ class IdentificationManager extends TabManager {
                 const allowed = ['pdf', 'jpg', 'jpeg', 'png'];
                 const validation = this.validateUploadFile(file, allowed, 10 * 1024 * 1024);
                 if (file && !validation.ok) {
-                    alert(validation.message);
+                    if (window.CandidateNotify) {
+                        window.CandidateNotify.error(validation.message, {
+                            title: 'Invalid upload',
+                            sticky: false,
+                            timeout: 4200
+                        });
+                        window.CandidateNotify.setFieldError(box || input, validation.message);
+                    }
                     input.value = '';
                     this.clearUploadBox(box);
                     if (box) {
                         const errEl = box.querySelector('[data-file-error]');
                         if (errEl) errEl.textContent = validation.message;
                     }
+                } else if (box && window.CandidateNotify) {
+                    window.CandidateNotify.clearFieldError(box);
                 }
 
                 if (card && input.files.length > 0) {
@@ -294,7 +303,7 @@ class IdentificationManager extends TabManager {
 
                     if (file && box) {
                         const url = URL.createObjectURL(file);
-                        this.setUploadBox(box, file.name, url, true);
+                        this.setUploadBox(box, file.name, url, true, file.size);
                     }
                     this.updateTabStatus();
                 }
@@ -341,7 +350,7 @@ class IdentificationManager extends TabManager {
             console.log(`🌍 Country changed to: ${this.country}`);
             this.updateAllDocumentTypeOptions(this.country);
             this.updateAllIdNumberHints();
-            this.updateAllExpiryFields();
+            this.updateAllDateFields();
         });
     }
 
@@ -400,15 +409,15 @@ class IdentificationManager extends TabManager {
         
         // Update hints
         this.updateIdNumberHint(card);
-        this.updateExpiryFieldForCard(card);
+        this.updateDateFieldsForCard(card);
     }
 
     updateAllIdNumberHints() {
         this.cards.forEach(card => card && this.updateIdNumberHint(card));
     }
 
-    updateAllExpiryFields() {
-        this.cards.forEach(card => card && this.updateExpiryFieldForCard(card));
+    updateAllDateFields() {
+        this.cards.forEach(card => card && this.updateDateFieldsForCard(card));
     }
 
     updateIdNumberHint(card) {
@@ -444,26 +453,37 @@ class IdentificationManager extends TabManager {
         hintElement.textContent = hint;
     }
 
-    updateExpiryFieldForCard(card) {
+    updateDateFieldsForCard(card) {
         const select = card.querySelector('.document-type-select');
+        const datesRow = card.querySelector('.identification-dates-row');
+        const issueField = card.querySelector('.issue-date-field');
         const field = card.querySelector('.expiry-date-field');
+        const issueInput = card.querySelector('[name="issue_date[]"]');
         const input = card.querySelector('.expiry-date-input');
         const hintElement = card.querySelector('.expiry-date-hint');
 
-        if (!select || !field || !input || !hintElement) return;
+        if (!select || !datesRow || !issueField || !field || !issueInput || !input || !hintElement) return;
 
         const value = select.value;
         const text = select.options[select.selectedIndex]?.textContent || '';
-        
-        const noExpiryDocs = ['Aadhaar', 'PAN'];
 
-        if (noExpiryDocs.includes(value) || noExpiryDocs.includes(text)) {
+        const docsWithDates = ['Passport', 'Driving Licence', 'Driver License', 'Driving License'];
+        const showDates = docsWithDates.includes(value) || docsWithDates.includes(text);
+
+        if (!showDates) {
+            datesRow.style.display = 'none';
+            issueField.style.display = 'none';
             field.style.display = 'none';
+            issueInput.value = '';
+            issueInput.disabled = true;
             input.value = '';
             input.disabled = true;
-            hintElement.textContent = 'No expiry date for this document';
+            hintElement.textContent = '';
         } else {
+            datesRow.style.display = 'grid';
+            issueField.style.display = 'block';
             field.style.display = 'block';
+            issueInput.disabled = false;
             input.disabled = false;
             hintElement.textContent = 'Enter expiry date if applicable';
         }
@@ -475,7 +495,7 @@ class IdentificationManager extends TabManager {
             const card = e.target.closest('.identification-card');
             if (!card) return;
             this.updateIdNumberHint(card);
-            this.updateExpiryFieldForCard(card);
+            this.updateDateFieldsForCard(card);
         });
     }
 
@@ -643,9 +663,22 @@ async saveDraft() {
 
 validateForm(isFinalSubmit = false) {
     console.log(`📋 Validating identification form (isFinalSubmit: ${isFinalSubmit})`);
+
+    const form = document.getElementById('identificationForm');
+    if (window.CandidateNotify && form) {
+        window.CandidateNotify.clearValidation(form);
+    }
     
     let isValid = true;
     const errors = [];
+    const addError = (field, message) => {
+        if (window.CandidateNotify) {
+            window.CandidateNotify.addFieldError(errors, field, message);
+        } else {
+            errors.push({ field, message });
+        }
+        isValid = false;
+    };
     
     for (let i = 0; i < this.cards.length; i++) {
         const card = this.cards[i];
@@ -659,6 +692,18 @@ validateForm(isFinalSubmit = false) {
         const insufficientCheckbox = card.querySelector('input[name="insufficient_documents[]"]');
         
         const isInsufficient = !!(insufficientCheckbox && insufficientCheckbox.checked);
+
+        if (!typeSelect || !String(typeSelect.value || '').trim()) {
+            addError(typeSelect || card, `Document ${i + 1}: Document type is required`);
+        }
+
+        if (!idInput || !String(idInput.value || '').trim()) {
+            addError(idInput || card, `Document ${i + 1}: ID number is required`);
+        }
+
+        if (!nameInput || !String(nameInput.value || '').trim()) {
+            addError(nameInput || card, `Document ${i + 1}: Name on document is required`);
+        }
 
 if (isFinalSubmit) {
 
@@ -693,8 +738,9 @@ if (isFinalSubmit) {
             dbRow.upload_document !== 'INSUFFICIENT_DOCUMENTS';
 
         if (!hasNewFile && !hasOldFile && !hasDbFile) {
-            errors.push(`Document ${i + 1}: Identification document is required`);
-            isValid = false;
+            const fileBox =
+                card.querySelector('[name="upload_document[]"]')?.closest('.form-control')?.querySelector('[data-file-upload]');
+            addError(fileBox || fileInput || card, `Document ${i + 1}: Identification document is required`);
         }
     }
 }
@@ -702,17 +748,21 @@ if (isFinalSubmit) {
     }
     
     if (errors.length > 0) {
-        // 🔧 CHANGED: Use Router.notify instead of alert
-        if (window.Router && window.Router.notify) {
+        console.warn('Identification validation errors:', errors.map((error) => error.message || error));
+        if (window.CandidateNotify && form) {
+            window.CandidateNotify.validation({
+                form,
+                title: 'Identification details need attention',
+                message: `Please fix ${errors.length} issue${errors.length === 1 ? '' : 's'} before continuing.`,
+                errors
+            });
+        } else if (window.Router && window.Router.notify) {
             Router.notify({
                 type: "warning",
-                message: `Please fix the following errors:\n${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...and ${errors.length - 3} more` : ''}`
+                message: 'Please fix the highlighted identification errors before proceeding.'
             });
-        } else {
-            console.warn('Identification validation errors:', errors);
-            if (typeof window.showAlert === 'function') {
-                window.showAlert({ type: 'warning', message: 'Please fix the highlighted identification errors before proceeding.' });
-            }
+        } else if (typeof window.showAlert === 'function') {
+            window.showAlert({ type: 'warning', message: 'Please fix the highlighted identification errors before proceeding.' });
         }
         return false;
     }
@@ -840,42 +890,22 @@ async submitForm(isDraft = false) {
 }
 
 showNotification(message, isError = false) {
-    // 🔧 CHANGED: Use Router.notify if available
+    if (window.CandidateNotify) {
+        window.CandidateNotify.show({
+            type: isError ? "error" : "success",
+            title: isError ? 'Identification details not saved' : 'Identification details saved',
+            message: String(message || '').replace(/^[^\w]+/, ''),
+            sticky: !!isError
+        });
+        return;
+    }
+
     if (window.Router && window.Router.notify) {
         Router.notify({
             type: isError ? "error" : "success",
             message: message
         });
-        return;
     }
-    
-    // Fallback to original implementation only if Router is not available
-    const existingNotif = document.querySelector('.identification-notification');
-    if (existingNotif) {
-        existingNotif.remove();
-    }
-    
-    const notification = document.createElement('div');
-    notification.className = `identification-notification alert ${isError ? 'alert-danger' : 'alert-success'} alert-dismissible fade show`;
-    notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        z-index: 9999;
-        min-width: 300px;
-    `;
-    notification.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    `;
-    
-    document.body.appendChild(notification);
-    
-    setTimeout(() => {
-        if (notification.parentNode) {
-            notification.remove();
-        }
-    }, 5000);
 }
     cardHasData(card) {
         // Check if card has any data

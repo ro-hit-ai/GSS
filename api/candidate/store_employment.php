@@ -14,8 +14,8 @@ function validateSingleEmployment(array $data, bool $isFresher, int $index, bool
     }
 
     if ($isDraft) {
-        foreach ($data as $v) {
-            if (trim((string)$v) !== '') {
+        foreach ($data as $value) {
+            if (trim((string)$value) !== '') {
                 goto CONTINUE_VALIDATION;
             }
         }
@@ -25,11 +25,11 @@ function validateSingleEmployment(array $data, bool $isFresher, int $index, bool
     CONTINUE_VALIDATION:
 
     $required = [
-        'employer_name'    => 'Employer name',
-        'job_title'        => 'Job title',
-        'employee_id'      => 'Employee ID',
-        'joining_date'     => 'Joining date',
-        'employer_address' => 'Employer address'
+        'employer_name'  => 'Employer name',
+        'job_title'      => 'Job title',
+        'employee_id'    => 'Employee ID',
+        'joining_date'   => 'Joining date',
+        'reason_leaving' => 'Reason for leaving'
     ];
 
     foreach ($required as $key => $label) {
@@ -41,10 +41,21 @@ function validateSingleEmployment(array $data, bool $isFresher, int $index, bool
     if (!empty($data['joining_date']) && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $data['joining_date'])) {
         throw new ValidationException("Invalid joining date format for employment record $index");
     }
-    
-    if (!empty($data['relieving_date']) && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $data['relieving_date'])) {
-        throw new ValidationException("Invalid relieving date format for employment record $index");
+
+    if (!empty($data['relieving_date'])) {
+        $isIsoDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', $data['relieving_date']) === 1;
+        $isSlashDate = preg_match('/^\d{2}\/\d{2}\/\d{4}$/', $data['relieving_date']) === 1;
+        if (!$isIsoDate && !$isSlashDate) {
+            throw new ValidationException("Invalid relieving date format for employment record $index");
+        }
     }
+}
+
+function getAllowedEmploymentDocTypes(bool $isCurrentlyEmployed): array
+{
+    return $isCurrentlyEmployed
+        ? ['payslip', 'appointment_letter', 'resignation_letter']
+        : ['experience_letter', 'service_letter', 'relieving_letter'];
 }
 
 function handleFileUpload(array $file, string $applicationId, int $index): string
@@ -60,12 +71,12 @@ function handleFileUpload(array $file, string $applicationId, int $index): strin
     $allowed = ['pdf', 'jpg', 'jpeg', 'png'];
     $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
 
-    if (!in_array($ext, $allowed)) {
-        throw new ValidationException("Invalid file type for employment document");
+    if (!in_array($ext, $allowed, true)) {
+        throw new ValidationException('Invalid file type for employment document');
     }
 
     if ($file['size'] > 5 * 1024 * 1024) {
-        throw new ValidationException("Employment document exceeds 5MB");
+        throw new ValidationException('Employment document exceeds 5MB');
     }
 
     $dir = __DIR__ . '/../../uploads/employment/';
@@ -73,14 +84,29 @@ function handleFileUpload(array $file, string $applicationId, int $index): strin
         mkdir($dir, 0755, true);
     }
 
-    $filename = "emp_{$applicationId}_{$index}_" . time() . "_" . uniqid() . ".$ext";
+    $filename = "emp_{$applicationId}_{$index}_" . time() . '_' . uniqid() . ".{$ext}";
     $path = $dir . $filename;
 
     if (!move_uploaded_file($file['tmp_name'], $path)) {
-        throw new ValidationException("Failed to save uploaded employment document");
+        throw new ValidationException('Failed to save uploaded employment document');
     }
 
     return $filename;
+}
+
+function isEmploymentRowEmpty(array $data, ?array $file): bool
+{
+    foreach ($data as $value) {
+        if (trim((string)$value) !== '') {
+            return false;
+        }
+    }
+
+    if ($file && !empty($file['name'])) {
+        return false;
+    }
+
+    return true;
 }
 
 try {
@@ -99,14 +125,15 @@ try {
 
     $pdo = getDB();
     $pdo->beginTransaction();
+
     $isFresher = 'no';
     $currentlyEmployed = 'no';
     $contactEmployer = 'no';
-    
+
     if (isset($_POST['is_fresher'][0])) {
-        $isFresher = $_POST['is_fresher'][0] === 'yes' ? 'yes' : 'no';
-        $currentlyEmployed = $_POST['currently_employed'][0] === 'yes' ? 'yes' : 'no';
-        $contactEmployer = $_POST['contact_employer'][0] === 'yes' ? 'yes' : 'no';
+        $isFresher = ($_POST['is_fresher'][0] ?? 'no') === 'yes' ? 'yes' : 'no';
+        $currentlyEmployed = ($_POST['currently_employed'][0] ?? 'no') === 'yes' ? 'yes' : 'no';
+        $contactEmployer = ($_POST['contact_employer'][0] ?? 'no') === 'yes' ? 'yes' : 'no';
     }
 
     $isDraft = ($_POST['draft'] ?? '0') === '1';
@@ -114,6 +141,7 @@ try {
     if (!is_array($insufficientDocs)) {
         $insufficientDocs = [$insufficientDocs];
     }
+
     $stmt = $pdo->prepare("CALL SP_Vati_Payfiller_save_employment_details(
         :application_id,
         :employment_index,
@@ -144,7 +172,7 @@ try {
     $employeeIds = $_POST['employee_id'] ?? [];
     $joiningDates = $_POST['joining_date'] ?? [];
     $relievingDates = $_POST['relieving_date'] ?? [];
-    $addresses = $_POST['employer_address'] ?? [];
+    $documentTypes = $_POST['employment_doc_type'] ?? [];
     $reasons = $_POST['reason_leaving'] ?? [];
     $hrNames = $_POST['hr_manager_name'] ?? [];
     $hrPhones = $_POST['hr_manager_phone'] ?? [];
@@ -158,7 +186,7 @@ try {
         count($jobTitles),
         count($employeeIds),
         count($joiningDates),
-        count($addresses),
+        count($documentTypes),
         count($reasons),
         count($hrNames),
         count($mgrNames)
@@ -172,19 +200,19 @@ try {
         }
 
         $data = [
-            'employer_name'    => trim($employerNames[$i] ?? ''),
-            'job_title'        => trim($jobTitles[$i] ?? ''),
-            'employee_id'      => trim($employeeIds[$i] ?? ''),
-            'joining_date'     => $joiningDates[$i] ?? '',
-            'relieving_date'   => $relievingDates[$i] ?? null,
-            'reason_leaving'   => trim($reasons[$i] ?? ''),
-            'employer_address' => trim($addresses[$i] ?? ''),
-            'hr_manager_name'  => trim($hrNames[$i] ?? ''),
-            'hr_manager_phone' => trim($hrPhones[$i] ?? ''),
-            'hr_manager_email' => trim($hrEmails[$i] ?? ''),
-            'manager_name'     => trim($mgrNames[$i] ?? ''),
-            'manager_phone'    => trim($mgrPhones[$i] ?? ''),
-            'manager_email'    => trim($mgrEmails[$i] ?? ''),
+            'employer_name'      => trim($employerNames[$i] ?? ''),
+            'job_title'          => trim($jobTitles[$i] ?? ''),
+            'employee_id'        => trim($employeeIds[$i] ?? ''),
+            'joining_date'       => $joiningDates[$i] ?? '',
+            'relieving_date'     => $relievingDates[$i] ?? null,
+            'employment_doc_type'=> trim($documentTypes[$i] ?? ''),
+            'reason_leaving'     => trim($reasons[$i] ?? ''),
+            'hr_manager_name'    => trim($hrNames[$i] ?? ''),
+            'hr_manager_phone'   => trim($hrPhones[$i] ?? ''),
+            'hr_manager_email'   => trim($hrEmails[$i] ?? ''),
+            'manager_name'       => trim($mgrNames[$i] ?? ''),
+            'manager_phone'      => trim($mgrPhones[$i] ?? ''),
+            'manager_email'      => trim($mgrEmails[$i] ?? ''),
         ];
 
         $fileMeta = null;
@@ -199,15 +227,30 @@ try {
         }
 
         if (isEmploymentRowEmpty($data, $fileMeta)) {
-            // Skip completely empty tabs (draft or final)
             continue;
         }
 
         validateSingleEmployment($data, $isFresher === 'yes', $index, $isDraft);
-        $isInsufficient = isset($insufficientDocs[$i]) && 
-                         ($insufficientDocs[$i] === 'on' || 
-                          $insufficientDocs[$i] === '1' || 
-                          $insufficientDocs[$i] === 'true');
+
+        $isCurrentlyEmployedForRow = ($index === 1 && $currentlyEmployed === 'yes');
+        if (!$isDraft && !$isCurrentlyEmployedForRow && empty($data['relieving_date'])) {
+            throw new ValidationException("Relieving date is required for employment record $index");
+        }
+
+        $isInsufficient = isset($insufficientDocs[$i]) && in_array((string)$insufficientDocs[$i], ['on', '1', 'true'], true);
+
+        if (!$isDraft && !$isInsufficient) {
+            $allowedDocTypes = getAllowedEmploymentDocTypes($isCurrentlyEmployedForRow);
+            $selectedDocType = $data['employment_doc_type'];
+
+            if ($selectedDocType === '') {
+                throw new ValidationException("Employment document type is required for employment record $index");
+            }
+
+            if (!in_array($selectedDocType, $allowedDocTypes, true)) {
+                throw new ValidationException("Invalid employment document type for employment record $index");
+            }
+        }
 
         $doc = '';
         if ($isInsufficient) {
@@ -223,37 +266,33 @@ try {
             }
         }
 
-        if (!$isDraft) {
-            if (!$isInsufficient && empty($doc)) {
-                throw new ValidationException("Employment document is required for employment record $index");
-            }
+        if (!$isDraft && !$isInsufficient && empty($doc)) {
+            throw new ValidationException("Employment document is required for employment record $index");
         }
 
-        $relieving = ($currentlyEmployed === 'yes' && $index === 1) 
-            ? null 
-            : ($data['relieving_date'] ?: null);
+        $relieving = $isCurrentlyEmployedForRow ? null : ($data['relieving_date'] ?: null);
 
         $stmt->execute([
-            ':application_id'     => $applicationId,
-            ':employment_index'   => $index,
-            ':is_fresher'         => $index === 1 ? $isFresher : 'no',
-            ':currently_employed' => $index === 1 ? $currentlyEmployed : 'no',
-            ':contact_employer'   => $index === 1 ? $contactEmployer : 'no',
-            ':employer_name'      => $data['employer_name'],
-            ':job_title'          => $data['job_title'],
-            ':employee_id'        => $data['employee_id'],
-            ':joining_date'       => $data['joining_date'],
-            ':relieving_date'     => $relieving,
-            ':reason_leaving'     => $data['reason_leaving'] ?: null,
-            ':employer_address'   => $data['employer_address'],
-            ':hr_manager_name'    => $data['hr_manager_name'] ?: null,
-            ':hr_manager_phone'   => $data['hr_manager_phone'] ?: null,
-            ':hr_manager_email'   => $data['hr_manager_email'] ?: null,
-            ':manager_name'       => $data['manager_name'] ?: null,
-            ':manager_phone'      => $data['manager_phone'] ?: null,
-            ':manager_email'      => $data['manager_email'] ?: null,
-            ':employment_doc'     => $doc ?: null,
-            ':insufficient_documents' => $isInsufficient ? 1 : 0  
+            ':application_id'         => $applicationId,
+            ':employment_index'       => $index,
+            ':is_fresher'             => $index === 1 ? $isFresher : 'no',
+            ':currently_employed'     => $index === 1 ? $currentlyEmployed : 'no',
+            ':contact_employer'       => $index === 1 ? $contactEmployer : 'no',
+            ':employer_name'          => $data['employer_name'],
+            ':job_title'              => $data['job_title'],
+            ':employee_id'            => $data['employee_id'],
+            ':joining_date'           => $data['joining_date'],
+            ':relieving_date'         => $relieving,
+            ':reason_leaving'         => $data['reason_leaving'] ?: null,
+            ':employer_address'       => null,
+            ':hr_manager_name'        => $data['hr_manager_name'] ?: null,
+            ':hr_manager_phone'       => $data['hr_manager_phone'] ?: null,
+            ':hr_manager_email'       => $data['hr_manager_email'] ?: null,
+            ':manager_name'           => $data['manager_name'] ?: null,
+            ':manager_phone'          => $data['manager_phone'] ?: null,
+            ':manager_email'          => $data['manager_email'] ?: null,
+            ':employment_doc'         => $doc ?: null,
+            ':insufficient_documents' => $isInsufficient ? 1 : 0
         ]);
 
         $processed[] = $index;
@@ -276,7 +315,6 @@ try {
         'success' => true,
         'message' => $isDraft ? 'Draft saved successfully' : 'Employment details saved successfully'
     ]);
-
 } catch (ValidationException $e) {
     if (isset($pdo) && $pdo->inTransaction()) {
         $pdo->rollBack();
@@ -287,20 +325,7 @@ try {
     if (isset($pdo) && $pdo->inTransaction()) {
         $pdo->rollBack();
     }
-    error_log("store_employment.php ERROR: " . $e->getMessage());
+    error_log('store_employment.php ERROR: ' . $e->getMessage());
     http_response_code(500);
     echo json_encode(['success' => false, 'message' => 'Server error: ' . $e->getMessage()]);
-}
-
-function isEmploymentRowEmpty(array $data, ?array $file): bool
-{
-    foreach ($data as $v) {
-        if (trim((string)$v) !== '') {
-            return false;
-        }
-    }
-    if ($file && !empty($file['name'])) {
-        return false;
-    }
-    return true;
 }

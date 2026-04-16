@@ -5,6 +5,8 @@ require_once __DIR__ . '/../../config/env.php';
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/mail.php';
+require_once __DIR__ . '/../../includes/integration.php';
+require_once __DIR__ . '/../shared/candidate_account_notify.php';
 
 auth_require_login('company_recruiter');
 auth_session_start();
@@ -38,7 +40,7 @@ function resolve_user_id(): int {
 }
 
 function new_application_id(): string {
-    return 'APP-' . date('YmdHis') . rand(100, 999);
+    return integration_normalize_application_id('APP-' . date('YmdHis') . rand(100, 999));
 }
 
 function new_token(): string {
@@ -92,7 +94,7 @@ try {
     $fatherName = post_str('candidate_father_name');
 
     $mobile = post_str('candidate_mobile');
-    $email = post_str('candidate_email');
+    $email = integration_normalize_email(post_str('candidate_email'));
     $state = post_str('candidate_state');
     $city = post_str('candidate_city');
 
@@ -100,7 +102,7 @@ try {
     $jobRole = post_str('job_role');
 
     $recruiterName = post_str('recruiter_name');
-    $recruiterEmail = post_str('recruiter_email');
+    $recruiterEmail = integration_normalize_email(post_str('recruiter_email'));
 
     $candidateReferenceId = post_str('candidate_reference_id');
     $requisitionId = post_str('requisition_id');
@@ -310,7 +312,56 @@ try {
         . '<p>Warm regards,<br>' . $safeCompany . '</p>'
         . '</div>';
 
-    $sent = send_app_mail($email, $subject, $body, 'VATI GSS');
+    app_mail_set_log_meta([
+        'application_id' => $applicationId,
+        'case_id' => $caseId,
+        'role' => 'company_recruiter',
+        'user_id' => $createdByUserId,
+        'event_type' => 'application.created',
+    ]);
+    $sent = send_app_mail($email, $subject, $body, 'VATI GSS', [
+        'application_id' => $applicationId,
+        'event_type' => 'application.created',
+        'user_id' => $createdByUserId,
+        'user_role' => 'company_recruiter',
+    ]);
+    app_mail_clear_log_meta();
+    $notifyMeta = ['recipient_count' => 0, 'sent_count' => 0];
+    try {
+        $notifyMeta = send_candidate_account_created_notifications($pdo, [
+            'client_id' => $clientId,
+            'application_id' => $applicationId,
+            'candidate_name' => $candidateLabel,
+            'candidate_email' => $email,
+            'job_role' => $jobRole,
+            'invite_url' => $inviteUrl,
+            'recruiter_name' => $recruiterName,
+            'recruiter_email' => $recruiterEmail,
+        ]);
+    } catch (Throwable $e) {
+        $notifyMeta = ['recipient_count' => 0, 'sent_count' => 0];
+    }
+
+    $links = integration_deep_links($applicationId, $caseId);
+    $webhook = integration_send_webhook('application.created', [
+        'applicationId' => $applicationId,
+        'caseId' => $caseId,
+        'candidateEmail' => $email,
+        'candidateName' => $candidateLabel,
+        'currentStage' => 'Invited',
+        'status' => 'CREATED',
+        'triggeredBy' => [
+            'userId' => $createdByUserId,
+            'role' => 'company_recruiter',
+        ],
+        'triggeredAt' => gmdate('c'),
+        'metadata' => array_merge([
+            'inviteUrl' => $inviteUrl,
+            'portalLoginUrl' => $portalLoginUrl,
+            'jobRole' => $jobRole,
+            'emailSent' => $sent ? 1 : 0,
+        ], $links),
+    ]);
 
     echo json_encode([
         'status' => 1,
@@ -318,12 +369,19 @@ try {
         'data' => [
             'case_id' => $caseId,
             'application_id' => $applicationId,
+            'applicationId' => $applicationId,
             'invite_token' => $token,
             'invite_url' => $inviteUrl,
             'portal_url' => $portalUrl,
             'portal_login_url' => $portalLoginUrl,
             'candidate_user_id' => $candidateUserId,
-            'email_sent' => $sent ? 1 : 0
+            'email_sent' => $sent ? 1 : 0,
+            'account_notification_sent_count' => (int)($notifyMeta['sent_count'] ?? 0),
+            'account_notification_recipient_count' => (int)($notifyMeta['recipient_count'] ?? 0),
+            'applicationUrl' => $links['applicationUrl'],
+            'candidateUrl' => $links['candidateUrl'],
+            'timelineUrl' => $links['timelineUrl'],
+            'webhook_event_id' => $webhook['eventId'] ?? null
         ]
     ]);
 

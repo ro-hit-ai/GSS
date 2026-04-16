@@ -7,6 +7,35 @@ require_once __DIR__ . '/../../includes/mail.php';
 require_once __DIR__ . '/../../includes/audit_log.php';
 session_start();
 
+function login_otp_finish_response(array $payload): void
+{
+    $json = json_encode($payload);
+    if ($json === false) {
+        $json = '{"success":false,"message":"Unable to encode response."}';
+    }
+
+    if (!headers_sent()) {
+        header('Content-Type: application/json');
+        header('Content-Length: ' . strlen($json));
+        header('Connection: close');
+    }
+
+    echo $json;
+
+    if (function_exists('session_write_close')) {
+        @session_write_close();
+    }
+
+    while (ob_get_level() > 0) {
+        @ob_end_flush();
+    }
+    @flush();
+
+    if (function_exists('fastcgi_finish_request')) {
+        @fastcgi_finish_request();
+    }
+}
+
 $input = json_decode(file_get_contents('php://input'), true) ?: [];
 $username = trim($input['username'] ?? '');
 $password = trim($input['password'] ?? '');
@@ -99,12 +128,22 @@ try {
     exit;
 }
 
+$_SESSION['login_user_id'] = $userId;
+$responsePayload = [
+    'success' => true,
+    'userId'  => $userId,
+    'otp'     => (string)(env_get('APP_OTP_DEBUG', '0') ?? '0') === '1' ? $otp : null,
+    'message' => 'OTP generated and sent to your registered contact.'
+];
+
 audit_log_event('login', 'otp_request', 'success', [
     'username' => $username,
     'user_id' => $userId
 ], $userId, null, null);
 
-// Send OTP by email
+login_otp_finish_response($responsePayload);
+
+// Send OTP by email after responding so the OTP screen appears immediately.
 try {
     $uStmt = $pdo->prepare('SELECT email, first_name, last_name FROM Vati_Payfiller_Users WHERE user_id = ?');
     $uStmt->execute([$userId]);
@@ -128,12 +167,4 @@ try {
     }
 } catch (Throwable $e) {
 }
-
-$_SESSION['login_user_id'] = $userId;
-
-echo json_encode([
-    'success' => true,
-    'userId'  => $userId,
-    'otp'     => (string)(env_get('APP_OTP_DEBUG', '0') ?? '0') === '1' ? $otp : null,
-    'message' => 'OTP generated and sent to your registered contact.'
-]);
+exit;

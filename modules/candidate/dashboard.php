@@ -9,6 +9,7 @@
 ?>
 
 <!-- DASHBOARD CONTENT -->
+<div class="candidate-dashboard">
 <div class="container-fluid">
     <!-- Welcome Header -->
     <div class="row mb-4">
@@ -295,39 +296,8 @@
             </div>
         </div>
     </div>
+    </div>
 </div>
-
-<style>
-.hover-shadow:hover {
-    box-shadow: 0 10px 25px rgba(0,0,0,0.1) !important;
-    transform: translateY(-2px);
-}
-
-.card {
-    transition: all 0.3s ease;
-}
-
-.card:hover {
-    border-color: #4154f1 !important;
-}
-
-.progress-bar {
-    background-color: #4154f1;
-    transition: width 0.5s ease;
-}
-
-.badge.bg-secondary {
-    background-color: #6c757d !important;
-}
-
-.badge.bg-success {
-    background-color: #2eca6a !important;
-}
-
-.list-group-item:hover {
-    background-color: rgba(65, 84, 241, 0.05);
-}
-</style>
 
 <script>
 // Dashboard-specific JavaScript

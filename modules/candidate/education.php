@@ -25,185 +25,7 @@ $defaultCount = max(1, count($rows));
 $maxCount = 4;
 ?>
 
-<style>
-    .bgv-fixed-form {
-        height: auto;
-        max-height: none;
-        min-height: 0;
-        display: block;
-        overflow: visible;
-        border-radius: 16px;
-    }
-
-    .bgv-fixed-form .form-header {
-        position: sticky;
-        top: 0;
-        background: #0b1220;
-        color: #ffffff;
-        padding: 10px 14px;
-        border-bottom: 1px solid rgba(148, 163, 184, 0.2);
-        border-radius: 10px;
-        z-index: 10;
-        margin: 0 0 12px;
-        flex-shrink: 0;
-    }
-
-    .bgv-fixed-form .form-header i {
-        color: #93c5fd;
-    }
-
-    .bgv-fixed-form .form-content {
-        padding: 20px 24px;
-    }
-
-    .bgv-fixed-form .form-footer {
-        position: relative;
-        bottom: auto;
-        background: #ffffff;
-        padding: 16px 24px;
-        border-top: 1px solid #e2e8f0;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-
-    .bgv-fixed-form .education-toolbar {
-        display: flex;
-        align-items: center;
-        gap: 16px;
-        padding: 12px 16px;
-        background: #f8fafc;
-        border-radius: 12px;
-        margin-bottom: 20px;
-        flex-wrap: wrap;
-        flex-shrink: 0;
-    }
-
-    .bgv-fixed-form .tabs-container {
-        flex: 1;
-        overflow-x: auto;
-        min-width: 0;
-        scrollbar-width: thin;
-    }
-
-    .bgv-fixed-form .education-tab {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        padding: 6px 14px;
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 20px;
-        font-size: 12px;
-        font-weight: 500;
-        cursor: pointer;
-        white-space: nowrap;
-        margin-right: 8px;
-    }
-
-    .bgv-fixed-form .education-tab.active {
-        background: #3b82f6;
-        color: #ffffff;
-        border-color: #3b82f6;
-    }
-
-    .bgv-fixed-form .tab-dot {
-        font-size: 8px;
-        margin-left: 4px;
-    }
-
-    .bgv-fixed-form .compact-card {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 12px;
-        margin-bottom: 16px;
-        overflow: hidden;
-        transition: box-shadow 0.2s;
-    }
-
-    .bgv-fixed-form .compact-card:hover {
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-    }
-
-    .bgv-fixed-form .compact-header {
-        background: #f8fafc;
-        padding: 10px 12px;
-        border-bottom: 1px solid #e2e8f0;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-
-    .bgv-fixed-form .compact-header h6 {
-        font-size: 13px;
-        font-weight: 600;
-        color: #1e293b;
-        margin: 0;
-    }
-
-    .bgv-fixed-form .compact-body {
-        padding: 12px;
-    }
-
-    .bgv-fixed-form .compact-body .form-row-3 {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 12px;
-        margin-bottom: 12px;
-    }
-
-    .bgv-fixed-form .compact-body .form-row-2 {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 12px;
-        margin-bottom: 12px;
-    }
-
-    .bgv-fixed-form .compact-body .form-row-4 {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 12px;
-        margin-bottom: 12px;
-    }
-
-    .bgv-fixed-form .compact-control {
-        padding: 6px 10px !important;
-    }
-
-    .bgv-fixed-form .compact-input,
-    .bgv-fixed-form .compact-select {
-        height: 32px !important;
-        font-size: 13px !important;
-    }
-
-    .bgv-fixed-form .compact-textarea {
-        min-height: 50px !important;
-        font-size: 13px !important;
-    }
-
-    @media (max-width: 992px) {
-        .bgv-fixed-form .compact-body .form-row-3 {
-            grid-template-columns: repeat(2, 1fr);
-        }
-
-        .bgv-fixed-form .compact-body .form-row-4 {
-            grid-template-columns: repeat(2, 1fr);
-        }
-    }
-
-    @media (max-width: 768px) {
-        .bgv-fixed-form .compact-body .form-row-3,
-        .bgv-fixed-form .compact-body .form-row-2 {
-            grid-template-columns: 1fr;
-        }
-
-        .bgv-fixed-form .compact-body .form-row-4 {
-            grid-template-columns: 1fr;
-        }
-    }
-</style>
-
-<div class="candidate-form compact-form cr-fixed-form bgv-fixed-form">
+<div class="candidate-form compact-form cr-fixed-form bgv-fixed-form create-like-spacing">
 
     <!-- HEADER -->
     <div class="form-header">
@@ -238,6 +60,7 @@ $maxCount = 4;
 
     <!-- FORM -->
     <form id="educationForm" enctype="multipart/form-data">
+        <input type="hidden" name="visibleEducationCount" id="visibleEducationCount" value="<?= (int)$defaultCount ?>">
         <div id="educationContainer"></div>
 
     </form>
@@ -256,11 +79,11 @@ $maxCount = 4;
         </button>
 
         <div class="footer-actions-right">
-            <button type="button"
+            <!-- <button type="button"
                     class="btn-secondary save-draft-btn"
                     data-page="education">
                 Save Draft
-            </button>
+            </button> -->
 
             <button type="button"
                     class="btn-primary external-submit-btn"
@@ -277,6 +100,7 @@ $maxCount = 4;
 
         <input type="hidden" name="id[]">
         <input type="hidden" name="education_index[]">
+        <input type="hidden" name="education_state[]" value="ACTIVE">
         <input type="hidden" name="old_marksheet_file[]">
         <input type="hidden" name="old_degree_file[]">
 
@@ -291,7 +115,14 @@ $maxCount = 4;
                 <div class="form-field">
                     <div class="form-control double-border compact-control">
                         <label class="compact-label">Qualification *</label>
-                        <input type="text" name="qualification[]" class="compact-input">
+                        <select name="qualification[]" class="compact-select">
+                            <option value="">Select qualification</option>
+                            <option value="10th">10th</option>
+                            <option value="12th">12th</option>
+                            <option value="Diploma">Diploma</option>
+                            <option value="UG">UG</option>
+                            <option value="PG">PG</option>
+                        </select>
                     </div>
                 </div>
 
@@ -311,7 +142,7 @@ $maxCount = 4;
             </div>
 
             <!-- ROW 2 -->
-            <div class="form-row-4 compact-row mb-2">
+            <div class="form-row-3 compact-row mb-2">
                 <div class="form-field">
                     <div class="form-control double-border compact-control">
                         <label class="compact-label">Roll Number *</label>
@@ -332,6 +163,16 @@ $maxCount = 4;
                         <input type="month" name="year_to[]" class="compact-input">
                     </div>
                 </div>
+            </div>
+
+            <!-- ROW 3: Address + Website -->
+            <div class="form-row-3 compact-row mb-2">
+                <div class="form-field col-span-2">
+                    <div class="form-control double-border compact-control">
+                        <label class="compact-label">College Address *</label>
+                        <input type="text" name="college_address[]" class="compact-input">
+                    </div>
+                </div>
 
                 <div class="form-field">
                     <div class="form-control double-border compact-control">
@@ -341,18 +182,11 @@ $maxCount = 4;
                 </div>
             </div>
 
-            <!-- ROW 3 -->
-            <div class="form-row-3 compact-row mb-2">
+            <!-- ROW 4: DOCUMENTS -->
+            <div class="form-row-2 compact-row mb-2">
                 <div class="form-field">
                     <div class="form-control double-border compact-control">
-                        <label class="compact-label">College Address *</label>
-                        <input type="text" name="college_address[]" class="compact-input">
-                    </div>
-                </div>
-
-                <div class="form-field">
-                    <div class="form-control double-border compact-control">
-                        <label class="compact-label">Marksheet</label>
+                        <label class="compact-label marksheet-label">Marksheet</label>
                         <div class="file-upload-box" data-file-upload>
                             <div class="file-upload-row">
                                 <button type="button" class="file-upload-btn" data-file-choose>Choose File</button>
@@ -360,6 +194,7 @@ $maxCount = 4;
                             </div>
                             <div class="file-upload-error" data-file-error></div>
                         </div>
+                        <small class="text-muted compact-hint document-instruction marksheet-instruction"></small>
                         <input type="file"
                                name="marksheet_file[]"
                                class="compact-file d-none"
@@ -368,9 +203,9 @@ $maxCount = 4;
                     </div>
                 </div>
 
-                <div class="form-field">
+                <div class="form-field degree-upload-field">
                     <div class="form-control double-border compact-control">
-                        <label class="compact-label">Degree Certificate</label>
+                        <label class="compact-label degree-label">Degree Certificate</label>
                         <div class="file-upload-box" data-file-upload>
                             <div class="file-upload-row">
                                 <button type="button" class="file-upload-btn" data-file-choose>Choose File</button>
@@ -378,6 +213,7 @@ $maxCount = 4;
                             </div>
                             <div class="file-upload-error" data-file-error></div>
                         </div>
+                        <small class="text-muted compact-hint document-instruction degree-instruction"></small>
                         <input type="file"
                                name="degree_file[]"
                                class="compact-file d-none"
@@ -387,26 +223,34 @@ $maxCount = 4;
                 </div>
             </div>
 
-            <!-- ROW 4: DOCUMENTS -->
-            <!-- <div class="form-row-2 compact-row mb-2">
-               
-
-               
-            </div> -->
-
-            <!-- ROW 5: CHECKBOX -->
-            <div class="form-row-1 compact-row mb-2">
+            <!-- ROW 5: NO FURTHER EDUCATIONS -->
+            <div class="form-row-1 compact-row mb-2 no-further-education-row">
                 <div class="form-field">
                     <div class="form-check normal-checkbox compact-checkbox">
                         <input type="checkbox"
-                               name="insufficient_education_docs[]"
+                               class="form-check-input no-further-education-checkbox"
                                value="1">
-                        <label class="compact-checkbox-label">
-                            Insufficient Education Documents
+                        <label class="form-check-label compact-checkbox-label">
+                            I don't have further educations
                         </label>
                     </div>
                 </div>
             </div>
+
+            <!-- ROW 6: INSUFFICIENT DOCUMENTS -->
+            <!-- <div class="form-row-1 compact-row mb-2">
+                <div class="form-field">
+                    <div class="form-check normal-checkbox compact-checkbox">
+                        <input type="checkbox"
+                               class="form-check-input"
+                               name="insufficient_education_docs[]"
+                               value="1">
+                        <label class="form-check-label compact-checkbox-label">
+                            Insufficient Education Documents
+                        </label>
+                    </div>
+                </div>
+            </div> -->
 
         </div>
     </div>

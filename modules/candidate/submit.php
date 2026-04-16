@@ -25,6 +25,9 @@ session_start();
 
 $response = ['success' => false, 'message' => ''];
 require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../../includes/mail.php';
+require_once __DIR__ . '/../../api/shared/case_component_binding.php';
+require_once __DIR__ . '/../../api/shared/candidate_account_notify.php';
 
 try {
 
@@ -41,10 +44,10 @@ try {
 
     $pdo->query("SELECT 1");
 
-   //check application exists
+   // Check application exists in the actual Payfiller applications table
     $stmt = $pdo->prepare("
         SELECT application_id
-        FROM applications
+        FROM Vati_Payfiller_Candidate_Applications
         WHERE application_id = ?
     ");
     $stmt->execute([$application_id]);
@@ -54,7 +57,7 @@ try {
     }
 
     $update = $pdo->prepare("
-        UPDATE applications
+        UPDATE Vati_Payfiller_Candidate_Applications
         SET status = 'submitted',
             submitted_at = NOW()
         WHERE application_id = ?
@@ -66,6 +69,7 @@ try {
         $caseStmt->execute([$application_id]);
         $caseId = (int)($caseStmt->fetchColumn() ?: 0);
         if ($caseId > 0) {
+            case_component_binding_sync_case_components($pdo, $caseId, $application_id);
             $pdo->prepare(
                 "UPDATE Vati_Payfiller_Cases
                  SET case_status = 'PENDING_VALIDATOR'
@@ -100,6 +104,56 @@ try {
         }
     } catch (Throwable $e) {
         // ignore
+    }
+
+    try {
+        $notifyStmt = $pdo->prepare(
+            "SELECT c.client_id,
+                    c.candidate_first_name,
+                    c.candidate_middle_name,
+                    c.candidate_last_name,
+                    c.candidate_email,
+                    c.job_role,
+                    cl.customer_name,
+                    a.submitted_at
+               FROM Vati_Payfiller_Cases c
+               LEFT JOIN Vati_Payfiller_Clients cl ON cl.client_id = c.client_id
+               LEFT JOIN Vati_Payfiller_Candidate_Applications a ON a.application_id = c.application_id
+              WHERE c.application_id = ?
+              LIMIT 1"
+        );
+        $notifyStmt->execute([$application_id]);
+        $notifyRow = $notifyStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        if (!empty($notifyRow)) {
+            $candidateName = trim(
+                (string)($notifyRow['candidate_first_name'] ?? '') . ' '
+                . (string)($notifyRow['candidate_middle_name'] ?? '') . ' '
+                . (string)($notifyRow['candidate_last_name'] ?? '')
+            );
+
+            send_candidate_submission_confirmation($pdo, [
+                'client_id' => (int)($notifyRow['client_id'] ?? 0),
+                'application_id' => $application_id,
+                'candidate_name' => $candidateName,
+                'candidate_email' => (string)($notifyRow['candidate_email'] ?? ''),
+                'job_role' => (string)($notifyRow['job_role'] ?? ''),
+                'client_name' => (string)($notifyRow['customer_name'] ?? ''),
+                'submitted_at' => (string)($notifyRow['submitted_at'] ?? ''),
+            ]);
+
+            send_candidate_submitted_notifications($pdo, [
+                'client_id' => (int)($notifyRow['client_id'] ?? 0),
+                'application_id' => $application_id,
+                'candidate_name' => $candidateName,
+                'candidate_email' => (string)($notifyRow['candidate_email'] ?? ''),
+                'job_role' => (string)($notifyRow['job_role'] ?? ''),
+                'client_name' => (string)($notifyRow['customer_name'] ?? ''),
+                'submitted_at' => (string)($notifyRow['submitted_at'] ?? ''),
+            ]);
+        }
+    } catch (Throwable $e) {
+        // ignore notification failures so candidate submission still succeeds
     }
 
   // success

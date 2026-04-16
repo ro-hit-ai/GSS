@@ -3,6 +3,8 @@ header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/integration.php';
+require_once __DIR__ . '/case_component_binding.php';
 
 auth_require_login(null);
 
@@ -279,7 +281,7 @@ try {
 
     $input = json_decode(file_get_contents('php://input'), true) ?: [];
 
-    $applicationId = isset($input['application_id']) ? trim((string)$input['application_id']) : '';
+    $applicationId = isset($input['application_id']) ? integration_normalize_application_id((string)$input['application_id']) : '';
     $caseId = isset($input['case_id']) ? (int)$input['case_id'] : 0;
     $componentKey = isset($input['component_key']) ? norm_component_key((string)$input['component_key']) : '';
     $action = isset($input['action']) ? strtolower(trim((string)$input['action'])) : '';
@@ -349,6 +351,13 @@ try {
         // If no explicit per-component assignment exists, allow based on allowed_sections.
         // If explicit assignment exists, enforce it strictly.
         if ($assignedRole === '' || $assignedUserId <= 0) {
+            $configAllowed = case_component_binding_role_allowed($pdo, $caseId, $applicationId, $componentKey, $role);
+            if ($configAllowed === false) {
+                http_response_code(403);
+                echo json_encode(['status' => 0, 'message' => 'Not assigned to this component']);
+                exit;
+            }
+
             $allowedSet = session_allowed_sections();
             if (!can_section($allowedSet, $componentKey)) {
                 http_response_code(403);
@@ -711,17 +720,45 @@ try {
         }
     }
 
+    $eventType = ($action === 'approve' && ($caseStatus !== null || $appStatus !== null))
+        ? 'workflow.stage.changed'
+        : 'application.status.changed';
+    $links = integration_deep_links($applicationId, $caseId);
+    $webhook = integration_send_webhook($eventType, [
+        'applicationId' => $applicationId,
+        'caseId' => $caseId,
+        'currentStage' => $stage,
+        'status' => trim((string)($caseStatus ?? $appStatus ?? $newStatus)),
+        'triggeredBy' => [
+            'userId' => $userId,
+            'role' => $role,
+        ],
+        'triggeredAt' => gmdate('c'),
+        'metadata' => array_merge([
+            'componentKey' => $componentKey,
+            'componentStatus' => $newStatus,
+            'action' => $action,
+            'overrideReason' => $overrideReason !== '' ? $overrideReason : null,
+            'applicationStatus' => $appStatus,
+        ], $links),
+    ]);
+
     echo json_encode([
         'status' => 1,
         'message' => 'Updated',
         'data' => [
             'application_id' => $applicationId,
+            'applicationId' => $applicationId,
             'case_id' => $caseId,
             'component_key' => $componentKey,
             'component_status' => $newStatus,
             'override_reason' => $overrideReason !== '' ? $overrideReason : null,
             'case_status' => $caseStatus,
-            'application_status' => $appStatus
+            'application_status' => $appStatus,
+            'applicationUrl' => $links['applicationUrl'],
+            'candidateUrl' => $links['candidateUrl'],
+            'timelineUrl' => $links['timelineUrl'],
+            'webhook_event_id' => $webhook['eventId'] ?? null
         ]
     ]);
 

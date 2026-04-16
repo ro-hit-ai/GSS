@@ -2,12 +2,18 @@ document.addEventListener('DOMContentLoaded', function () {
     var form = document.getElementById('userCreateForm');
     var messageEl = document.getElementById('userCreateMessage');
     var clientSelect = document.getElementById('userClientSelect');
+    var clientDropdown = document.getElementById('userClientDropdown');
+    var clientDropdownToggle = document.getElementById('userClientDropdownToggle');
+    var clientDropdownMenu = document.getElementById('userClientDropdownMenu');
+    var clientDropdownList = document.getElementById('userClientDropdownList');
+    var clientSearch = document.getElementById('userClientSearch');
     var locationSelect = document.getElementById('userLocationSelect');
     var formActionField = document.getElementById('userFormAction');
     var saveNextBtn = document.getElementById('userSaveNextBtn');
     var finalSubmitBtn = document.getElementById('userFinalSubmitBtn');
     var userIdField = document.getElementById('userId');
     var tabButtons = document.querySelectorAll('.tab');
+    var allClients = [];
 
     function setMessage(text, type) {
         if (!messageEl) return;
@@ -33,6 +39,85 @@ document.addEventListener('DOMContentLoaded', function () {
             if (!el) return;
             el.value = (data[k] === null || typeof data[k] === 'undefined') ? '' : String(data[k]);
         });
+    }
+
+    function renderClientOptions(selectedClientId, searchText) {
+        if (!clientSelect) return;
+
+        var selectedValue = String(selectedClientId || clientSelect.value || '');
+        var term = String(searchText || '').trim().toLowerCase();
+
+        clientSelect.innerHTML = '<option value="">Select Client</option>';
+        if (clientDropdownList) {
+            clientDropdownList.innerHTML = '';
+        }
+
+        allClients.forEach(function (c) {
+            var cid = String(c.client_id || '');
+            var label = String(c.customer_name || ('Client #' + cid));
+            if (term && label.toLowerCase().indexOf(term) === -1) return;
+
+            var opt = document.createElement('option');
+            opt.value = cid;
+            opt.textContent = label;
+            clientSelect.appendChild(opt);
+
+            if (clientDropdownList) {
+                var item = document.createElement('button');
+                item.type = 'button';
+                item.setAttribute('data-client-id', cid);
+                item.style.width = '100%';
+                item.style.textAlign = 'left';
+                item.style.padding = '10px 12px';
+                item.style.border = '0';
+                item.style.borderRadius = '10px';
+                item.style.background = cid === selectedValue ? '#e8f1ff' : '#fff';
+                item.style.cursor = 'pointer';
+                item.textContent = label;
+                item.addEventListener('click', function () {
+                    selectClient(cid);
+                    closeClientDropdown();
+                    try { clientDropdownToggle.focus(); } catch (e) {}
+                });
+                clientDropdownList.appendChild(item);
+            }
+        });
+
+        if (selectedValue) {
+            clientSelect.value = selectedValue;
+        }
+        updateClientToggleLabel();
+    }
+
+    function updateClientToggleLabel() {
+        if (!clientDropdownToggle || !clientSelect) return;
+        var selectedOption = clientSelect.options[clientSelect.selectedIndex];
+        clientDropdownToggle.textContent = selectedOption && selectedOption.value
+            ? selectedOption.textContent
+            : 'Select Client';
+    }
+
+    function openClientDropdown() {
+        if (!clientDropdownMenu) return;
+        clientDropdownMenu.style.display = 'block';
+        if (clientSearch) {
+            clientSearch.value = '';
+            renderClientOptions(clientSelect ? clientSelect.value : '', '');
+            try { clientSearch.focus(); } catch (e) {}
+        }
+    }
+
+    function closeClientDropdown() {
+        if (!clientDropdownMenu) return;
+        clientDropdownMenu.style.display = 'none';
+    }
+
+    function selectClient(clientId) {
+        if (!clientSelect) return;
+        clientSelect.value = String(clientId || '');
+        updateClientToggleLabel();
+        renderClientOptions(clientSelect.value, clientSearch ? clientSearch.value : '');
+        loadLocationsForClient(clientSelect.value, null);
     }
 
     function showTab(tabKey) {
@@ -66,18 +151,22 @@ document.addEventListener('DOMContentLoaded', function () {
                     throw new Error((data && data.message) ? data.message : 'Failed to load clients');
                 }
 
-                clientSelect.innerHTML = '<option value="">Select Client</option>';
+                allClients = [];
                 data.data.forEach(function (c) {
                     if (parseInt(c.client_id || '0', 10) === 1) return;
-                    var opt = document.createElement('option');
-                    opt.value = String(c.client_id || '');
-                    opt.textContent = c.customer_name || ('Client #' + c.client_id);
-                    clientSelect.appendChild(opt);
+                    allClients.push({
+                        client_id: String(c.client_id || ''),
+                        customer_name: c.customer_name || ('Client #' + c.client_id)
+                    });
                 });
+                renderClientOptions(selectedClientId, clientSearch ? clientSearch.value : '');
 
                 if (selectedClientId && selectedClientId > 0) {
                     clientSelect.value = String(selectedClientId);
+                } else {
+                    clientSelect.disabled = false;
                 }
+                updateClientToggleLabel();
             });
     }
 
@@ -149,6 +238,8 @@ document.addEventListener('DOMContentLoaded', function () {
                         fillForm(data.data);
                         if (clientSelect && data.data.client_id) {
                             clientSelect.value = String(data.data.client_id);
+                            updateClientToggleLabel();
+                            renderClientOptions(clientSelect.value, clientSearch ? clientSearch.value : '');
                         }
                         loadLocationsForClient(clientSelect ? clientSelect.value : 0, (data.data.locations && Array.isArray(data.data.locations) ? data.data.locations : (data.data.location || '')));
                         setMessage('Edit mode: loaded from database.', 'success');
@@ -161,9 +252,32 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (clientSelect) {
         clientSelect.addEventListener('change', function () {
+            updateClientToggleLabel();
             loadLocationsForClient(clientSelect.value, null);
         });
     }
+
+    if (clientSearch) {
+        clientSearch.addEventListener('input', function () {
+            renderClientOptions(clientSelect ? clientSelect.value : '', clientSearch.value);
+        });
+    }
+
+    if (clientDropdownToggle) {
+        clientDropdownToggle.addEventListener('click', function () {
+            if (clientDropdownMenu && clientDropdownMenu.style.display === 'block') {
+                closeClientDropdown();
+            } else {
+                openClientDropdown();
+            }
+        });
+    }
+
+    document.addEventListener('click', function (e) {
+        if (!clientDropdown) return;
+        if (clientDropdown.contains(e.target)) return;
+        closeClientDropdown();
+    });
 
     function setFormAction(val) {
         if (!formActionField) return;
@@ -185,7 +299,7 @@ document.addEventListener('DOMContentLoaded', function () {
         saveNextBtn.addEventListener('click', function () {
             setMessage('', '');
 
-            var requiredFields = ['client_id', 'username', 'first_name', 'last_name', 'phone', 'email'];
+            var requiredFields = ['username', 'first_name', 'last_name', 'phone', 'email'];
             for (var i = 0; i < requiredFields.length; i++) {
                 var f = requiredFields[i];
                 var el = form.querySelector('[name="' + f + '"]');

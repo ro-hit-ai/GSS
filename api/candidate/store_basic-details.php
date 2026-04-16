@@ -141,9 +141,9 @@ try {
     
     if ($save_draft === '0') { // Final submission
         $required_fields = [
-            'first_name', 'last_name', 'gender', 'dob', 'blood_group',
-            'father_name', 'marital_status', 'mobile', 'email',
-            'country', 'state', 'city_village', 'district', 'pincode', 'nationality'
+            'first_name', 'last_name', 'gender', 'dob',
+            'father_name', 'mobile', 'email',
+            'country', 'state', 'city_village', 'district', 'pincode'
         ];
         
         foreach ($required_fields as $field) {

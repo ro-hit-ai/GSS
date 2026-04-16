@@ -128,7 +128,7 @@ if (!$jsAppBaseUrl) {
     <!-- Candidate UI CSS -->
 </head>
 
-<body class="candidate-page">
+<body class="candidate-page candidate-config-loading">
 
 <script>
     window.CANDIDATE_PREFILL = <?php echo json_encode([
@@ -164,12 +164,16 @@ if (!$jsAppBaseUrl) {
             <span class="brand-title">VATI GSS</span>
             <span class="brand-subtitle">Verification Platform</span>
         </div>
-        <button type="button" class="btn-toggle-sidebar" id="sidebarToggle" aria-label="Toggle navigation">
-            <i class="fas fa-bars"></i>
+        <button type="button" class="btn-toggle-sidebar" id="sidebarToggle" aria-label="Toggle navigation" aria-expanded="true">
+            <i class="fas fa-bars" aria-hidden="true"></i>
         </button>
     </div>
 
     <div class="top-header-right">
+        <div class="candidate-header-identity">
+            <div class="candidate-header-name"><?php echo htmlspecialchars($userName ?: 'Candidate'); ?></div>
+            <div class="candidate-header-meta"><?php echo htmlspecialchars($applicationId); ?></div>
+        </div>
         <button type="button" class="btn btn-sm btn-logout" onclick="window.location.href='<?php echo htmlspecialchars(app_url('/logout.php')); ?>'">Logout</button>
     </div>
 </header>
@@ -180,12 +184,16 @@ if (!$jsAppBaseUrl) {
     <div class="main" id="mainContent">
         <main class="page-area">
             <div class="candidate-wrapper">
-                <div id="page-content">
+                <section class="candidate-portal-shell">
+                    <div class="candidate-page-shell">
+                        <div id="page-content">
                     <div class="text-center py-5">
                         <div class="spinner-border"></div>
                         <p class="text-muted mt-3">Loading application form...</p>
                     </div>
-                </div>
+                        </div>
+                    </div>
+                </section>
             </div>
         </main>
 
@@ -204,6 +212,7 @@ if (!$jsAppBaseUrl) {
 ============================================ -->
 
 <!-- 1. CORE UTILITIES -->
+<script src="<?php echo htmlspecialchars(app_url('/js/modules/candidate/NotificationService.js')); ?>"></script>
 <script src="<?php echo htmlspecialchars(app_url('/js/modules/candidate/forms.js')); ?>"></script>
 <script src="<?php echo htmlspecialchars(app_url('/js/modules/candidate/DraftManager.js')); ?>"></script>
 <script src="<?php echo htmlspecialchars(app_url('/js/modules/candidate/TabManager.js')); ?>"></script>
@@ -217,6 +226,7 @@ if (!$jsAppBaseUrl) {
 <script src="<?php echo htmlspecialchars(app_url('/js/modules/candidate/pages/Education.js')); ?>"></script>
 <script src="<?php echo htmlspecialchars(app_url('/js/modules/candidate/pages/Employment.js')); ?>"></script>
 <script src="<?php echo htmlspecialchars(app_url('/js/modules/candidate/pages/Reference.js')); ?>"></script>
+<script src="<?php echo htmlspecialchars(app_url('/js/modules/candidate/pages/Review.js')); ?>"></script>
 <script src="<?php echo htmlspecialchars(app_url('/js/modules/candidate/pages/ReviewConfirmation.js')); ?>"></script>
 <script src="<?php echo htmlspecialchars(app_url('/js/modules/candidate/pages/Success.js')); ?>"></script>
 
@@ -228,11 +238,12 @@ if (!$jsAppBaseUrl) {
     data-app-base="<?php echo htmlspecialchars($jsAppBaseUrl); ?>">
 </script>
 
+
 <!-- ============================================
      GLOBAL PREVIEW MODAL - SIMPLIFIED VERSION
 ============================================ -->
 <div class="modal fade" id="globalDocumentPreviewModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered" style="max-width:380px;">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:760px;">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">Document Preview</h5>
@@ -292,12 +303,7 @@ if (!$jsAppBaseUrl) {
 
         console.log('📄 Global preview:', name, url, type);
 
-        // Prefer form-width preview if available
-        if (typeof window.openFormPreview === 'function') {
-            window.openFormPreview(url, name);
-        } else {
-            openGlobalPreviewModal(url, name, type);
-        }
+        openGlobalPreviewModal(url, name, type);
     });
 
     // Bootstrap modal preview (existing system)
@@ -326,25 +332,26 @@ if (!$jsAppBaseUrl) {
         downloadBtn.innerHTML =
             '<i class="fas fa-download me-1"></i> Download';
 
-        let html = '';
-
         if (type === 'image') {
-            html = `
+            content.innerHTML = `
                 <div class="text-center">
                     <img src="${url}"
                          alt="${name}"
                          class="img-fluid rounded"
-                         style="max-height:320px;object-fit:contain"
+                         style="max-height:440px;object-fit:contain"
                          onerror="this.onerror=null;this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'400\\' height=\\'300\\'><rect width=\\'100%\\' height=\\'100%\\' fill=\\'%23f8f9fa\\'/><text x=\\'50%\\' y=\\'50%\\' text-anchor=\\'middle\\' dy=\\'.3em\\' fill=\\'%236c757d\\'>Image not available</text></svg>';">
                     <p class="mt-2 text-muted">${name}</p>
                 </div>
             `;
         } else if (type === 'pdf') {
-            html = `
-                <div style="height:320px;">
-                    <iframe src="${url}"
+            const pdfEmbedUrl = url.includes('#')
+                ? url
+                : `${url}#toolbar=0&navpanes=0&scrollbar=0`;
+            content.innerHTML = `
+                <div style="height:440px;">
+                    <iframe src="${pdfEmbedUrl}"
                             width="100%"
-                            height="320"
+                            height="440"
                             style="border:none;border-radius:4px;"
                             onerror="this.style.display='none';this.parentElement.innerHTML='<div class=&quot;alert alert-danger&quot;><i class=&quot;fas fa-exclamation-triangle me-2&quot;></i>Failed to load PDF. Please download the file.</div>'">
                     </iframe>
@@ -352,7 +359,7 @@ if (!$jsAppBaseUrl) {
                 </div>
             `;
         } else {
-            html = `
+            content.innerHTML = `
                 <div class="text-center py-5">
                     <i class="fas fa-file fa-4x text-secondary mb-3"></i>
                     <h5>${name}</h5>
@@ -361,8 +368,6 @@ if (!$jsAppBaseUrl) {
                 </div>
             `;
         }
-
-        content.innerHTML = html;
 
         // Show Bootstrap modal
         try {
@@ -378,6 +383,8 @@ if (!$jsAppBaseUrl) {
             window.open(url, '_blank');
         }
     }
+
+    // (PDF.js viewer removed, back to browser PDF viewer)
 
     // Backward-compatible aliases
     window.openDocumentPreview = openGlobalPreviewModal;
@@ -474,6 +481,18 @@ document.addEventListener("DOMContentLoaded", function() {
     const sidebar = document.getElementById("mainSidebar");
     const toggleBtn = document.getElementById("sidebarToggle");
     const overlay = document.getElementById("sidebarOverlay");
+
+    function syncSidebarToggleState() {
+        if (!toggleBtn || !sidebar) return;
+
+        const isMobile = window.innerWidth < 768;
+        const isExpanded = isMobile
+            ? sidebar.classList.contains('sidebar-open')
+            : !sidebar.classList.contains('collapsed');
+
+        toggleBtn.classList.toggle('is-collapsed', !isExpanded);
+        toggleBtn.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+    }
     
     // Toggle sidebar
     if (toggleBtn && sidebar) {
@@ -491,6 +510,8 @@ document.addEventListener("DOMContentLoaded", function() {
                 sidebar.classList.toggle('collapsed');
                 localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
             }
+
+            syncSidebarToggleState();
         });
     }
     
@@ -499,6 +520,7 @@ document.addEventListener("DOMContentLoaded", function() {
         overlay.addEventListener('click', function() {
             sidebar.classList.remove('sidebar-open');
             overlay.classList.remove('show');
+            syncSidebarToggleState();
         });
     }
     
@@ -509,6 +531,9 @@ document.addEventListener("DOMContentLoaded", function() {
             sidebar.classList.add('collapsed');
         }
     }
+
+    window.addEventListener('resize', syncSidebarToggleState);
+    syncSidebarToggleState();
     
     // ✅ FIXED: Sidebar navigation - PROPER EVENT HANDLER
     const sidebarNav = document.querySelector('.sidebar-nav');
@@ -542,48 +567,28 @@ document.addEventListener("DOMContentLoaded", function() {
 <script>
 window.Toast = {
     show(message, type = "info", timeout = 3500) {
-        let root = document.getElementById("toast-root");
-        if (!root) {
-            root = document.createElement('div');
-            root.id = 'toast-root';
-            document.body.appendChild(root);
+        if (window.CandidateNotify && typeof window.CandidateNotify.show === 'function') {
+            return window.CandidateNotify.show({ message, type, timeout });
         }
-
-        const toast = document.createElement("div");
-        toast.className = `toast ${type}`;
-
-        const icons = {
-            success: "fa-check-circle",
-            error: "fa-times-circle",
-            info: "fa-info-circle",
-            warn: "fa-exclamation-triangle"
-        };
-
-        toast.innerHTML = `
-            <i class="fas ${icons[type] || icons.info}"></i>
-            <div>${message}</div>
-            <div class="toast-close">&times;</div>
-        `;
-
-        toast.querySelector(".toast-close").onclick = () => toast.remove();
-
-        root.appendChild(toast);
-
-        setTimeout(() => {
-            toast.remove();
-        }, timeout);
+        console.log(message);
     },
 
-    success(msg) { this.show(msg, "success"); },
-    error(msg)   { this.show(msg, "error"); },
-    info(msg)    { this.show(msg, "info"); },
-    warn(msg)    { this.show(msg, "warn"); }
+    success(msg, opts) { return window.CandidateNotify ? window.CandidateNotify.success(msg, opts) : this.show(msg, "success"); },
+    error(msg, opts)   { return window.CandidateNotify ? window.CandidateNotify.error(msg, opts) : this.show(msg, "error"); },
+    info(msg, opts)    { return window.CandidateNotify ? window.CandidateNotify.info(msg, opts) : this.show(msg, "info"); },
+    warn(msg, opts)    { return window.CandidateNotify ? window.CandidateNotify.warn(msg, opts) : this.show(msg, "warn"); }
 };
 
 window.showAlert = function ({ type = 'info', message = '' } = {}) {
     const t = (type || 'info').toLowerCase();
     const m = String(message || '').trim();
     if (!m) return;
+
+    if (window.CandidateNotify && typeof window.CandidateNotify.show === 'function') {
+        const mapped = (t === 'warning') ? 'warn' : t;
+        window.CandidateNotify.show({ type: mapped, message: m });
+        return;
+    }
 
     if (window.Toast && typeof window.Toast.show === 'function') {
         const mapped = (t === 'warning') ? 'warn' : t;
@@ -594,33 +599,6 @@ window.showAlert = function ({ type = 'info', message = '' } = {}) {
     console[t === 'error' ? 'error' : 'log'](m);
 };
 </script>
-<style>
-    #formPreviewOverlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,.55);
-    z-index: 20000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-#formPreviewModal {
-    background: #fff;
-    border-radius: 10px;
-    display: flex;
-    flex-direction: column;
-    max-height: 90vh;
-}
-
-.form-preview-body iframe,
-.form-preview-body img {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-}
-
-</style>
 <!-- ===== FORM-WIDTH (75%) PREVIEW OVERLAY ===== -->
 <div id="formPreviewOverlay" hidden>
     <div id="formPreviewModal">

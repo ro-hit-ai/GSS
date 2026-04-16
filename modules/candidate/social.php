@@ -20,7 +20,7 @@ $other_url          = $social['other_url'] ?? '';
 $consent_bgv        = $social['consent_bgv'] ?? 0;
 ?>
 
-<div class="candidate-form compact-form">
+<div class="candidate-form compact-form create-like-spacing">
 
     <!-- HEADER -->
     <div class="form-header">
@@ -137,11 +137,11 @@ $consent_bgv        = $social['consent_bgv'] ?? 0;
             </button>
 
             <div class="footer-actions-right">
-                <button type="button"
+                <!-- <button type="button"
                         class="btn-secondary save-draft-btn"
                         data-page="social">
                     Save Draft
-                </button>
+                </button> -->
 
                 <button type="button"
                         class="btn-primary external-submit-btn"

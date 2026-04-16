@@ -265,15 +265,16 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
 
                 tasksBody.innerHTML = rows.map(function (r) {
+                    var app = r.application_id || '-';
                     var name = ((r.candidate_first_name || '') + ' ' + (r.candidate_last_name || '')).trim();
                     var comp = groupDisplayFromSections(r.group_key);
                     var st = fmtStatus(r);
                     var open = buildOpenUrl(r);
                     var action = '<a href="' + esc(open) + '" style="text-decoration:none; color:#2563eb; font-weight:700;">' + (r.assigned_user_id ? 'Continue' : 'Open') + '</a>';
                     return '<tr>' +
+                        '<td>' + esc(app) + '</td>' +
                         '<td>' + esc(name || '-') + '</td>' +
                         '<td>' + esc(comp) + '</td>' +
-                        '<td>' + badge('Normal', 'vr-badge-i') + '</td>' +
                         '<td>' + st + '</td>' +
                         '<td>' + action + '</td>' +
                         '</tr>';

@@ -59,7 +59,7 @@ try {
         exit;
     }
 
-    $allowedRoles = ['verifier', 'db_verifier', 'qa'];
+    $allowedRoles = ['validator', 'verifier', 'db_verifier', 'qa'];
 
     $pdo = getDB();
     $pdo->beginTransaction();

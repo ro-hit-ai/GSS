@@ -2,6 +2,7 @@
 header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../../includes/component_resolver.php';
 
 session_start();
 
@@ -27,94 +28,47 @@ function extract_required_count(array $row): int {
     return 1;
 }
 
-function map_verification_type_to_pages(string $typeName, string $typeCategory): array {
-    $typeName = trim($typeName);
-    $typeCategory = trim($typeCategory);
+function candidate_cfg_text_has_any(string $haystack, array $needles): bool {
+    foreach ($needles as $needle) {
+        if ($needle !== '' && str_contains_ci($haystack, (string)$needle)) {
+            return true;
+        }
+    }
+    return false;
+}
 
-    $hay = strtolower(trim(($typeName !== '' ? $typeName : '') . ' ' . ($typeCategory !== '' ? $typeCategory : '')));
-    $pages = [];
-
-    // Identification / ID
-    if (
-        str_contains_ci($hay, 'identification')
-        || str_contains_ci($hay, 'identity')
-        || str_contains_ci($hay, 'id verification')
-        || str_contains_ci($hay, 'kyc')
-        || str_contains_ci($hay, 'aadhaar')
-        || str_contains_ci($hay, 'aadhar')
-        || str_contains_ci($hay, 'pan')
-        || str_contains_ci($hay, 'passport')
-        || str_contains_ci($hay, 'driving licence')
-        || str_contains_ci($hay, 'driving license')
-        || str_contains_ci($hay, 'voter')
-        || str_contains_ci($hay, 'nric')
-        || str_contains_ci($hay, 'ssn')
-        || str_contains_ci($hay, 'sin')
-        || str_contains_ci($hay, 'nin')
-        || str_contains_ci($hay, 'national id')
-    ) {
-        $pages[] = 'identification';
+function detect_reference_sections(string $typeName, string $typeCategory): array {
+    $hay = strtolower(trim($typeName . ' ' . $typeCategory));
+    if (!candidate_cfg_text_has_any($hay, ['reference', 'referee', 'ref check', 'ref-check'])) {
+        return [];
     }
 
-    // Education
-    if (
-        str_contains_ci($hay, 'education')
-        || str_contains_ci($hay, 'qualification')
-        || str_contains_ci($hay, 'degree')
-        || str_contains_ci($hay, 'college')
-        || str_contains_ci($hay, 'university')
-    ) {
-        $pages[] = 'education';
+    $out = [];
+    if (candidate_cfg_text_has_any($hay, ['education', 'academic', 'qualification', 'degree', 'college', 'university'])) {
+        $out[] = 'education_reference';
+    }
+    if (candidate_cfg_text_has_any($hay, ['employment', 'employee', 'employer', 'professional', 'work', 'experience'])) {
+        $out[] = 'employment_reference';
     }
 
-    // Employment
-    if (
-        str_contains_ci($hay, 'employment')
-        || str_contains_ci($hay, 'employer')
-        || str_contains_ci($hay, 'experience')
-        || str_contains_ci($hay, 'work history')
-    ) {
-        $pages[] = 'employment';
+    return array_values(array_unique($out));
+}
+
+function detect_contact_sections(string $typeName, string $typeCategory): array {
+    $hay = strtolower(trim($typeName . ' ' . $typeCategory));
+    if (!candidate_cfg_text_has_any($hay, ['address'])) {
+        return [];
     }
 
-    // References
-    if (
-        str_contains_ci($hay, 'reference')
-        || str_contains_ci($hay, 'referee')
-        || str_contains_ci($hay, 'ref check')
-        || str_contains_ci($hay, 'ref-check')
-    ) {
-        $pages[] = 'reference';
+    $out = [];
+    if (candidate_cfg_text_has_any($hay, ['current', 'present'])) {
+        $out[] = 'current_address';
+    }
+    if (candidate_cfg_text_has_any($hay, ['permanent'])) {
+        $out[] = 'permanent_address';
     }
 
-    // Court / Judicial searches
-    if (
-        str_contains_ci($hay, 'ecourt')
-        || str_contains_ci($hay, 'e-court')
-        || str_contains_ci($hay, 'court')
-        || str_contains_ci($hay, 'judis')
-        || str_contains_ci($hay, 'judicial')
-        || str_contains_ci($hay, 'manupatra')
-        || str_contains_ci($hay, 'litigation')
-    ) {
-        $pages[] = 'ecourt';
-    }
-
-    // Social / global database checks
-    if (
-        str_contains_ci($hay, 'social')
-        || str_contains_ci($hay, 'world check')
-        || str_contains_ci($hay, 'worldcheck')
-        || str_contains_ci($hay, 'linkedin')
-        || str_contains_ci($hay, 'facebook')
-        || str_contains_ci($hay, 'instagram')
-        || str_contains_ci($hay, 'twitter')
-        || str_contains_ci($hay, 'x.com')
-    ) {
-        $pages[] = 'social';
-    }
-
-    return array_values(array_unique($pages));
+    return array_values(array_unique($out));
 }
 
 try {
@@ -167,29 +121,80 @@ try {
     $types = [];
     if ($jobRoleId > 0) {
         try {
-            $stmt = $pdo->prepare('CALL SP_Vati_Payfiller_GetVerificationTypesByJobRole(?)');
+            $stmt = $pdo->prepare(
+                'SELECT j.verification_type_id, j.is_enabled, j.sort_order, j.required_count,
+                        t.type_name, t.type_category
+                   FROM Vati_Payfiller_Job_Role_Verification_Types j
+                   LEFT JOIN Vati_Payfiller_Verification_Types t ON t.verification_type_id = j.verification_type_id
+                  WHERE j.job_role_id = ?
+                  ORDER BY COALESCE(j.sort_order, 0) ASC, COALESCE(t.type_name, "") ASC'
+            );
             $stmt->execute([$jobRoleId]);
             $types = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-            while ($stmt->nextRowset()) {
+        } catch (Throwable $e) {
+            try {
+                $stmt = $pdo->prepare('CALL SP_Vati_Payfiller_GetVerificationTypesByJobRole(?)');
+                $stmt->execute([$jobRoleId]);
+                $types = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+                while ($stmt->nextRowset()) {
+                }
+            } catch (Throwable $e2) {
+                $types = [];
+            }
+        }
+
+        try {
+            $stageStmt = $pdo->prepare(
+                'SELECT s.verification_type_id, s.is_active AS is_enabled, s.execution_group AS sort_order,
+                        1 AS required_count, t.type_name, t.type_category
+                   FROM Vati_Payfiller_Job_Role_Stage_Steps s
+                   LEFT JOIN Vati_Payfiller_Verification_Types t ON t.verification_type_id = s.verification_type_id
+                  WHERE s.job_role_id = ?
+                  ORDER BY COALESCE(s.stage_key, "") ASC, COALESCE(s.execution_group, 0) ASC, COALESCE(t.type_name, "") ASC'
+            );
+            $stageStmt->execute([$jobRoleId]);
+            $stageTypes = $stageStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+            if (!empty($stageTypes)) {
+                $existingByTypeId = [];
+                foreach ($types as $existingType) {
+                    $existingVtId = isset($existingType['verification_type_id']) ? (int)$existingType['verification_type_id'] : 0;
+                    if ($existingVtId > 0) {
+                        $existingByTypeId[$existingVtId] = true;
+                    }
+                }
+
+                foreach ($stageTypes as $stageType) {
+                    $stageVtId = isset($stageType['verification_type_id']) ? (int)$stageType['verification_type_id'] : 0;
+                    if ($stageVtId <= 0 || isset($existingByTypeId[$stageVtId])) {
+                        continue;
+                    }
+                    $types[] = $stageType;
+                    $existingByTypeId[$stageVtId] = true;
+                }
             }
         } catch (Throwable $e) {
-            $types = [];
         }
     }
 
     $shouldFallbackToAllPages = ($jobRoleId <= 0 || count($types) === 0);
 
-    // Common pages always present
     $enabledPages = [
         'review-confirmation',
         'basic-details',
-        'identification',
-        'contact',
-        'reference',
         'success'
     ];
 
     $requiredCounts = [];
+    $components = [];
+    $contactSections = [
+        'current_address' => false,
+        'permanent_address' => false,
+    ];
+    $referenceSections = [
+        'education_reference' => false,
+        'employment_reference' => false,
+    ];
 
     // Fallback map for setups where SP does not return required_count.
     $requiredByTypeId = [];
@@ -227,12 +232,98 @@ try {
         }
         if ($req <= 0) $req = 1;
 
-        $pages = map_verification_type_to_pages($name, $cat);
-        foreach ($pages as $p) {
-            $enabledPages[] = $p;
-            if (!isset($requiredCounts[$p]) || (int)$requiredCounts[$p] < $req) {
-                $requiredCounts[$p] = $req;
+        $meta = resolve_component_meta($name, $cat);
+        $componentKey = (string)($meta['component_key'] ?? '');
+        $candidatePage = (string)($meta['candidate_page'] ?? '');
+        $candidateSubsection = (string)($meta['candidate_subsection'] ?? '');
+        $displayLabel = (string)($meta['display_label'] ?? $name);
+        $contactKeys = detect_contact_sections($name, $cat);
+        $referenceKeys = detect_reference_sections($name, $cat);
+        $addedComponent = false;
+
+        if (!empty($contactKeys)) {
+            $enabledPages[] = 'contact';
+            if (!isset($requiredCounts['contact']) || (int)$requiredCounts['contact'] < $req) {
+                $requiredCounts['contact'] = $req;
             }
+        }
+
+        if (!empty($referenceKeys)) {
+            $enabledPages[] = 'reference';
+            if (!isset($requiredCounts['reference']) || (int)$requiredCounts['reference'] < $req) {
+                $requiredCounts['reference'] = $req;
+            }
+        }
+
+        if ($candidatePage !== '') {
+            $enabledPages[] = $candidatePage;
+            if (!isset($requiredCounts[$candidatePage]) || (int)$requiredCounts[$candidatePage] < $req) {
+                $requiredCounts[$candidatePage] = $req;
+            }
+        }
+
+        foreach ($contactKeys as $sectionKey) {
+            $contactSections[$sectionKey] = true;
+            if (!isset($requiredCounts[$sectionKey]) || (int)$requiredCounts[$sectionKey] < $req) {
+                $requiredCounts[$sectionKey] = $req;
+            }
+            $components[] = [
+                'verification_type_id' => $vtId,
+                'type_name' => $name,
+                'type_category' => $cat,
+                'component_key' => $sectionKey,
+                'display_label' => resolve_component_label($sectionKey, ''),
+                'candidate_page' => 'contact',
+                'candidate_subsection' => $sectionKey,
+                'required_count' => $req,
+            ];
+            $addedComponent = true;
+        }
+
+        foreach ($referenceKeys as $sectionKey) {
+            $referenceSections[$sectionKey] = true;
+            if (!isset($requiredCounts[$sectionKey]) || (int)$requiredCounts[$sectionKey] < $req) {
+                $requiredCounts[$sectionKey] = $req;
+            }
+            $components[] = [
+                'verification_type_id' => $vtId,
+                'type_name' => $name,
+                'type_category' => $cat,
+                'component_key' => $sectionKey,
+                'display_label' => resolve_component_label($sectionKey, ''),
+                'candidate_page' => 'reference',
+                'candidate_subsection' => $sectionKey,
+                'required_count' => $req,
+            ];
+            $addedComponent = true;
+        }
+
+        if ($componentKey !== '') {
+            if (!isset($requiredCounts[$componentKey]) || (int)$requiredCounts[$componentKey] < $req) {
+                $requiredCounts[$componentKey] = $req;
+            }
+        }
+
+        if ($candidateSubsection !== '') {
+            if (isset($contactSections[$candidateSubsection])) {
+                $contactSections[$candidateSubsection] = true;
+            }
+            if (isset($referenceSections[$candidateSubsection])) {
+                $referenceSections[$candidateSubsection] = true;
+            }
+        }
+
+        if (!$addedComponent && ($candidatePage !== '' || $componentKey !== '')) {
+            $components[] = [
+                'verification_type_id' => $vtId,
+                'type_name' => $name,
+                'type_category' => $cat,
+                'component_key' => $componentKey,
+                'display_label' => $displayLabel,
+                'candidate_page' => $candidatePage,
+                'candidate_subsection' => $candidateSubsection,
+                'required_count' => $req,
+            ];
         }
     }
 
@@ -243,6 +334,15 @@ try {
     if ($shouldFallbackToAllPages) {
         $enabledPages = null;
         $requiredCounts = [];
+        $components = [];
+        $contactSections = [
+            'current_address' => false,
+            'permanent_address' => false,
+        ];
+        $referenceSections = [
+            'education_reference' => false,
+            'employment_reference' => false,
+        ];
     }
 
     echo json_encode([
@@ -255,7 +355,15 @@ try {
             'job_role_id' => $jobRoleId,
             'job_role' => $jobRoleName,
             'enabled_pages' => $enabledPages,
-            'required_counts' => $requiredCounts
+            'pages' => $enabledPages,
+            'components' => $components,
+            'required_counts' => $requiredCounts,
+            'sections' => [
+                'contact' => $contactSections,
+                'reference' => $referenceSections,
+            ],
+            'contact_sections' => $contactSections,
+            'reference_sections' => $referenceSections
         ]
     ]);
 

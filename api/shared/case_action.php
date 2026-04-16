@@ -3,6 +3,7 @@ header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/integration.php';
 
 auth_require_login(null);
 
@@ -147,7 +148,7 @@ try {
 
     $input = json_decode(file_get_contents('php://input'), true) ?: [];
 
-    $applicationId = isset($input['application_id']) ? trim((string)$input['application_id']) : '';
+    $applicationId = isset($input['application_id']) ? integration_normalize_application_id((string)$input['application_id']) : '';
     $action = isset($input['action']) ? strtolower(trim((string)$input['action'])) : '';
     $caseId = isset($input['case_id']) ? (int)$input['case_id'] : 0;
     $groupKey = isset($input['group']) ? strtoupper(trim((string)$input['group'])) : '';
@@ -301,13 +302,42 @@ try {
         // ignore
     }
 
+    $eventTypeMap = [
+        'hold' => 'application.status.changed',
+        'reject' => 'application.status.changed',
+        'stop_bgv' => 'application.closed',
+        'approve' => 'application.closed',
+    ];
+    $links = integration_deep_links($applicationId, $caseId > 0 ? $caseId : null);
+    $webhook = integration_send_webhook($eventTypeMap[$action] ?? 'application.status.changed', [
+        'applicationId' => $applicationId,
+        'caseId' => $caseId > 0 ? $caseId : null,
+        'currentStage' => $action,
+        'status' => trim((string)($caseStatus !== '' ? $caseStatus : ($appStatus ?? $action))),
+        'triggeredBy' => [
+            'userId' => $userId,
+            'role' => session_role_norm(),
+        ],
+        'triggeredAt' => gmdate('c'),
+        'metadata' => array_merge([
+            'action' => $action,
+            'group' => $groupKey !== '' ? $groupKey : null,
+            'applicationStatus' => $appStatus,
+        ], $links),
+    ]);
+
     echo json_encode([
         'status' => 1,
         'message' => 'Updated',
         'data' => [
             'application_id' => $applicationId,
+            'applicationId' => $applicationId,
             'case_status' => $caseStatus,
-            'application_status' => $appStatus
+            'application_status' => $appStatus,
+            'applicationUrl' => $links['applicationUrl'],
+            'candidateUrl' => $links['candidateUrl'],
+            'timelineUrl' => $links['timelineUrl'],
+            'webhook_event_id' => $webhook['eventId'] ?? null
         ]
     ]);
 

@@ -2,6 +2,7 @@
 header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../../includes/component_resolver.php';
 
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, OPTIONS');
@@ -174,6 +175,10 @@ try {
             'verification_type_id' => isset($s['verification_type_id']) ? (int)$s['verification_type_id'] : 0,
             'type_name' => (string)($s['type_name'] ?? ''),
             'type_category' => (string)($s['type_category'] ?? ''),
+            'component_key' => resolve_component_key((string)($s['type_name'] ?? ''), (string)($s['type_category'] ?? '')),
+            'display_label' => resolve_component_label((string)($s['type_name'] ?? ''), (string)($s['type_category'] ?? '')),
+            'candidate_page' => resolve_component_page((string)($s['type_name'] ?? ''), (string)($s['type_category'] ?? '')),
+            'candidate_subsection' => resolve_component_subsection((string)($s['type_name'] ?? ''), (string)($s['type_category'] ?? '')),
             'execution_group' => isset($s['execution_group']) ? (int)$s['execution_group'] : 1,
             'assigned_role' => (string)($s['assigned_role'] ?? ''),
             'is_active' => isset($s['is_active']) ? (int)$s['is_active'] : 1,

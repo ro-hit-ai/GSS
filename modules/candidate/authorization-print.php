@@ -14,12 +14,9 @@ $user_name = $_SESSION['user_name'] ?? 'Candidate';
     <title>Authorization Form - ATTEST360</title>
     <link rel="stylesheet"
           href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-    <style>
-        body { padding: 30px; font-size: 14px; }
-        .auth-box { border:1px solid #ccc; padding:25px; }
-    </style>
+    <link rel="stylesheet" href="<?php echo htmlspecialchars(app_url('/assets/css/candidate.css')); ?>">
 </head>
-<body onload="window.print();">
+<body class="candidate-auth-print" onload="window.print();">
 
     <div class="container">
         <h3 class="mb-3 text-center">Release and Authorization Form</h3>

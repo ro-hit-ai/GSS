@@ -101,7 +101,7 @@ if ($photoPathRaw !== '' && strpos($photoPathRaw, '/uploads/') === 0) {
 ?>
 
 
-<div class="candidate-form compact-form">
+<div class="candidate-form compact-form create-like-spacing">
 
     <!-- HEADER -->
     <div class="form-header">
@@ -114,43 +114,36 @@ if ($photoPathRaw !== '' && strpos($photoPathRaw, '/uploads/') === 0) {
 
     <form id="basic-detailsForm" enctype="multipart/form-data">
 
-        <!-- ================= TOP GRID (FORM + PHOTO) ================= -->
         <div class="basic-top-grid">
 
-            <!-- LEFT : FORM -->
             <div class="basic-form-area">
-                <div class="form-grid compact-grid">
-
-                    <!-- First Name -->
+                <div class="form-row-4 basic-details-row">
                     <div class="form-field">
-                        <div class="form-control double-border compact-control">
+                        <div class="form-control compact-control">
                             <label class="compact-label">First Name <span class="required">*</span></label>
                             <input type="text" name="first_name" required class="compact-input"<?php echo $lockNameEmail ? ' readonly' : ''; ?>
                                    value="<?= htmlspecialchars($row['first_name'] ?? '') ?>">
                         </div>
                     </div>
 
-                    <!-- Middle Name -->
                     <div class="form-field">
-                        <div class="form-control double-border compact-control">
+                        <div class="form-control compact-control">
                             <label class="compact-label">Middle Name</label>
                             <input type="text" name="middle_name" class="compact-input"<?php echo $lockNameEmail ? ' readonly' : ''; ?>
                                    value="<?= htmlspecialchars($row['middle_name'] ?? '') ?>">
                         </div>
                     </div>
 
-                    <!-- Last Name -->
                     <div class="form-field">
-                        <div class="form-control double-border compact-control">
+                        <div class="form-control compact-control">
                             <label class="compact-label">Last Name <span class="required">*</span></label>
                             <input type="text" name="last_name" required class="compact-input"<?php echo $lockNameEmail ? ' readonly' : ''; ?>
                                    value="<?= htmlspecialchars($row['last_name'] ?? '') ?>">
                         </div>
                     </div>
 
-                    <!-- Gender -->
                     <div class="form-field">
-                        <div class="form-control double-border compact-control">
+                        <div class="form-control compact-control">
                             <label class="compact-label">Gender <span class="required">*</span></label>
                             <select name="gender" required class="compact-select">
                                 <option value="">Select</option>
@@ -162,75 +155,72 @@ if ($photoPathRaw !== '' && strpos($photoPathRaw, '/uploads/') === 0) {
                             </select>
                         </div>
                     </div>
+                </div>
 
-                    <!-- Date of Birth -->
+                <div class="form-row-4 basic-details-row">
                     <div class="form-field">
-                        <div class="form-control double-border compact-control">
+                        <div class="form-control compact-control">
                             <label class="compact-label">Date of Birth <span class="required">*</span></label>
                             <input type="date" name="dob" required class="compact-input" max="<?= htmlspecialchars($adultDobMax) ?>"
                                    value="<?= htmlspecialchars($row['dob'] ?? '') ?>">
                         </div>
                     </div>
 
-                    <!-- Blood Group -->
                     <div class="form-field">
-                        <div class="form-control double-border compact-control">
-                            <label class="compact-label">Blood Group <span class="required">*</span></label>
-                            <select name="blood_group" required class="compact-select">
-                                <option value="">Select</option>
-                                <?php foreach(['O+','O-','A+','A-','B+','B-','AB+','AB-'] as $bg): ?>
-                                    <option value="<?= $bg ?>" <?= ($row['blood_group'] ?? '') === $bg ? 'selected' : '' ?>>
-                                        <?= $bg ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                    </div>
-
-                    <!-- Father's Name -->
-                    <div class="form-field">
-                        <div class="form-control double-border compact-control">
+                        <div class="form-control compact-control">
                             <label class="compact-label">Father's Name <span class="required">*</span></label>
                             <input type="text" name="father_name" required class="compact-input"
                                    value="<?= htmlspecialchars($row['father_name'] ?? '') ?>">
                         </div>
                     </div>
 
-                    <!-- Mother's Name -->
                     <div class="form-field">
-                        <div class="form-control double-border compact-control">
+                        <div class="form-control compact-control">
                             <label class="compact-label">Mother's Name</label>
                             <input type="text" name="mother_name" class="compact-input"
                                    value="<?= htmlspecialchars($row['mother_name'] ?? '') ?>">
                         </div>
                     </div>
 
+                    <div class="form-field">
+                        <div class="form-control compact-control">
+                            <label class="compact-label">Mobile <span class="required">*</span></label>
+                            <div class="phone-input-container compact-phone">
+                                <select name="mobile_country_code" class="compact-select">
+                                    <?php foreach (['+91','+1','+44','+61','+81','+86'] as $c): ?>
+                                        <option value="<?= $c ?>" <?= $mobileCode === $c ? 'selected' : '' ?>>
+                                            <?= $c ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <input type="tel" name="mobile" required class="compact-input"
+                                       value="<?= htmlspecialchars($mobileNumber) ?>">
+                            </div>
+                        </div>
+                    </div>
                 </div>
+
             </div>
 
-            <!-- RIGHT : PHOTO -->
             <div class="basic-photo-area">
-                <div class="form-control double-border compact-control" style="min-height: 55px; padding: 6px 8px;">
+                <div class="basic-photo-card">
                     <label class="compact-label">Profile Photo</label>
-                    
-                    <div class="photo-wrapper compact-photo" id="photoUploadTrigger" 
-                         style="height: 70px; margin-top: 2px;">
 
+                    <div class="photo-wrapper compact-photo" id="photoUploadTrigger">
                         <?php if (!empty($photoPathRaw)): ?>
-                            <div class="photo-preview" style="height: 100%;">
-                                <img src="<?= htmlspecialchars($photoPathForView) ?>" alt="Profile Photo" style="height: 100%; object-fit: contain;">
-                                <button type="button" class="photo-remove-btn compact-btn" style="top: 4px; right: 4px;">
+                            <div class="photo-preview has-image">
+                                <img src="<?= htmlspecialchars($photoPathForView) ?>" alt="Profile Photo">
+                                <button type="button" class="photo-remove-btn compact-btn" aria-label="Remove profile photo">
                                     <i class="fas fa-times"></i>
                                 </button>
                             </div>
                         <?php else: ?>
-                            <div class="photo-upload-box" style="padding: 4px;">
-                                <div class="upload-icon"><i class="fas fa-camera" style="font-size: 12px;"></i></div>
-                                <div class="upload-text compact-label" style="font-size: 11px; margin-top: 2px;">Upload Photo</div>
-                                <div class="upload-hint compact-hint" style="font-size: 9px; margin-top: 1px;">JPG/JPEG only (5MB max)</div>
+                            <div class="photo-upload-box">
+                                <div class="upload-icon"><i class="fas fa-camera"></i></div>
+                                <div class="upload-text">Upload Photo</div>
+                                <div class="upload-hint compact-hint">JPG/JPEG only (5MB max)</div>
                             </div>
                         <?php endif; ?>
-
                     </div>
                 </div>
 
@@ -240,76 +230,27 @@ if ($photoPathRaw !== '' && strpos($photoPathRaw, '/uploads/') === 0) {
                        accept=".jpg,.jpeg,image/jpeg"
                        class="d-none">
             </div>
-
         </div>
 
-        <!-- ================= MIDDLE SECTION ================= -->
-        <div class="form-grid compact-grid mt-3">
-
-            <!-- Marital Status -->
-            <div class="form-field">
-                <div class="form-control double-border compact-control">
-                    <label class="compact-label">Marital Status <span class="required">*</span></label>
-                    <select name="marital_status" required class="compact-select" id="maritalStatus">
-                        <option value="">Select</option>
-                        <?php foreach (['single','married','divorced','widowed'] as $m): ?>
-                            <option value="<?= $m ?>" <?= ($row['marital_status'] ?? '') === $m ? 'selected' : '' ?>>
-                                <?= ucfirst($m) ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-            </div>
-
-            <!-- Spouse Name (Always shown, placed beside Marital Status) -->
-            <div class="form-field">
-                <div class="form-control double-border compact-control">
-                    <label class="compact-label">Spouse Name</label>
-                    <input type="text" name="spouse_name" class="compact-input" 
-                           placeholder="Enter name or N/A"
-                           value="<?= htmlspecialchars($row['spouse_name'] ?? '') ?>">
-                </div>
-            </div>
-
-            <!-- Mobile Number -->
-            <div class="form-field">
-                <div class="form-control double-border compact-control">
-                    <label class="compact-label">Mobile <span class="required">*</span></label>
-                    <div class="phone-input-container compact-phone">
-                        <select name="mobile_country_code" class="compact-select">
-                            <?php foreach (['+91','+1','+44','+61','+81','+86'] as $c): ?>
-                                <option value="<?= $c ?>" <?= $mobileCode === $c ? 'selected' : '' ?>>
-                                    <?= $c ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                        <input type="tel" name="mobile" required class="compact-input"
-                               value="<?= htmlspecialchars($mobileNumber) ?>">
-                    </div>
-                </div>
-            </div>
-
-            <!-- Email Address -->
-            <div class="form-field">
-                <div class="form-control double-border compact-control">
+        <div class="form-row-4 mt-3 basic-details-contact-row">
+            <div class="form-field basic-email-field">
+                <div class="form-control compact-control">
                     <label class="compact-label">Email <span class="required">*</span></label>
                     <input type="email" name="email" required class="compact-input"<?php echo $lockNameEmail ? ' readonly' : ''; ?>
                            value="<?= htmlspecialchars($row['email'] ?? '') ?>">
                 </div>
             </div>
 
-            <!-- Landline -->
             <div class="form-field">
-                <div class="form-control double-border compact-control">
-                    <label class="compact-label">Landline</label>
+                <div class="form-control compact-control">
+                    <label class="compact-label">Alternate Mobile</label>
                     <input type="tel" name="landline" class="compact-input"
                            value="<?= htmlspecialchars($row['landline'] ?? '') ?>">
                 </div>
             </div>
 
-            <!-- Country -->
             <div class="form-field">
-                <div class="form-control double-border compact-control">
+                <div class="form-control compact-control">
                     <label class="compact-label">Country <span class="required">*</span></label>
                     <select name="country" required class="compact-select">
                         <option value="">Select</option>
@@ -325,9 +266,8 @@ if ($photoPathRaw !== '' && strpos($photoPathRaw, '/uploads/') === 0) {
                 </div>
             </div>
 
-            <!-- State -->
             <div class="form-field">
-                <div class="form-control double-border compact-control">
+                <div class="form-control compact-control">
                     <label class="compact-label">State <span class="required">*</span></label>
                     <select name="state" required class="compact-select">
                         <option value="">Select</option>
@@ -342,58 +282,41 @@ if ($photoPathRaw !== '' && strpos($photoPathRaw, '/uploads/') === 0) {
                     </select>
                 </div>
             </div>
+        </div>
 
-            <!-- City/Village -->
+        <div class="form-row-4 mt-3 basic-details-bottom-fields">
             <div class="form-field">
-                <div class="form-control double-border compact-control">
+                <div class="form-control compact-control">
                     <label class="compact-label">City/Village <span class="required">*</span></label>
                     <input type="text" name="city_village" required class="compact-input"
                            value="<?= htmlspecialchars($row['city_village'] ?? '') ?>">
                 </div>
             </div>
 
-            <!-- District -->
             <div class="form-field">
-                <div class="form-control double-border compact-control">
+                <div class="form-control compact-control">
                     <label class="compact-label">District <span class="required">*</span></label>
                     <input type="text" name="district" required class="compact-input"
                            value="<?= htmlspecialchars($row['district'] ?? '') ?>">
                 </div>
             </div>
 
-            <!-- Pincode -->
             <div class="form-field">
-                <div class="form-control double-border compact-control">
+                <div class="form-control compact-control">
                     <label class="compact-label">Pincode <span class="required">*</span></label>
                     <input type="text" name="pincode" required class="compact-input" inputmode="numeric" maxlength="6" pattern="\d{6}"
                            value="<?= htmlspecialchars($row['pincode'] ?? '') ?>">
                 </div>
             </div>
 
-            <!-- Citizenship -->
-            <div class="form-field">
-                <div class="form-control double-border compact-control">
-                    <label class="compact-label">Citizenship <span class="required">*</span></label>
-                    <select name="nationality" required class="compact-select">
-                        <option value="">Select</option>
-                        <?php foreach ($citizenshipOptions as $c): ?>
-                            <option value="<?= $c ?>" <?= ($row['nationality'] ?? '') === $c ? 'selected' : '' ?>>
-                                <?= $c ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-            </div>
 
-            <!-- Other Name -->
             <div class="form-field">
-                <div class="form-control double-border compact-control">
-                    <label class="compact-label">Alias or Other Name</label>
+                <div class="form-control compact-control">
+                    <label class="compact-label">Are you known by any Other Name</label>
                     <input type="text" name="other_name" class="compact-input"
                            value="<?= htmlspecialchars($row['other_name'] ?? '') ?>">
                 </div>
             </div>
-
         </div>
 
         <!-- Hidden Fields -->
@@ -406,9 +329,9 @@ if ($photoPathRaw !== '' && strpos($photoPathRaw, '/uploads/') === 0) {
         <div class="form-footer compact-footer">
             <div></div> <!-- Left spacer -->
             <div class="footer-actions-right">
-                <button type="button" class="btn-secondary save-draft-btn" data-page="basic-details">
+                <!-- <button type="button" class="btn-secondary save-draft-btn" data-page="basic-details">
                     Save Draft
-                </button>
+                </button> -->
                 <button type="button" class="btn-primary external-submit-btn" data-form="basic-detailsForm">
                     Next <i class="fas fa-arrow-right ms-2"></i>
                 </button>
@@ -421,28 +344,10 @@ if ($photoPathRaw !== '' && strpos($photoPathRaw, '/uploads/') === 0) {
 <script>
     window.APP_BASE_URL = window.APP_BASE_URL || "<?= defined('APP_BASE_URL') ? htmlspecialchars(APP_BASE_URL) : '' ?>";
     
-    // JavaScript to auto-fill "N/A" when marital status changes to non-married
     document.addEventListener('DOMContentLoaded', function() {
-        const maritalStatusSelect = document.getElementById('maritalStatus');
-        const spouseNameInput = document.querySelector('input[name="spouse_name"]');
         const dobInput = document.querySelector('input[name="dob"]');
         const pincodeInput = document.querySelector('input[name="pincode"]');
         const photoInput = document.getElementById('photoInput');
-        
-        if (maritalStatusSelect && spouseNameInput) {
-            maritalStatusSelect.addEventListener('change', function() {
-                if (this.value !== 'married') {
-                    spouseNameInput.value = 'N/A';
-                } else if (spouseNameInput.value === 'N/A') {
-                    spouseNameInput.value = '';
-                }
-            });
-            
-            // Initialize on page load
-            if (maritalStatusSelect.value !== 'married' && !spouseNameInput.value) {
-                spouseNameInput.value = 'N/A';
-            }
-        }
 
         if (dobInput) {
             try {

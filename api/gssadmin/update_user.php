@@ -92,20 +92,6 @@ try {
     $isActive = post_tinyint_nullable('is_active');
     $allowedSections = post_allowed_sections();
 
-    if ($role === 'validator') {
-        $set = [];
-        foreach (preg_split('/[\s,|]+/', strtolower($allowedSections)) as $k) {
-            $k = trim((string)$k);
-            if ($k === '') continue;
-            if ($k === 'social_media' || $k === 'social-media' || $k === 'social media') $k = 'socialmedia';
-            if ($k === 'e_court' || $k === 'e-court' || $k === 'e court') $k = 'ecourt';
-            $set[$k] = true;
-        }
-        $set['socialmedia'] = true;
-        $set['ecourt'] = true;
-        $allowedSections = implode(',', array_keys($set));
-    }
-
     if ($userId <= 0) {
         http_response_code(400);
         echo json_encode(['status' => 0, 'message' => 'user_id is required']);

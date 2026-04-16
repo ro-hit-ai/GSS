@@ -14,7 +14,6 @@ class BasicDetails {
         this._initialized = true;
 
         this.initForm();
-        this.initMaritalLogic();
         this.initPhotoUpload();
         this.initInputConstraints();
 
@@ -72,39 +71,6 @@ class BasicDetails {
                 await this.submitFinal();
             });
         }
-    }
-
-    /* ================= MARITAL STATUS LOGIC ================= */
-
-    static initMaritalLogic() {
-        const marital = document.getElementById("maritalStatus");
-        const spouseInput = document.querySelector('input[name="spouse_name"]');
-
-        if (!marital || !spouseInput) return;
-
-        // Function to handle marital status changes
-        const handleMaritalChange = () => {
-            const isMarried = marital.value === "married";
-            
-            if (!isMarried && !spouseInput.value) {
-                spouseInput.value = "N/A";
-            } else if (isMarried && spouseInput.value === "N/A") {
-                spouseInput.value = "";
-            }
-        };
-
-        // Initialize on page load
-        handleMaritalChange();
-
-        // Add change listener
-        this.on(marital, "change", handleMaritalChange);
-
-        // Also handle when user manually clears/enters spouse name
-        this.on(spouseInput, "input", () => {
-            if (marital.value !== "married" && spouseInput.value === "") {
-                spouseInput.value = "N/A";
-            }
-        });
     }
 
     static initPhotoUpload() {
@@ -404,6 +370,16 @@ class BasicDetails {
     /* ================= NOTIFICATION ================= */
 
     static showNotification(message, isError = false) {
+        if (window.CandidateNotify) {
+            window.CandidateNotify.show({
+                type: isError ? 'error' : 'success',
+                title: isError ? 'Basic details not saved' : 'Basic details saved',
+                message: String(message || '').replace(/^[^\w]+/, ''),
+                sticky: !!isError
+            });
+            return;
+        }
+
         const existingNotif = document.querySelector('.basic-details-notification');
         if (existingNotif) {
             existingNotif.remove();

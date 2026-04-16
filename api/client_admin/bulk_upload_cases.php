@@ -363,23 +363,34 @@ try {
             try {
                 $candidateUsername = $applicationId;
 
-                $u = $pdo->prepare('CALL SP_Vati_Payfiller_CreateUser(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-                $u->execute([
-                    $clientId,
-                    $candidateUsername,
-                    $firstName,
-                    $middleName,
-                    $lastName,
-                    $mobile,
-                    $email,
-                    'candidate',
-                    $effectiveJoiningLocation,
-                    ''
-                ]);
-                $uRow = $u->fetch(PDO::FETCH_ASSOC) ?: [];
-                while ($u->nextRowset()) {
+                // Mirror single-create flow: if credentials already exist for this APPID, reuse them.
+                $credCheck = $pdo->prepare('SELECT user_id FROM Vati_Payfiller_User_Credentials WHERE username = ? AND is_active = 1 LIMIT 1');
+                $credCheck->execute([$candidateUsername]);
+                $existingUid = (int)($credCheck->fetchColumn() ?: 0);
+
+                if ($existingUid > 0) {
+                    $candidateUserId = $existingUid;
                 }
-                $candidateUserId = isset($uRow['user_id']) ? (int)$uRow['user_id'] : 0;
+
+                if ($candidateUserId <= 0) {
+                    $u = $pdo->prepare('CALL SP_Vati_Payfiller_CreateUser(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                    $u->execute([
+                        $clientId,
+                        $candidateUsername,
+                        $firstName,
+                        $middleName,
+                        $lastName,
+                        $mobile,
+                        $email,
+                        'candidate',
+                        $effectiveJoiningLocation,
+                        ''
+                    ]);
+                    $uRow = $u->fetch(PDO::FETCH_ASSOC) ?: [];
+                    while ($u->nextRowset()) {
+                    }
+                    $candidateUserId = isset($uRow['user_id']) ? (int)$uRow['user_id'] : 0;
+                }
 
                 if ($candidateUserId > 0) {
                     if ($tempPassword === '') {
@@ -412,8 +423,7 @@ try {
                     $cred->execute([$candidateUserId, $candidateUsername, $tempPassword]);
                 }
             } catch (Throwable $e) {
-                $candidateUserId = 0;
-                $tempPassword = '';
+                // Non-fatal: keep bulk flow moving, but do not overwrite a temp password if it was already generated.
             }
 
             if ($candidateUserId > 0 && $tempPassword === '') {

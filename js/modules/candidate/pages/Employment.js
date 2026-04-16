@@ -14,6 +14,20 @@ class EmploymentManager extends TabManager {
         this.currentlyEmployed = 'no';
         this.contactEmployer = 'no';
         this.requiredCount = 0;
+        this.configuredRequiredCount = 0;
+        this.lastNonFresherCount = 1;
+        this.docTypeOptions = {
+            yes: [
+                { value: 'payslip', label: 'Payslip' },
+                { value: 'appointment_letter', label: 'Appointment Letter' },
+                { value: 'resignation_letter', label: 'Resignation Letter' }
+            ],
+            no: [
+                { value: 'experience_letter', label: 'Experience Letter' },
+                { value: 'service_letter', label: 'Service Letter' },
+                { value: 'relieving_letter', label: 'Relieving Letter' }
+            ]
+        };
     }
 
     async init() {
@@ -25,12 +39,15 @@ class EmploymentManager extends TabManager {
             var req = window.CANDIDATE_CASE_CONFIG && window.CANDIDATE_CASE_CONFIG.required_counts
                 ? parseInt(window.CANDIDATE_CASE_CONFIG.required_counts.employment || '0', 10) || 0
                 : 0;
-            if (this.isFresher) {
-                req = 1;
-            }
-            this.requiredCount = req > 0 ? req : 0;
-            if (req > 0 && this.countSelect) {
-                this.countSelect.value = String(req);
+            this.configuredRequiredCount = req > 0 ? req : 0;
+            this.requiredCount = this.configuredRequiredCount;
+
+            var initialCount = this.isFresher
+                ? 1
+                : this.configuredRequiredCount;
+
+            if (initialCount > 0 && this.countSelect) {
+                this.countSelect.value = String(initialCount);
                 this.handleCountChange();
             }
 
@@ -55,8 +72,10 @@ class EmploymentManager extends TabManager {
 
         this.setupFormHandlers();
         this.setupFileHandlers();
+        this.setupRelievingDateHandlers();
         this.setupInsufficientDocsHandlers();
         this.loadFromLocalStorage();
+        this.lastNonFresherCount = Math.max(this.cards.length, this.configuredRequiredCount || 0, 1);
         this.setupRadioHandlers();
         this.applyFresherUI(this.isFresher);
 
@@ -148,7 +167,6 @@ class EmploymentManager extends TabManager {
             'employer_name[]': data.employer_name,
             'job_title[]': data.job_title,
             'employee_id[]': data.employee_id,
-            'employer_address[]': data.employer_address,
             'reason_leaving[]': data.reason_leaving,
             'hr_manager_name[]': data.hr_manager_name,
             'hr_manager_phone[]': data.hr_manager_phone,
@@ -164,6 +182,11 @@ class EmploymentManager extends TabManager {
                 el.value = value;
             }
         });
+        const employmentDocType = card.querySelector('[name="employment_doc_type[]"]');
+        if (employmentDocType) {
+            employmentDocType.value = data.employment_doc_type || "";
+        }
+
         
         // Set dates
         if (data.joining_date) {
@@ -230,6 +253,7 @@ class EmploymentManager extends TabManager {
             } else {
                 radioBlock.style.display = 'none';
                 console.log('   Hiding radio block for card ' + index);
+                this.updateEmploymentProofOptions(card, "no");
             }
         }
 
@@ -382,13 +406,22 @@ class EmploymentManager extends TabManager {
                 const allowed = ['pdf', 'jpg', 'jpeg', 'png'];
                 const validation = this.validateUploadFile(file, allowed, 10 * 1024 * 1024);
                 if (file && !validation.ok) {
-                    alert(validation.message);
+                    if (window.CandidateNotify) {
+                        window.CandidateNotify.error(validation.message, {
+                            title: 'Invalid upload',
+                            sticky: false,
+                            timeout: 4200
+                        });
+                        window.CandidateNotify.setFieldError(box || input, validation.message);
+                    }
                     input.value = '';
                     this.clearUploadBox(box);
                     if (box) {
                         const errEl = box.querySelector('[data-file-error]');
                         if (errEl) errEl.textContent = validation.message;
                     }
+                } else if (box && window.CandidateNotify) {
+                    window.CandidateNotify.clearFieldError(box);
                 }
 
                 if (card && input.files.length > 0) {
@@ -408,12 +441,38 @@ class EmploymentManager extends TabManager {
 
                     if (file && box) {
                         const url = URL.createObjectURL(file);
-                        this.setUploadBox(box, file.name, url, true);
+                        this.setUploadBox(box, file.name, url, true, file.size);
                     }
                     this.updateTabStatus();
                 }
             }
         });
+    }
+
+    setupRelievingDateHandlers() {
+        document.addEventListener('input', (e) => {
+            if (!e.target.matches('input[name="relieving_date[]"]')) return;
+            if (e.target.type !== 'text') return;
+
+            e.target.value = this.formatDdMmYyyyInput(e.target.value);
+        });
+    }
+
+    formatDdMmYyyyInput(value) {
+        const digits = String(value || '').replace(/\D/g, '').slice(0, 8);
+        const parts = [];
+
+        if (digits.length > 0) {
+            parts.push(digits.slice(0, 2));
+        }
+        if (digits.length > 2) {
+            parts.push(digits.slice(2, 4));
+        }
+        if (digits.length > 4) {
+            parts.push(digits.slice(4, 8));
+        }
+
+        return parts.join('/');
     }
 
     setupRadioHandlers() {
@@ -445,24 +504,57 @@ class EmploymentManager extends TabManager {
     updateContactEmployer(card) {
         if (!card) return;
 
-        const contactEmployerField = card.querySelector('.contact-employer-field');
+        const contactEmployerField = card.querySelector(".contact-employer-field");
         const relievingDateInput = card.querySelector('[name="relieving_date[]"]');
 
         if (!contactEmployerField) return;
 
-        if (this.currentlyEmployed === 'yes') {
-            contactEmployerField.style.display = 'block';
+        if (this.currentlyEmployed === "yes") {
+            contactEmployerField.style.display = "block";
             if (relievingDateInput) {
-                relievingDateInput.value = '';
-                relievingDateInput.disabled = true;
-                relievingDateInput.placeholder = 'Not applicable for current employment';
+                relievingDateInput.type = "text";
+                relievingDateInput.value = "";
+                relievingDateInput.disabled = false;
+                relievingDateInput.required = false;
+                relievingDateInput.placeholder = "DD/MM/YYYY";
+                relievingDateInput.inputMode = "numeric";
+                relievingDateInput.pattern = "\\d{2}/\\d{2}/\\d{4}";
             }
         } else {
-            contactEmployerField.style.display = 'none';
+            contactEmployerField.style.display = "none";
             if (relievingDateInput) {
+                relievingDateInput.type = "date";
                 relievingDateInput.disabled = false;
-                relievingDateInput.placeholder = '';
+                relievingDateInput.required = true;
+                relievingDateInput.placeholder = "";
+                relievingDateInput.removeAttribute("inputmode");
+                relievingDateInput.removeAttribute("pattern");
             }
+        }
+
+        this.updateEmploymentProofOptions(card, this.currentlyEmployed);
+    }
+
+    updateEmploymentProofOptions(card, employmentStatus) {
+        if (!card) return;
+
+        const docTypeSelect = card.querySelector('[name="employment_doc_type[]"]');
+        if (!docTypeSelect) return;
+
+        const normalizedStatus = employmentStatus === "yes" ? "yes" : "no";
+        const currentValue = docTypeSelect.value;
+        const options = this.docTypeOptions[normalizedStatus] || [];
+
+        docTypeSelect.innerHTML = '<option value="">Select document type</option>';
+        options.forEach((option) => {
+            const opt = document.createElement("option");
+            opt.value = option.value;
+            opt.textContent = option.label;
+            docTypeSelect.appendChild(opt);
+        });
+
+        if (options.some((option) => option.value === currentValue)) {
+            docTypeSelect.value = currentValue;
         }
     }
 
@@ -470,44 +562,106 @@ class EmploymentManager extends TabManager {
         this.isFresher = isFresher;
         console.log(`🎯 Applying Fresher UI: ${isFresher}`);
 
-        // Update count selector
         if (this.countSelect) {
-            var targetCount = 1;
-            if (!isFresher && this.requiredCount > 0) {
-                targetCount = this.requiredCount;
+            if (isFresher) {
+                this.lastNonFresherCount = Math.max(
+                    this.lastNonFresherCount,
+                    this.cards.length,
+                    this.configuredRequiredCount || 0,
+                    this.requiredCount || 0,
+                    1
+                );
+                this.countSelect.disabled = true;
+            } else {
+                var targetCount = Math.max(
+                    this.lastNonFresherCount,
+                    this.configuredRequiredCount || 0,
+                    this.requiredCount || 0,
+                    1
+                );
+
+                this.countSelect.value = String(targetCount);
+                this.countSelect.disabled = true;
+
+                if (this.cards.length !== targetCount) {
+                    this.handleCountChange();
+                }
             }
-            this.countSelect.value = String(targetCount);
-            this.countSelect.disabled = true;
-            this.handleCountChange();
         }
 
-        // Update tabs
         if (this.tabsContainer) {
-            const tabs = this.tabsContainer.querySelectorAll('.employment-tab');
+            this.tabsContainer.style.display = isFresher ? "none" : "";
+            const tabs = this.tabsContainer.querySelectorAll(".employment-tab");
             tabs.forEach((tab, i) => {
                 if (isFresher && i > 0) {
-                    tab.style.pointerEvents = 'none';
-                    tab.style.opacity = '0.4';
-                    tab.style.cursor = 'not-allowed';
+                    tab.style.pointerEvents = "none";
+                    tab.style.opacity = "0.4";
+                    tab.style.cursor = "not-allowed";
                 } else {
-                    tab.style.pointerEvents = '';
-                    tab.style.opacity = '';
-                    tab.style.cursor = '';
+                    tab.style.pointerEvents = "";
+                    tab.style.opacity = "";
+                    tab.style.cursor = "";
                 }
             });
         }
 
-        // Show first tab
+        const fresherMessage = document.getElementById("employmentFresherMessage");
+        if (fresherMessage) {
+            fresherMessage.style.display = isFresher ? "block" : "none";
+        }
+
+        this.cards.forEach((card, index) => {
+            if (!card) return;
+
+            const header = card.querySelector(".employment-card-header");
+            const body = card.querySelector(".employment-card-body");
+            const radioBlock = card.querySelector(".first-employer-fields");
+
+            if (index === 0) {
+                if (radioBlock) {
+                    radioBlock.style.display = "block";
+                }
+                if (header) {
+                    header.style.display = isFresher ? "none" : "";
+                }
+                if (body) {
+                    body.style.display = isFresher ? "none" : "";
+                }
+            } else {
+                card.style.display = isFresher ? "none" : (index === this.currentTab ? "block" : "none");
+            }
+        });
+
         if (isFresher) {
             this.showTab(0);
+        } else {
+            this.showTab(Math.min(this.currentTab, this.cards.length - 1));
         }
     }
 
     validateForm(isFinalSubmit = false) {
         console.log(`Validating employment form (isFinalSubmit: ${isFinalSubmit}, isFresher: ${this.isFresher})`);
+
+        const form = document.getElementById('employmentForm');
+        if (window.CandidateNotify && form) {
+            window.CandidateNotify.clearValidation(form);
+        }
+        if (this.isFresher) {
+            console.log("Skipping employment validation because fresher is selected");
+            return true;
+        }
+
         
         let isValid = true;
         const errors = [];
+        const addError = (field, message) => {
+            if (window.CandidateNotify) {
+                window.CandidateNotify.addFieldError(errors, field, message);
+            } else {
+                errors.push({ field, message });
+            }
+            isValid = false;
+        };
         
         const isCardEmpty = (card) => {
             if (!card) return true;
@@ -561,8 +715,6 @@ class EmploymentManager extends TabManager {
                     { selector: '[name="employer_name[]"]', label: 'Employer Name' },
                     { selector: '[name="job_title[]"]', label: 'Job Title' },
                     { selector: '[name="employee_id[]"]', label: 'Employee ID' },
-                    { selector: '[name="joining_date[]"]', label: 'Joining Date' },
-                    { selector: '[name="employer_address[]"]', label: 'Employer Address' },
                     { selector: '[name="reason_leaving[]"]', label: 'Reason for Leaving' }
                 ];
 
@@ -578,8 +730,7 @@ class EmploymentManager extends TabManager {
                 requiredFields.forEach(field => {
                     const input = card.querySelector(field.selector);
                     if (input && !input.value.trim() && !input.disabled) {
-                        errors.push(`Employer ${i + 1}: ${field.label} is required`);
-                        isValid = false;
+                        addError(input, `Employer ${i + 1}: ${field.label} is required`);
                     }
                 });
 
@@ -588,6 +739,12 @@ if (isFinalSubmit) {
 
     const insufficientCheckbox =
         card.querySelector('input[name="insufficient_employment_docs[]"]');
+
+        const employmentDocType =
+            card.querySelector('[name="employment_doc_type[]"]');
+        if (!employmentDocType || !employmentDocType.value.trim()) {
+            addError(employmentDocType || card, `Employer ${i + 1}: Employment document type is required`);
+        }
 
     const isInsufficient =
         !!(insufficientCheckbox && insufficientCheckbox.checked);
@@ -617,8 +774,9 @@ if (isFinalSubmit) {
             dbRow.employment_doc !== 'INSUFFICIENT_DOCUMENTS';
 
         if (!hasNewFile && !hasOldFile && !hasDbFile) {
-            errors.push(`Employer ${i + 1}: Employment proof is required`);
-            isValid = false;
+            const fileBox =
+                card.querySelector('[name="employment_doc[]"]')?.closest('.form-control')?.querySelector('[data-file-upload]');
+            addError(fileBox || card.querySelector('[name="employment_doc[]"]') || card, `Employer ${i + 1}: Employment proof is required`);
         }
     }
 }
@@ -628,21 +786,34 @@ if (isFinalSubmit) {
                 const joiningInput = card.querySelector('[name="joining_date[]"]');
                 const relievingInput = card.querySelector('[name="relieving_date[]"]');
                 
-                if (joiningInput && joiningInput.value && relievingInput && relievingInput.value && !relievingInput.disabled) {
+                if (
+                    this.currentlyEmployed === 'no' &&
+                    joiningInput &&
+                    joiningInput.value &&
+                    relievingInput &&
+                    relievingInput.value &&
+                    !relievingInput.disabled
+                ) {
                     const joiningDate = new Date(joiningInput.value);
                     const relievingDate = new Date(relievingInput.value);
                     
                     if (relievingDate <= joiningDate) {
-                        errors.push(`Employer ${i + 1}: Relieving date must be after joining date`);
-                        isValid = false;
+                        addError(relievingInput, `Employer ${i + 1}: Relieving date must be after joining date`);
                     }
                 }
             }
         }
         
         if (errors.length > 0) {
-            console.warn('Employment validation errors:', errors);
-            if (window.Router && typeof window.Router.showNotification === 'function') {
+            console.warn('Employment validation errors:', errors.map((error) => error.message || error));
+            if (window.CandidateNotify && form) {
+                window.CandidateNotify.validation({
+                    form,
+                    title: 'Employment details need attention',
+                    message: `Please fix ${errors.length} issue${errors.length === 1 ? '' : 's'} before continuing.`,
+                    errors
+                });
+            } else if (window.Router && typeof window.Router.showNotification === 'function') {
                 window.Router.showNotification('Please fix the highlighted employment errors before proceeding.', 'warning');
             } else if (typeof window.showAlert === 'function') {
                 window.showAlert({ type: 'warning', message: 'Please fix the highlighted employment errors before proceeding.' });
@@ -724,7 +895,7 @@ if (isFinalSubmit) {
                         employer_name: data['employer_name[]']?.[i],
                         job_title: data['job_title[]']?.[i],
                         employee_id: data['employee_id[]']?.[i],
-                        employer_address: data['employer_address[]']?.[i],
+                        employment_doc_type: data["employment_doc_type[]"]?.[i],
                         reason_leaving: data['reason_leaving[]']?.[i],
                         hr_manager_name: data['hr_manager_name[]']?.[i],
                         hr_manager_phone: data['hr_manager_phone[]']?.[i],
@@ -760,6 +931,25 @@ if (isFinalSubmit) {
 
         if (!isDraft && !this.validateForm(true)) {
             console.log("❌ Validation failed");
+            return;
+        }
+
+        if (!isDraft && this.isFresher) {
+            if (window.Forms && typeof window.Forms.clearDraft === "function") {
+                window.Forms.clearDraft("employment");
+            }
+
+            if (window.Router) {
+                if (window.Router.markCompleted) {
+                    window.Router.markCompleted("employment");
+                }
+                if (window.Router.navigateTo) {
+                    window.Router.navigateTo("reference");
+                    return;
+                }
+            }
+
+            window.location.href = `${window.APP_BASE_URL}/modules/candidate/reference.php`;
             return;
         }
 
@@ -833,31 +1023,19 @@ if (isFinalSubmit) {
     }
 
     showNotification(message, isError = false) {
-        const existingNotif = document.querySelector('.employment-notification');
-        if (existingNotif) {
-            existingNotif.remove();
+        if (window.CandidateNotify) {
+            window.CandidateNotify.show({
+                type: isError ? 'error' : 'success',
+                title: isError ? 'Employment details not saved' : 'Employment details saved',
+                message: String(message || '').replace(/^[^\w]+/, ''),
+                sticky: !!isError
+            });
+            return;
         }
-        
-        const notification = document.createElement('div');
-        notification.className = `employment-notification alert ${isError ? 'alert-danger' : 'alert-success'} alert-dismissible fade show`;
-        notification.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 9999;
-            min-width: 300px;
-        `;
-        notification.innerHTML = `
-            ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        `;
-        
-        document.body.appendChild(notification);
-        setTimeout(() => {
-            if (notification.parentNode) {
-                notification.remove();
-            }
-        }, 5000);
+
+        if (window.Router && typeof window.Router.showNotification === 'function') {
+            window.Router.showNotification(message, isError ? 'error' : 'success');
+        }
     }
 
     cardHasData(card) {

@@ -1,5 +1,6 @@
 document.addEventListener('DOMContentLoaded', function () {
     let currentUserId = null;
+    let lastLoginPayload = null;
 
     const loginForm   = document.getElementById('loginForm');
     const otpForm     = document.getElementById('otpForm');
@@ -11,6 +12,26 @@ document.addEventListener('DOMContentLoaded', function () {
     const slider      = document.getElementById('loginSlider');
     const loginPane   = document.getElementById('loginPane');
     const otpPane     = document.getElementById('otpPane');
+    const resendOtpBtn = document.getElementById('resendOtpBtn');
+    const backToLoginBtn = document.getElementById('backToLoginBtn');
+
+    function bindPasswordToggles() {
+        var buttons = document.querySelectorAll('[data-password-toggle]');
+        buttons.forEach(function (btn) {
+            if (btn.dataset.bound === '1') return;
+            btn.dataset.bound = '1';
+            btn.addEventListener('click', function () {
+                var targetId = btn.getAttribute('data-password-toggle') || '';
+                var input = targetId ? document.getElementById(targetId) : null;
+                if (!input) return;
+                var nextType = input.type === 'password' ? 'text' : 'password';
+                input.type = nextType;
+                btn.setAttribute('aria-pressed', nextType === 'text' ? 'true' : 'false');
+                btn.setAttribute('aria-label', nextType === 'text' ? 'Hide password' : 'Show password');
+                btn.style.color = nextType === 'text' ? '#0f172a' : '#64748b';
+            });
+        });
+    }
 
     function setMessage(message, type) {
         if (!loginMsgEl) return;
@@ -75,7 +96,8 @@ document.addEventListener('DOMContentLoaded', function () {
             'verifier': ['modules/verifier/'],
             'db_verifier': ['modules/db_verifier/'],
             'qa': ['modules/qa/'],
-            'client_admin': ['modules/client_admin/']
+            'client_admin': ['modules/client_admin/'],
+            'company_recruiter': ['modules/hr_recruiter/']
         };
 
         var list = allowPrefixes[r] || [];
@@ -121,6 +143,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         setMessage('Validating credentials, please wait...', 'info');
+        lastLoginPayload = { username: username, password: password, captcha: captcha };
 
         try {
             const response = await fetch('api/gssadmin/request_otp.php', {
@@ -151,6 +174,53 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         } catch (_err) {
             setMessage('Network error. Please try again.', 'error');
+        }
+    }
+
+    async function handleResendOtp() {
+        var payload = lastLoginPayload || {
+            username: usernameEl ? usernameEl.value.trim() : '',
+            password: passwordEl ? passwordEl.value.trim() : '',
+            captcha: captchaEl ? captchaEl.value.trim() : ''
+        };
+
+        if (!payload.username || !payload.password || !payload.captcha) {
+            setMessage('Please login again before requesting a new OTP.', 'error');
+            showLoginCard();
+            return;
+        }
+
+        setMessage('Sending a new OTP, please wait...', 'info');
+
+        try {
+            const response = await fetch('api/gssadmin/request_otp.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+                credentials: 'same-origin'
+            });
+
+            const data = await response.json().catch(function () { return {}; });
+
+            if (!response.ok || !data.success) {
+                setMessage(data.message || 'Unable to resend OTP. Please login again.', 'error');
+                return;
+            }
+
+            currentUserId = data.userId || currentUserId;
+            lastLoginPayload = payload;
+            setMessage(data.message || 'A new OTP has been sent.', 'success');
+
+            if (otpEl) {
+                if (data && data.otp) {
+                    otpEl.value = String(data.otp);
+                } else {
+                    otpEl.value = '';
+                }
+                otpEl.focus();
+            }
+        } catch (_err) {
+            setMessage('Network error while resending OTP. Please try again.', 'error');
         }
     }
 
@@ -190,10 +260,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             var redirectUrl = getRedirectFallback(data);
             setMessage('Login successful. Redirecting...', 'success');
-
-            setTimeout(function () {
-                window.location.href = redirectUrl;
-            }, 500);
+            window.location.href = redirectUrl;
         } catch (_err) {
             setMessage('Network error while verifying OTP. Please try again.', 'error');
         }
@@ -206,4 +273,22 @@ document.addEventListener('DOMContentLoaded', function () {
     if (otpForm) {
         otpForm.addEventListener('submit', handleOtpSubmit);
     }
+
+    if (resendOtpBtn) {
+        resendOtpBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            handleResendOtp();
+        });
+    }
+
+    if (backToLoginBtn) {
+        backToLoginBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            showLoginCard();
+            setMessage('', '');
+            if (otpEl) otpEl.value = '';
+        });
+    }
+
+    bindPasswordToggles();
 });

@@ -128,7 +128,26 @@ class Ecourt {
         this.setFormValue('not_applicable', d.not_applicable);
 
         if (d.evidence_document) {
-            this.showFilePreview(d.evidence_document, true);
+            const fileInput = document.querySelector('[name="evidence_document"]');
+            const box = fileInput ? fileInput.closest('.form-control')?.querySelector('[data-file-upload]') : null;
+            const base = window.APP_BASE_URL || '';
+            const url = `${base}/uploads/ecourt/${d.evidence_document}`;
+            if (box) {
+                // Use TabManager helper if available
+                if (window.TabManager && typeof window.TabManager.prototype.setUploadBox === 'function') {
+                    window.TabManager.prototype.setUploadBox.call(window.TabManager.prototype, box, d.evidence_document, url, false);
+                } else {
+                    const nameEl = box.querySelector('[data-file-name]');
+                    if (nameEl) {
+                        nameEl.textContent = d.evidence_document;
+                        nameEl.classList.add('preview-btn');
+                        nameEl.removeAttribute('disabled');
+                        nameEl.setAttribute('data-url', url);
+                        nameEl.setAttribute('data-name', d.evidence_document);
+                        nameEl.setAttribute('data-type', d.evidence_document.toLowerCase().endsWith('.pdf') ? 'pdf' : 'image');
+                    }
+                }
+            }
         }
 
         if (d.period_from_date && d.period_to_date && !d.period_duration_years) {
@@ -212,32 +231,59 @@ class Ecourt {
         const fileInput = document.querySelector('[name="evidence_document"]');
         if (!fileInput) return;
 
-        const isAllowedDoc = (file) => {
-            if (!file) return true;
-            const name = String(file.name || '').toLowerCase();
-            const type = String(file.type || '').toLowerCase();
-            const nameOk = /\.(pdf|jpe?g)$/.test(name);
-            const typeOk = (type === '' || type === 'application/pdf' || type === 'image/jpeg');
-            return nameOk && typeOk;
-        };
+        const box = fileInput.closest('.form-control')?.querySelector('[data-file-upload]');
+
+        document.addEventListener('click', (e) => {
+            const trigger = e.target.closest('[data-file-choose]');
+            if (!trigger) return;
+            e.preventDefault();
+            fileInput.click();
+        });
 
         this.addEventListener(fileInput, 'change', e => {
             const file = e.target.files[0];
             if (!file) return;
 
-            if (file.size > 5 * 1024 * 1024) {
-                this.showNotification('File must be under 5MB', true);
+            const allowed = ['pdf', 'jpg', 'jpeg', 'png'];
+            const name = String(file.name || '').toLowerCase();
+            const ext = name.includes('.') ? name.split('.').pop() : '';
+            if (!allowed.includes(ext)) {
+                this.showNotification('Only PDF, JPG, JPEG, PNG allowed', true);
                 e.target.value = '';
+                if (box) {
+                    const errEl = box.querySelector('[data-file-error]');
+                    if (errEl) errEl.textContent = 'Invalid file type. Only PDF, JPG, JPEG, PNG allowed.';
+                }
                 return;
             }
 
-            if (!isAllowedDoc(file)) {
-                this.showNotification('Only PDF or JPG/JPEG allowed', true);
+            if (file.size > 10 * 1024 * 1024) {
+                this.showNotification('File must be under 10MB', true);
                 e.target.value = '';
+                if (box) {
+                    const errEl = box.querySelector('[data-file-error]');
+                    if (errEl) errEl.textContent = 'File too large. Maximum 10MB allowed.';
+                }
                 return;
             }
 
-            this.showFilePreview(file.name, false);
+            if (box) {
+                if (window.TabManager && typeof window.TabManager.prototype.setUploadBox === 'function') {
+                    const url = URL.createObjectURL(file);
+                    window.TabManager.prototype.setUploadBox.call(window.TabManager.prototype, box, file.name, url, true, file.size);
+                } else {
+                    const nameEl = box.querySelector('[data-file-name]');
+                    if (nameEl) {
+                        nameEl.textContent = file.name;
+                        nameEl.classList.add('preview-btn');
+                        nameEl.removeAttribute('disabled');
+                        const url = URL.createObjectURL(file);
+                        nameEl.setAttribute('data-url', url);
+                        nameEl.setAttribute('data-name', file.name);
+                        nameEl.setAttribute('data-type', file.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'image');
+                    }
+                }
+            }
         });
     }
 

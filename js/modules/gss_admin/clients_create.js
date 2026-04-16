@@ -150,6 +150,51 @@ document.addEventListener('DOMContentLoaded', function () {
             .replace(/'/g, '&#039;');
     }
 
+    function strContainsCi(haystack, needle) {
+        return String(haystack || '').toLowerCase().indexOf(String(needle || '').toLowerCase()) !== -1;
+    }
+
+    function formatVerificationTypeLabel(typeName, typeCategory) {
+        var name = String(typeName || '').trim();
+        var category = String(typeCategory || '').trim();
+        var hay = (name + ' ' + category).toLowerCase();
+        var isReference = (
+            strContainsCi(hay, 'reference')
+            || strContainsCi(hay, 'referee')
+            || strContainsCi(hay, 'ref check')
+            || strContainsCi(hay, 'ref-check')
+        );
+
+        if (isReference) {
+            var isEducationReference = (
+                strContainsCi(hay, 'education')
+                || strContainsCi(hay, 'qualification')
+                || strContainsCi(hay, 'degree')
+                || strContainsCi(hay, 'college')
+                || strContainsCi(hay, 'university')
+            );
+            if (isEducationReference) return 'Education Reference';
+
+            var isEmploymentReference = (
+                strContainsCi(hay, 'employment')
+                || strContainsCi(hay, 'employee')
+                || strContainsCi(hay, 'employer')
+                || strContainsCi(hay, 'experience')
+                || strContainsCi(hay, 'work history')
+            );
+            if (isEmploymentReference) return 'Employment Reference';
+        }
+
+        return name;
+    }
+
+    function getAdminVerificationTypeLabel(t) {
+        if (!t) return '';
+        var rawName = String(t.type_name || '').trim();
+        if (rawName) return rawName;
+        return String(t.display_label || '').trim() || formatVerificationTypeLabel(t.type_name || '', t.type_category || '');
+    }
+
     function setTatCostMessage(text) {
         if (!tatCostHostEl) return;
         tatCostHostEl.innerHTML = '<div style="color:#6b7280; font-size:12px;">' + escapeHtml(text || '') + '</div>';
@@ -602,7 +647,38 @@ document.addEventListener('DOMContentLoaded', function () {
             || key.indexOf('driving licence') !== -1
             || key.indexOf('driving license') !== -1
         );
-        return key.indexOf('education') !== -1 || key.indexOf('employment') !== -1 || idLike;
+        var referenceLike = (
+            key.indexOf('reference') !== -1
+            || key.indexOf('referee') !== -1
+            || key.indexOf('ref check') !== -1
+            || key.indexOf('ref-check') !== -1
+        );
+        var ecourtLike = (
+            key.indexOf('ecourt') !== -1
+            || key.indexOf('e-court') !== -1
+            || key.indexOf('court') !== -1
+            || key.indexOf('judis') !== -1
+            || key.indexOf('judicial') !== -1
+            || key.indexOf('manupatra') !== -1
+            || key.indexOf('litigation') !== -1
+        );
+        var socialLike = (
+            key.indexOf('social') !== -1
+            || key.indexOf('social media') !== -1
+            || key.indexOf('world check') !== -1
+            || key.indexOf('worldcheck') !== -1
+            || key.indexOf('linkedin') !== -1
+            || key.indexOf('facebook') !== -1
+            || key.indexOf('instagram') !== -1
+            || key.indexOf('twitter') !== -1
+            || key.indexOf('x.com') !== -1
+        );
+        return key.indexOf('education') !== -1
+            || key.indexOf('employment') !== -1
+            || idLike
+            || referenceLike
+            || ecourtLike
+            || socialLike;
     }
 
     function getTypeCountInput(vtId) {
@@ -646,12 +722,13 @@ document.addEventListener('DOMContentLoaded', function () {
         rowsAll.forEach(function (t, idx) {
             var id = parseInt(t.verification_type_id || '0', 10) || 0;
             var name = String(t.type_name || '');
+            var displayName = getAdminVerificationTypeLabel(t);
             if (!id || !name) return;
 
             html += '<div class="cv-type-row" data-vt-id="' + escapeHtml(String(id)) + '" style="display:flex; gap:10px; align-items:center; padding:10px 12px; border-top:' + (idx === 0 ? '0' : '1px') + ' solid #f1f5f9; flex-wrap:wrap; background:#fff;">';
             html += '<label style="display:flex; gap:8px; align-items:center; min-width:160px;">';
             html += '<input type="checkbox" class="cv_vt_cb" data-vt-id="' + escapeHtml(String(id)) + '">';
-            html += '<span style="font-size:12px; font-weight:600; color:#0f172a;">' + escapeHtml(name) + '</span>';
+            html += '<span style="font-size:12px; font-weight:600; color:#0f172a;">' + escapeHtml(displayName) + '</span>';
             html += '</label>';
             html += '<div class="cv-type-inline">';
             html += '<div class="cv-type-inline-row" title="Internal TAT">';
@@ -717,15 +794,37 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    function applyJobRoleRequiredCounts(jobRoleId) {
+    function applyJobRoleRequiredCounts(jobRoleId, stageKey, levelKey) {
         var jrId = parseInt(jobRoleId || '0', 10) || 0;
         if (jrId <= 0 || !typesHostEl) return Promise.resolve();
 
-        return fetch((window.APP_BASE_URL || '').replace(/\/$/, '') + '/api/gssadmin/job_role_verification_types_get.php?job_role_id=' + encodeURIComponent(String(jrId)),
+        var url = (window.APP_BASE_URL || '').replace(/\/$/, '') + '/api/gssadmin/job_role_verification_types_get.php?job_role_id=' + encodeURIComponent(String(jrId));
+        var sk = String(stageKey || '').trim();
+        var lk = String(levelKey || '').trim();
+        if (sk) url += '&stage_key=' + encodeURIComponent(sk);
+        if (lk) url += '&level_key=' + encodeURIComponent(lk);
+
+        return fetch(url,
             { credentials: 'same-origin' })
             .then(function (res) { return res.json(); })
             .then(function (data) {
                 if (!data || data.status !== 1 || !Array.isArray(data.data)) return;
+                if (sk) {
+                    STAGE_TYPE_ORDER[sk] = data.data
+                        .slice()
+                        .sort(function (a, b) {
+                            var ao = parseInt((a && a.sort_order) ? a.sort_order : '0', 10) || 0;
+                            var bo = parseInt((b && b.sort_order) ? b.sort_order : '0', 10) || 0;
+                            if (ao !== bo) return ao - bo;
+                            var an = String((a && a.type_name) ? a.type_name : '');
+                            var bn = String((b && b.type_name) ? b.type_name : '');
+                            return an.localeCompare(bn);
+                        })
+                        .map(function (t) {
+                            return String(t && t.verification_type_id ? (parseInt(t.verification_type_id || '0', 10) || 0) : 0);
+                        })
+                        .filter(function (sid) { return sid && sid !== '0'; });
+                }
                 data.data.forEach(function (t) {
                     var id = t && t.verification_type_id ? parseInt(t.verification_type_id || '0', 10) || 0 : 0;
                     if (id <= 0) return;
@@ -736,39 +835,68 @@ document.addEventListener('DOMContentLoaded', function () {
             .catch(function () { });
     }
 
-    function collectSelectedVerificationTypesWithCounts() {
+    function collectSelectedVerificationTypesWithCounts(stageKey, levelKey) {
         if (!typesHostEl) return [];
         var out = [];
-        var sort = 1;
+        var sk = String(stageKey || getActiveStageKey() || '').trim();
+        var lk = String(levelKey || getActiveTatLevel(getSelectedLevels()) || '').trim();
+        var checkedById = {};
+        var domOrder = [];
+
         typesHostEl.querySelectorAll('.cv_vt_cb').forEach(function (cb) {
             var vtId = parseInt(cb.getAttribute('data-vt-id') || '0', 10) || 0;
             if (vtId <= 0) return;
             if (!cb.checked) return;
+            var sid = String(vtId);
+            checkedById[sid] = cb;
+            domOrder.push(sid);
+        });
+
+        var orderedIds = [];
+        var seen = {};
+        var stageOrder = sk ? ensureStageOrder(sk).slice() : [];
+        stageOrder.forEach(function (sid) {
+            if (!checkedById[sid] || seen[sid]) return;
+            orderedIds.push(sid);
+            seen[sid] = true;
+        });
+        domOrder.forEach(function (sid) {
+            if (!checkedById[sid] || seen[sid]) return;
+            orderedIds.push(sid);
+            seen[sid] = true;
+        });
+
+        orderedIds.forEach(function (sid, idx) {
+            var cb = checkedById[sid];
+            var vtId = parseInt(sid || '0', 10) || 0;
+            if (!cb || vtId <= 0) return;
             var cntEl = getTypeCountInput(vtId);
             var req = cntEl ? (parseInt(cntEl.value || '1', 10) || 1) : 1;
             if (req <= 0) req = 1;
             out.push({
                 verification_type_id: vtId,
                 is_enabled: 1,
-                sort_order: sort,
+                stage_key: sk,
+                level_key: lk,
+                sort_order: idx + 1,
                 required_count: req
             });
-            sort++;
         });
         return out;
     }
 
-    function saveJobRoleVerificationTypes(jobRoleId, presetTypes) {
+    function saveJobRoleVerificationTypes(jobRoleId, presetTypes, stageKey, levelKey) {
         var jrId = parseInt(jobRoleId || '0', 10) || 0;
         if (jrId <= 0) return Promise.resolve(true);
-        var types = Array.isArray(presetTypes) ? presetTypes : collectSelectedVerificationTypesWithCounts();
-        if (!types.length) return Promise.resolve(true);
+        var sk = String(stageKey || '').trim();
+        var lk = String(levelKey || '').trim();
+        var types = Array.isArray(presetTypes) ? presetTypes : collectSelectedVerificationTypesWithCounts(stageKey, levelKey);
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
         var url = base + '/api/gssadmin/job_role_verification_types_save.php';
         return fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ job_role_id: jrId, types: types }),
+            body: JSON.stringify({ job_role_id: jrId, stage_key: sk, level_key: lk, types: types }),
             credentials: 'same-origin'
         }).then(function (r) { return r.json(); })
             .then(function (d) {
@@ -1044,7 +1172,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                     return an.localeCompare(bn);
                                 })
                                 .forEach(function (t) {
-                                    var tn = String(t.type_name || '').trim();
+                                    var tn = getAdminVerificationTypeLabel(t).trim();
                                     if (!tn) {
                                         var idFallback = t && typeof t.verification_type_id !== 'undefined' ? (parseInt(t.verification_type_id || '0', 10) || 0) : 0;
                                         if (idFallback > 0) tn = 'Type #' + String(idFallback);
@@ -1117,7 +1245,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                 return an.localeCompare(bn);
                             })
                             .forEach(function (t) {
-                                var tn = String(t.type_name || '').trim();
+                                var tn = getAdminVerificationTypeLabel(t).trim();
                                 if (!tn) {
                                     var idFallback = t && typeof t.verification_type_id !== 'undefined' ? (parseInt(t.verification_type_id || '0', 10) || 0) : 0;
                                     if (idFallback > 0) {
@@ -1272,8 +1400,12 @@ document.addEventListener('DOMContentLoaded', function () {
             STAGE_TYPE_ORDER[stageBase] = rows
                 .slice()
                 .sort(function (a, b) {
-                    var ag = a && typeof a.execution_group !== 'undefined' ? (parseInt(a.execution_group || '1', 10) || 1) : 1;
-                    var bg = b && typeof b.execution_group !== 'undefined' ? (parseInt(b.execution_group || '1', 10) || 1) : 1;
+                    var ag = a && typeof a.sort_order !== 'undefined'
+                        ? (parseInt(a.sort_order || '0', 10) || 0)
+                        : (a && typeof a.execution_group !== 'undefined' ? (parseInt(a.execution_group || '1', 10) || 1) : 1);
+                    var bg = b && typeof b.sort_order !== 'undefined'
+                        ? (parseInt(b.sort_order || '0', 10) || 0)
+                        : (b && typeof b.execution_group !== 'undefined' ? (parseInt(b.execution_group || '1', 10) || 1) : 1);
                     return ag - bg;
                 })
                 .map(function (s) {
@@ -1289,7 +1421,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         // Keep required-count and TAT/cost fields in sync while restoring from summary.
-        applyJobRoleRequiredCounts(jrId);
+        applyJobRoleRequiredCounts(jrId, stageKey, lvl);
         if (lvl) {
             loadTatCost(urlClientId, lvl, jrId).then(function () {
                 syncInlineTatCost(lvl, jrId);
@@ -1549,7 +1681,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         if (jobRoles.length) {
-            applyJobRoleRequiredCounts(jobRoles[0]);
+            applyJobRoleRequiredCounts(jobRoles[0], getActiveStageKey(), activeTatLevel);
         }
     }
 
@@ -1780,8 +1912,6 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         // Take a stable snapshot before async saves begin.
-        var selectedTypesWithCounts = collectSelectedVerificationTypesWithCounts();
-
         var activeTatLevel = getActiveTatLevel(levels);
         var tatItems = activeTatLevel ? collectTatCostInputs(activeTatLevel) : [];
 
@@ -1842,9 +1972,17 @@ document.addEventListener('DOMContentLoaded', function () {
                 // Save type counts per job role (admin controlled)
                 var saveTypesChain = Promise.resolve(true);
                 jrIds.forEach(function (jrId3) {
-                    saveTypesChain = saveTypesChain.then(function (prevOk) {
-                        if (!prevOk) return false;
-                        return saveJobRoleVerificationTypes(jrId3, selectedTypesWithCounts);
+                    levels.forEach(function (lvl2) {
+                        stageKeys.forEach(function (stageKey2) {
+                            var fullStageKey2 = String(stageKey2 || '').trim();
+                            var levelKey2 = String(lvl2 || '').trim();
+                            var selectedTypesWithCounts = collectSelectedVerificationTypesWithCounts(fullStageKey2, levelKey2);
+
+                            saveTypesChain = saveTypesChain.then(function (prevOk) {
+                                if (!prevOk) return false;
+                                return saveJobRoleVerificationTypes(jrId3, selectedTypesWithCounts, fullStageKey2, levelKey2);
+                            });
+                        });
                     });
                 });
                 return saveTypesChain;
@@ -1978,6 +2116,38 @@ document.addEventListener('DOMContentLoaded', function () {
                 return { ok: false, field: name, message: "Please fill required field: " + name };
             }
         }
+        return { ok: true };
+    }
+
+    function validateClientTatFields() {
+        if (!form) return { ok: true };
+
+        var internalTatEl = form.querySelector('[name="internal_tat"]');
+        var externalTatEl = form.querySelector('[name="external_tat"]');
+        if (!internalTatEl || !externalTatEl) {
+            return { ok: true };
+        }
+
+        var internalTatRaw = String(internalTatEl.value || '').trim();
+        var externalTatRaw = String(externalTatEl.value || '').trim();
+        if (internalTatRaw === '' || externalTatRaw === '') {
+            return { ok: true };
+        }
+
+        var internalTat = parseFloat(internalTatRaw);
+        var externalTat = parseFloat(externalTatRaw);
+        if (!isFinite(internalTat) || !isFinite(externalTat)) {
+            return { ok: true };
+        }
+
+        if (internalTat > externalTat) {
+            return {
+                ok: false,
+                field: 'internal_tat',
+                message: 'GSS TAT cannot be greater than Client TAT.'
+            };
+        }
+
         return { ok: true };
     }
 
@@ -2358,6 +2528,17 @@ document.addEventListener('DOMContentLoaded', function () {
             var validation = validateFields(allRequired);
             if (!validation.ok) {
                 setMessage(validation.message, 'danger');
+                return;
+            }
+
+            var tatValidation = validateClientTatFields();
+            if (!tatValidation.ok) {
+                setMessage(tatValidation.message, 'danger');
+                try {
+                    var tatField = form.querySelector('[name="' + CSS.escape(tatValidation.field) + '"]');
+                    if (tatField) tatField.focus();
+                } catch (e) {
+                }
                 return;
             }
 

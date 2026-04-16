@@ -26,6 +26,13 @@ function item_int(array $item, string $key, ?int $default = null): ?int {
     return (int)$item[$key];
 }
 
+function validate_tat_pair(?int $internalTat, ?int $externalTat): void {
+    if ($internalTat === null || $externalTat === null) return;
+    if ($internalTat > $externalTat) {
+        throw new InvalidArgumentException('GSS TAT cannot be greater than Client TAT.');
+    }
+}
+
 function friendlyDbError(PDOException $e): string {
     $sqlState = (string)$e->getCode();
     $info = $e->errorInfo ?? null;
@@ -120,6 +127,8 @@ try {
     }
 
     $pdo = getDB();
+
+    validate_tat_pair(item_int($item, 'internal_tat'), item_int($item, 'external_tat'));
 
     $params = [
         $clientId,

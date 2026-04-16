@@ -23,6 +23,7 @@ class Router {
         "education",
         "employment",
         "reference",
+        "review",
         "success"
     ];
 
@@ -33,8 +34,36 @@ class Router {
         "reference": null
     };
 
+    static pageLabels = {
+        "review-confirmation": "Start Verification",
+        "basic-details": "Basic Details",
+        "identification": "Identification",
+        "contact": "Address",
+        "social": "Social Media",
+        "ecourt": "E-Court",
+        "education": "Education",
+        "employment": "Employment",
+        "reference": "Reference",
+        "review": "Final Review",
+        "success": "Submission Complete"
+    };
+
+    static pageHints = {
+        "review-confirmation": "Review the authorization, confirm your details, and begin the application.",
+        "basic-details": "Enter your personal details exactly as they appear on official records.",
+        "identification": "Provide your identity documents and supporting proofs for verification.",
+        "contact": "Share your current and permanent address information accurately.",
+        "social": "Add the social media details requested for your verification profile.",
+        "ecourt": "Provide e-court information only where applicable to your case.",
+        "education": "List qualifications in order and upload the relevant academic documents.",
+        "employment": "Add employer history carefully and attach proof where required.",
+        "reference": "Provide references who can verify your employment or background details.",
+        "review": "Check every section carefully before you confirm and submit the application.",
+        "success": "Your application has been submitted successfully."
+    };
+
     // Special pages that don't need API submission
-    static noApiSubmissionPages = ["review-confirmation", "success"];
+    static noApiSubmissionPages = ["review-confirmation", "review", "success"];
     
     static selfHandledPages = [
         "basic-details",
@@ -44,7 +73,8 @@ class Router {
         "ecourt",
         "education",
         "employment",
-        "reference"
+        "reference",
+        "review"
     ];
 
     static shouldUseCache(pageId) {
@@ -133,8 +163,8 @@ class Router {
             const url = `${basePath}/api/candidate/case_verification_config.php?t=${Date.now()}`;
             const res = await fetch(url, { credentials: 'include' });
             const json = await res.json();
-            if (json && json.status === 1 && json.data && Array.isArray(json.data.enabled_pages)) {
-                this.enabledPages = json.data.enabled_pages;
+            if (json && json.status === 1 && json.data) {
+                this.enabledPages = Array.isArray(json.data.enabled_pages) ? json.data.enabled_pages : null;
                 this.caseConfig = json.data;
                 window.CANDIDATE_CASE_CONFIG = this.caseConfig;
                 console.log('✅ Candidate enabled pages from config:', this.enabledPages);
@@ -153,9 +183,16 @@ class Router {
 
         this._allowedPagesCache = null;
         this.pageCache.clear();
+        try {
+            document.body.classList.remove('candidate-config-loading');
+        } catch (e) {
+        }
     }
 
     static isEnabledPage(pageId) {
+        if (pageId === 'review' || pageId === 'success' || pageId === 'review-confirmation') {
+            return true;
+        }
         if (!pageId) return false;
         if (!Array.isArray(this.enabledPages) || this.enabledPages.length === 0) return true;
         return this.enabledPages.includes(pageId);
@@ -196,7 +233,7 @@ class Router {
         const allowed = [];
         const enabledOrder = this.getEnabledPageOrder();
         const countablePages = enabledOrder.filter(p => 
-            p !== "review-confirmation" && p !== "success"
+            p !== "review-confirmation" && p !== "review" && p !== "success"
         );
         
         // Always allow review-confirmation FIRST
@@ -227,13 +264,18 @@ class Router {
             }
         }
         
-        // If all pages are completed, allow success page
+        // If all form pages are completed, allow review page
         const allCompleted = countablePages.every(page => 
             this.lsGet(`completed-${page}`) === "1"
         );
         
         if (allCompleted) {
-            console.log(`🎉 All pages completed, allowing success page`);
+            console.log(`🎉 All form pages completed, allowing review page`);
+            allowed.push("review");
+        }
+
+        if (allCompleted && this.lsGet("completed-review") === "1") {
+            console.log(`🎉 Review completed, allowing success page`);
             allowed.push("success");
         }
         
@@ -489,6 +531,7 @@ class Router {
             "education": window.Education,
             "employment": window.Employment,
             "reference": window.Reference,
+            "review": window.Review,
             "review-confirmation": window.ReviewConfirmation,
             "success": window.Success,
             "ecourt": window.Ecourt,
@@ -763,8 +806,17 @@ class Router {
 
         // Update sidebar active states
         document.querySelectorAll(".sidebar-item").forEach(item => {
-            item.classList.toggle("active", item.dataset.page === pageId);
+            const p = item.dataset.page;
+            item.classList.toggle("active", p === pageId);
+            item.classList.toggle("current", p === pageId);
+            const isCompleted = this.lsGet(`completed-${p}`) === "1";
+            item.classList.toggle("completed", isCompleted);
         });
+
+        const currentLabelEl = document.getElementById("candidateCurrentStepLabel");
+        const currentHintEl = document.getElementById("candidateCurrentStepHint");
+        if (currentLabelEl) currentLabelEl.textContent = this.pageLabels[pageId] || "Complete your application";
+        if (currentHintEl) currentHintEl.textContent = this.pageHints[pageId] || "Move step by step, upload documents where needed, and review everything before final submission.";
 
         // Update step strip active states
         const strip = document.getElementById("stepStrip");
@@ -786,7 +838,11 @@ class Router {
 
         const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
         const bar = document.getElementById("globalProgressBar");
+        const text = document.getElementById("globalProgressText");
+        const meta = document.getElementById("candidateProgressMeta");
         if (bar) bar.style.width = `${percent}%`;
+        if (text) text.textContent = `${percent}% Complete`;
+        if (meta) meta.textContent = `${completed} of ${total} active sections completed. Drafts save as you go.`;
 
         console.log(`📊 Progress: ${percent}% (${completed}/${total})`);
     }
@@ -833,6 +889,7 @@ class Router {
             "social": window.Social,
             "ecourt": window.Ecourt,
             "review-confirmation": window.ReviewConfirmation,
+            "review": window.Review,
         };
 
         const legacyModule = legacyModules[previousPage];
@@ -855,6 +912,8 @@ class Router {
     static getNextPage(pageId) {
         const order = this.getEnabledPageOrder();
         const index = order.indexOf(pageId);
+        if (pageId === 'reference') return 'review';
+        if (pageId === 'review') return 'success';
         if (index === -1 || index >= order.length - 2) {
             return "success";
         }
@@ -877,11 +936,18 @@ class Router {
     }
 
     static showNotification(message, type = "info") {
-        if (typeof window.showAlert === "function") {
+        if (window.CandidateNotify && typeof window.CandidateNotify.show === "function") {
+            const mapped = (type === "warning") ? "warn" : type;
+            window.CandidateNotify.show({ type: mapped, message });
+        } else if (typeof window.showAlert === "function") {
             window.showAlert({ type, message });
         } else {
             console[type === "error" ? "error" : type === "warning" ? "warn" : "log"](`[${type}] ${message}`);
         }
+    }
+
+    static notify({ type = "info", message = "" } = {}) {
+        this.showNotification(message, type);
     }
 
     static isPageAccessible(pageId) {
