@@ -66,7 +66,11 @@ $consent_bgv        = $social['consent_bgv'] ?? 0;
             <!-- Twitter (Optional) -->
             <div class="form-field">
                 <div class="form-control double-border compact-control">
-                    <label class="compact-label">Twitter Profile</label>
+                    <label class="compact-label">Twitter Profile
+                        <span class="text-muted small">
+                            (Optional)
+                        </span>
+                    </label>
                     <input type="url"
                            name="twitter_url"
                            class="compact-input"
@@ -78,7 +82,11 @@ $consent_bgv        = $social['consent_bgv'] ?? 0;
             <!-- Instagram (Optional) -->
             <div class="form-field">
                 <div class="form-control double-border compact-control">
-                    <label class="compact-label">Instagram Profile</label>
+                    <label class="compact-label">Instagram Profile
+                        <span class="text-muted small">
+                            (Optional)
+                        </span>
+                    </label>
                     <input type="url"
                            name="instagram_url"
                            class="compact-input"

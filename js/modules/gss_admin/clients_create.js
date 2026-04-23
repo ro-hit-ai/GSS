@@ -1693,6 +1693,13 @@ document.addEventListener('DOMContentLoaded', function () {
             return Promise.resolve();
         }
 
+        var selectedBefore = getSelectedJobRoles();
+        var selectedSet = {};
+        selectedBefore.forEach(function (id) {
+            var n = parseInt(id || '0', 10) || 0;
+            if (n > 0) selectedSet[String(n)] = true;
+        });
+
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
         var url = base + '/api/gssadmin/job_roles_list.php?client_id=' + encodeURIComponent(String(cid));
         return fetch(url, { credentials: 'same-origin' })
@@ -1702,6 +1709,13 @@ document.addEventListener('DOMContentLoaded', function () {
                     throw new Error((data && data.message) ? data.message : 'Failed to load job roles');
                 }
                 var html = '';
+                html += '<div style="display:flex; justify-content:space-between; gap:10px; align-items:center; margin-bottom:10px; flex-wrap:wrap;">';
+                html += '<div style="font-size:12px; font-weight:800; color:#0f172a;">Job Roles</div>';
+                html += '<div style="display:flex; gap:8px; align-items:center;">';
+                html += '<button type="button" class="btn" data-jobroles-action="select_all" style="padding:6px 10px;">Select All</button>';
+                html += '<button type="button" class="btn btn-secondary" data-jobroles-action="clear_all" style="padding:6px 10px;">Clear</button>';
+                html += '</div>';
+                html += '</div>';
                 html += '<div style="display:flex; flex-direction:column; gap:8px;">';
                 data.data.forEach(function (r) {
                     var id = r && r.job_role_id ? parseInt(r.job_role_id || '0', 10) || 0 : 0;
@@ -1715,10 +1729,34 @@ document.addEventListener('DOMContentLoaded', function () {
                 html += '</div>';
                 jobRoleBoxEl.innerHTML = html;
 
+                if (!jobRoleBoxEl.dataset.bulkBound) {
+                    jobRoleBoxEl.dataset.bulkBound = '1';
+                    jobRoleBoxEl.addEventListener('click', function (e) {
+                        var t = e && e.target ? e.target : null;
+                        if (!t) return;
+                        var btn = t.closest ? t.closest('[data-jobroles-action]') : null;
+                        if (!btn) return;
+                        var action = String(btn.getAttribute('data-jobroles-action') || '');
+                        if (action !== 'select_all' && action !== 'clear_all') return;
+                        e.preventDefault();
+                        var check = action === 'select_all';
+                        jobRoleBoxEl.querySelectorAll('.cv_jr_cb').forEach(function (cb) {
+                            cb.checked = check;
+                        });
+                        onSelectionChanged();
+                    });
+                }
+
                 jobRoleBoxEl.querySelectorAll('.cv_jr_cb').forEach(function (cb) {
                     cb.addEventListener('change', function () {
                         onSelectionChanged();
                     });
+
+                    try {
+                        var id2 = parseInt(cb.getAttribute('data-jr-id') || '0', 10) || 0;
+                        cb.checked = !!(id2 > 0 && selectedSet[String(id2)]);
+                    } catch (e) {
+                    }
                 });
 
                 renderLevels(LEVELS);

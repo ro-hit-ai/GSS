@@ -387,25 +387,15 @@ class PdfViewer {
     
     static downloadIframe() {
         try {
-            if (this.iframe && this.iframe.contentWindow) {
-                const iframeWindow = this.iframe.contentWindow;
-                
-                // Check if download function exists in iframe
-                if (iframeWindow && iframeWindow.location) {
-                    const url = iframeWindow.location.href;
-                    if (url && url !== 'about:blank') {
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = 'application_form.pdf';
-                        a.click();
-                    }
-                } else {
-                    console.error("Iframe not ready for download");
-                    if (typeof window.showAlert === 'function') {
-                        window.showAlert({ type: 'info', message: 'Document is still loading. Please try again in a moment.' });
-                    }
-                }
+            const appId = String(this.currentAppId || '').trim();
+            if (!appId) {
+                console.error("No application ID for download");
+                return;
             }
+
+            const baseUrl = window.APP_BASE_URL || '/GSS2';
+            const downloadUrl = `${baseUrl}/api/candidate/generate_pdf.php?application_id=${encodeURIComponent(appId)}&bypass=1&force_download=1`;
+            window.open(downloadUrl, '_blank');
         } catch (error) {
             console.error("Download error:", error);
             

@@ -264,10 +264,45 @@ function is_node_service_healthy(): bool {
     return $result['success'] === true;
 }
 
+function app_mail_resolve_application_id(array $meta, array $options): string {
+    $raw = '';
+    if (isset($options['application_id'])) {
+        $raw = trim((string)$options['application_id']);
+    }
+    if ($raw === '' && isset($meta['application_id'])) {
+        $raw = trim((string)$meta['application_id']);
+    }
+
+    if ($raw === '') {
+        return '';
+    }
+
+    if (function_exists('integration_normalize_application_id')) {
+        return integration_normalize_application_id($raw);
+    }
+
+    return strtoupper($raw);
+}
+
+function app_mail_apply_application_subject_tag(string $subject, string $applicationId): string {
+    $subject = trim($subject);
+    if ($applicationId === '') {
+        return $subject;
+    }
+
+    if (preg_match('/\[\s*APP-[^\]]+\]/i', $subject) === 1) {
+        return $subject;
+    }
+
+    return '[' . $applicationId . '] ' . $subject;
+}
+
 function send_app_mail(string $to, string $subject, string $htmlBody, ?string $fromName = null, array $options = []): bool {
     $to = trim($to);
     $meta = app_mail_get_log_meta();
     $driver = 'node';
+    $applicationId = app_mail_resolve_application_id($meta, $options);
+    $subject = app_mail_apply_application_subject_tag($subject, $applicationId);
     $headersMap = integration_mail_headers($meta, $options);
 
     if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL)) {
@@ -290,7 +325,7 @@ function send_app_mail(string $to, string $subject, string $htmlBody, ?string $f
         // Extract ticket ID from meta if present
         $metadata = [
             'template_id' => $meta['template_id'] ?? null,
-            'application_id' => $meta['application_id'] ?? null,
+            'application_id' => $applicationId !== '' ? $applicationId : ($meta['application_id'] ?? null),
             'case_id' => $meta['case_id'] ?? null,
             'role' => $meta['role'] ?? null,
             'event_type' => $meta['event_type'] ?? ($options['event_type'] ?? null),

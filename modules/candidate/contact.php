@@ -14,6 +14,16 @@ $stmt->closeCursor();
 $countries = ['India','United States','United Kingdom','Australia','Canada','Germany','France','China','Japan','Other'];
 $hasPermanentData = !empty($row['permanent_address1']) || !empty($row['permanent_city']) || !empty($row['permanent_state']) || !empty($row['permanent_postal_code']);
 $sameAsCurrent = !empty($row['same_as_current']) || !$hasPermanentData;
+$existingCurrentProof = trim((string)($row['proof_file'] ?? $row['current_address_proof'] ?? $row['address_proof'] ?? ''));
+$existingCurrentProofPath = '';
+if ($existingCurrentProof !== '') {
+    if (strpos($existingCurrentProof, '/uploads/') === 0) {
+        $existingCurrentProofPath = $existingCurrentProof;
+    } else {
+        $existingCurrentProofPath = '/uploads/address/' . ltrim($existingCurrentProof, '/');
+    }
+}
+$existingCurrentProofUrl = $existingCurrentProofPath !== '' ? app_url($existingCurrentProofPath) : '';
 ?>
 
 <div class="candidate-form compact-form cr-fixed-form bgv-fixed-form create-like-spacing contact-create-compact">
@@ -26,8 +36,8 @@ $sameAsCurrent = !empty($row['same_as_current']) || !$hasPermanentData;
     </p>
 
     <form id="contactForm" enctype="multipart/form-data">
-        <input type="hidden" name="has_current_address" value="0">
-        <input type="hidden" name="has_permanent_address" value="0">
+        <input type="hidden" name="has_current_address" value="1">
+        <input type="hidden" name="has_permanent_address" value="1">
 
         <div class="form-row-full compact-row mt-3 mb-3" id="sameAsCurrentWrap">
             <div class="form-check normal-checkbox compact-checkbox contact-address-switch" style="display:flex; gap:20px; flex-wrap:wrap;">
@@ -108,7 +118,19 @@ $sameAsCurrent = !empty($row['same_as_current']) || !$hasPermanentData;
                     <div class="file-upload-box" data-file-upload>
                         <div class="file-upload-row">
                             <button type="button" class="file-upload-btn" data-file-choose>Choose File</button>
-                            <button type="button" class="file-upload-name" data-file-name disabled>No file chosen</button>
+                            <button
+                                type="button"
+                                class="file-upload-name<?php echo $existingCurrentProofUrl ? ' preview-btn' : ''; ?>"
+                                data-file-name
+                                <?php echo $existingCurrentProofUrl ? '' : 'disabled'; ?>
+                                <?php if ($existingCurrentProofUrl): ?>
+                                    data-url="<?php echo htmlspecialchars($existingCurrentProofUrl); ?>"
+                                    data-name="<?php echo htmlspecialchars($existingCurrentProof); ?>"
+                                    data-type="<?php echo preg_match('/\.pdf$/i', $existingCurrentProof) ? 'pdf' : 'image'; ?>"
+                                <?php endif; ?>
+                            >
+                                <?php echo $existingCurrentProof ? htmlspecialchars($existingCurrentProof) : 'No file chosen'; ?>
+                            </button>
                         </div>
                         <div class="file-upload-error" data-file-error></div>
                     </div>
@@ -117,6 +139,9 @@ $sameAsCurrent = !empty($row['same_as_current']) || !$hasPermanentData;
                            class="compact-file d-none contact-file-input"
                            accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
                            data-file-input />
+                    <?php if ($existingCurrentProof): ?>
+                        <input type="hidden" name="existing_current_address_proof" value="<?= htmlspecialchars($existingCurrentProof) ?>">
+                    <?php endif; ?>
                 </div>
             </div>
         </div>

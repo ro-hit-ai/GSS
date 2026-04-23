@@ -17,6 +17,33 @@ function validateRequired($value, $name) {
     }
 }
 
+function normalize_country_name($value): string {
+    return strtolower(trim((string)$value));
+}
+
+function validate_postal_code(string $country, string $postalCode, string $label): void {
+    $code = trim($postalCode);
+    if ($code === '') return;
+
+    $c = normalize_country_name($country);
+
+    // India: 6-digit PIN only
+    if ($c === 'india') {
+        if (!preg_match('/^\d{6}$/', $code)) {
+            throw new ValidationException($label . ' pin code must be 6 digits.');
+        }
+        return;
+    }
+
+    // Others: basic sanity check (3-12, alnum + space + hyphen)
+    if (strlen($code) < 3 || strlen($code) > 12) {
+        throw new ValidationException($label . ' postal code must be between 3 and 12 characters.');
+    }
+    if (!preg_match('/^[A-Za-z0-9 \-]+$/', $code)) {
+        throw new ValidationException($label . ' postal code contains invalid characters.');
+    }
+}
+
 function handleFileUpload(array $file, string $application_id): string {
     if ($file['error'] !== UPLOAD_ERR_OK) {
         throw new FileUploadException("File upload failed.");
@@ -69,6 +96,12 @@ try {
     $hasCurrentAddress      = isset($post['has_current_address']) && (string)$post['has_current_address'] === '1';
     $hasPermanentAddress    = isset($post['has_permanent_address']) && (string)$post['has_permanent_address'] === '1';
 
+    // Backward compatibility: older forms may not send these flags.
+    if (!$hasCurrentAddress && !$hasPermanentAddress) {
+        $hasCurrentAddress = true;
+        $hasPermanentAddress = true;
+    }
+
     /* ================= CONTACT ================= */
 
     $mobile_country_code = '';
@@ -90,6 +123,7 @@ try {
         validateRequired($address1, 'Current Address');
         validateRequired($city, 'City');
         validateRequired($state, 'State');
+        validateRequired($country, 'Country');
         validateRequired($postal_code, 'Postal Code');
     }
 
@@ -116,6 +150,7 @@ try {
             validateRequired($p_address1, 'Permanent Address');
             validateRequired($p_city, 'Permanent City');
             validateRequired($p_state, 'Permanent State');
+            validateRequired($p_country, 'Permanent Country');
             validateRequired($p_postal_code, 'Permanent Postal Code');
         }
     } elseif ($same_as_current) {
@@ -137,6 +172,7 @@ try {
             validateRequired($p_address1, 'Permanent Address');
             validateRequired($p_city, 'Permanent City');
             validateRequired($p_state, 'Permanent State');
+            validateRequired($p_country, 'Permanent Country');
             validateRequired($p_postal_code, 'Permanent Postal Code');
         }
     }
@@ -147,19 +183,52 @@ try {
     $proof_file = null;
 
     if (!$insufficient_documents) {
-        if (!empty($_FILES['address_proof_file']) &&
-            $_FILES['address_proof_file']['error'] === UPLOAD_ERR_OK) {
+        $proofField = null;
+        if (!empty($_FILES['address_proof_file'])) {
+            $proofField = 'address_proof_file';
+        } elseif (!empty($_FILES['current_address_proof'])) {
+            $proofField = 'current_address_proof';
+        }
 
-            $proof_file = handleFileUpload($_FILES['address_proof_file'], $application_id);
+        if ($proofField && isset($_FILES[$proofField]['error']) && $_FILES[$proofField]['error'] !== UPLOAD_ERR_NO_FILE && $_FILES[$proofField]['error'] !== UPLOAD_ERR_OK) {
+            throw new FileUploadException("File upload failed.");
+        }
+
+        if ($proofField && $_FILES[$proofField]['error'] === UPLOAD_ERR_OK) {
+            $proof_file = handleFileUpload($_FILES[$proofField], $application_id);
 
         } else {
-            // keep existing file
-            $stmt = $pdo->prepare(
-                "SELECT proof_file FROM Vati_Payfiller_Candidate_Contact_details WHERE application_id = ?"
-            );
-            $stmt->execute([$application_id]);
-            $proof_file = $stmt->fetchColumn();
-            $stmt->closeCursor();
+            // keep existing file (from form or DB)
+            $proof_file = trim((string)($post['existing_current_address_proof'] ?? ''));
+            if ($proof_file === '') {
+                $stmt = $pdo->prepare(
+                    "SELECT proof_file FROM Vati_Payfiller_Candidate_Contact_details WHERE application_id = ?"
+                );
+                $stmt->execute([$application_id]);
+                $proof_file = (string)$stmt->fetchColumn();
+                $stmt->closeCursor();
+            }
+        }
+    }
+
+    // Postal code format validation (final submit)
+    if (!$is_draft) {
+        if (!$hasCurrentAddress && !$hasPermanentAddress) {
+            throw new ValidationException('Please provide at least one address.');
+        }
+
+        if ($hasCurrentAddress) {
+            validate_postal_code((string)$country, (string)$postal_code, 'Current');
+        }
+        if ($hasPermanentAddress && (!$hasCurrentAddress || !$same_as_current)) {
+            validate_postal_code((string)$p_country, (string)$p_postal_code, 'Permanent');
+        }
+    }
+
+    // Current proof required for final submit when current address is enabled.
+    if (!$is_draft && $hasCurrentAddress && !$insufficient_documents) {
+        if (empty($proof_file)) {
+            throw new ValidationException('Please upload current address proof.');
         }
     }
 

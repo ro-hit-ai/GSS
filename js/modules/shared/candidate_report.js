@@ -5,12 +5,40 @@
     var LAST_COMPONENT_SECTION_KEY = '';
     var CURRENT_MODAL_REASON_TYPE = '';
     var TL_CACHE = [];
+    var EMAIL_REPLIES_CACHE = [];
     var TL_ACTIVE_FILTER = 'all';
 
     var SELECTED_UPLOAD_FILES = [];
+    var ACTIVE_ITEM_BY_SECTION = {};
 
     var HOLIDAY_SET = {};
     var HOLIDAYS_LOADED = false;
+    var SPLIT_PANE_STATE = {
+        isOpen: false,
+        context: null,
+        sourceDocUrl: '',
+        sourceMimeType: '',
+        uploadFile: null,
+        uploadObjectUrl: ''
+    };
+var PDF_VIEWER_STATE = {
+    open: false,
+    context: null,
+    mode: 'view', // NEW
+    uploadFile: null,
+    uploadUrl: ''
+};
+    var DOC_VIEWER_STATE = {
+        isOpen: false,
+        isMaximized: false,
+        uploadObjectUrl: '',
+        context: null,
+        restoreRect: null
+    };
+
+    function isLegacyPdfViewerEnabled() {
+        return false;
+    }
 
     function qs(name) {
         try {
@@ -18,6 +46,53 @@
         } catch (e) {
             return null;
         }
+    }
+
+    function sectionKeyForTableHost(hostId) {
+        var id = String(hostId || '').toLowerCase().trim();
+        if (id === 'cv_identification_table') return 'id';
+        if (id === 'cv_education_table') return 'education';
+        if (id === 'cv_employment_table') return 'employment';
+        return '';
+    }
+
+    function tableHostIdForSection(section) {
+        var s = String(section || '').toLowerCase().trim();
+        if (s === 'id') return 'cv_identification_table';
+        if (s === 'education') return 'cv_education_table';
+        if (s === 'employment') return 'cv_employment_table';
+        return '';
+    }
+
+    function deriveRecordItemKey(section, row, idx) {
+        section = normSection(section);
+        row = row && typeof row === 'object' ? row : {};
+        if (row.item_key) return String(row.item_key).toLowerCase().trim();
+        if (section === 'id' && row.document_index != null && String(row.document_index).trim() !== '') {
+            return 'id:' + String(row.document_index).trim().toLowerCase();
+        }
+        if (section === 'education' && row.education_index != null && String(row.education_index).trim() !== '') {
+            return 'education:' + String(row.education_index).trim().toLowerCase();
+        }
+        if (section === 'employment' && row.employment_index != null && String(row.employment_index).trim() !== '') {
+            return 'employment:' + String(row.employment_index).trim().toLowerCase();
+        }
+        return section + ':' + String((parseInt(String(idx || '0'), 10) || 0) + 1);
+    }
+
+    function getActiveItemKeyForSection(section) {
+        var s = normSection(section);
+        if (!s) return '';
+        if (ACTIVE_ITEM_BY_SECTION[s]) return String(ACTIVE_ITEM_BY_SECTION[s]);
+        var hostId = tableHostIdForSection(s);
+        if (!hostId) return '';
+        var host = document.getElementById(hostId);
+        if (!host) return '';
+        var k = String(host.dataset.activeRecordItemKey || '').trim();
+        if (k) {
+            ACTIVE_ITEM_BY_SECTION[s] = k;
+        }
+        return k;
     }
 
     function openBsModal(id) {
@@ -53,35 +128,35 @@ function closeBsModal(id) {
         }
 
         // Aggressive cleanup of all modal artifacts
-        setTimeout(function () {
-            // Remove all backdrops
-            document.querySelectorAll('.modal-backdrop').forEach(function (b) {
-                if (b && b.parentNode) {
-                    b.parentNode.removeChild(b);
-                }
-            });
+        // setTimeout(function () {
+        //     // Remove all backdrops
+        //     document.querySelectorAll('.modal-backdrop').forEach(function (b) {
+        //         if (b && b.parentNode) {
+        //             b.parentNode.removeChild(b);
+        //         }
+        //     });
             
-            // Reset body and html classes/styles
-            document.body.classList.remove('modal-open');
-            document.documentElement.classList.remove('modal-open');
-            document.body.style.removeProperty('padding-right');
-            document.body.style.removeProperty('overflow');
-            document.documentElement.style.removeProperty('overflow');
-            document.documentElement.style.removeProperty('padding-right');
+        //     // Reset body and html classes/styles
+        //     document.body.classList.remove('modal-open');
+        //     document.documentElement.classList.remove('modal-open');
+        //     document.body.style.removeProperty('padding-right');
+        //     document.body.style.removeProperty('overflow');
+        //     document.documentElement.style.removeProperty('overflow');
+        //     document.documentElement.style.removeProperty('padding-right');
             
-            // Ensure no modals are still visible
-            document.querySelectorAll('.modal.show').forEach(function (m) {
-                m.classList.remove('show');
-                m.style.display = 'none';
-                m.setAttribute('aria-hidden', 'true');
-            });
+        //     // Ensure no modals are still visible
+        //     document.querySelectorAll('.modal.show').forEach(function (m) {
+        //         m.classList.remove('show');
+        //         m.style.display = 'none';
+        //         m.setAttribute('aria-hidden', 'true');
+        //     });
 
-            // Restore validator overflow lock if needed
-            if (document.querySelector('.cr-report-root.cr-validator-workspace') &&
-                String(qs('print') || '') !== '1') {
-                document.body.style.overflow = 'hidden';
-            }
-        }, 100);
+        //     // Restore validator overflow lock if needed
+        //     if (document.querySelector('.cr-report-root.cr-validator-workspace') &&
+        //         String(qs('print') || '') !== '1') {
+        //         document.body.style.overflow = 'hidden';
+        //     }
+        // }, 100);
     } catch (e) {
         try { console.warn('Error closing modal:', e); } catch (_e2) {}
     }
@@ -94,6 +169,783 @@ function closeBsModal(id) {
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#039;');
+    }
+
+    function canUseSplitPaneRole() {
+        var role = String(getRole() || '').toLowerCase().trim();
+        return role === 'validator' || role === 'verifier' || role === 'qa' || role === 'team_lead';
+    }
+
+    function isRecordComponent(section) {
+        var s = normSection(section);
+        return s === 'id' || s === 'education' || s === 'employment';
+    }
+
+    function activeComponentSectionKey() {
+        var sec = normSection(CURRENT_SECTION_KEY || '');
+        if (sec && sec !== 'timeline') return sec;
+        sec = normSection(LAST_COMPONENT_SECTION_KEY || '');
+        if (sec && sec !== 'timeline') return sec;
+        var active = document.querySelector('.list-group-item[data-section].active');
+        var fromNav = active ? normSection(active.getAttribute('data-section') || '') : '';
+        if (fromNav && fromNav !== 'timeline') return fromNav;
+        var activePanel = document.querySelector('.candidate-section.cr-active');
+        if (activePanel && activePanel.id) {
+            var fromPanel = normSection(String(activePanel.id).replace(/^section-/, ''));
+            if (fromPanel && fromPanel !== 'timeline') return fromPanel;
+        }
+        return '';
+    }
+
+    function isLikelyImageUrl(url) {
+        var lower = String(url || '').toLowerCase();
+        return lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png') || lower.endsWith('.gif') || lower.endsWith('.webp') || lower.endsWith('.bmp') || lower.endsWith('.svg');
+    }
+
+    function isLikelyPdfUrl(url) {
+        return String(url || '').toLowerCase().indexOf('.pdf') !== -1;
+    }
+
+    function buildPdfViewerUrl(url) {
+        var raw = String(url || '');
+        if (!raw) return '';
+        var flags = 'toolbar=0&navpanes=0&scrollbar=0';
+        return raw + (raw.indexOf('#') === -1 ? '#' : '&') + flags;
+    }
+
+    function splitPaneRenderDoc(hostId, url, mimeType) {
+        return;
+    }
+
+    function setSplitPaneMessage(text, tone) {
+        var el = document.getElementById('cvSplitPaneMessage');
+        if (!el) return;
+        var t = String(text || '').trim();
+        el.classList.remove('error', 'success');
+        if (!t) {
+            el.textContent = '';
+            return;
+        }
+        if (tone === 'error') el.classList.add('error');
+        if (tone === 'success') el.classList.add('success');
+        el.textContent = t;
+    }
+
+    function updateSplitPaneLayout() {
+        var overlay = document.getElementById('cvSplitPaneOverlay');
+        if (!overlay) return;
+        var hasUpload = !!(SPLIT_PANE_STATE && SPLIT_PANE_STATE.uploadFile);
+        overlay.classList.toggle('has-upload-preview', hasUpload);
+    }
+
+    function resetSplitPaneUploadState() {
+        SPLIT_PANE_STATE.uploadFile = null;
+        if (SPLIT_PANE_STATE.uploadObjectUrl) {
+            try { URL.revokeObjectURL(SPLIT_PANE_STATE.uploadObjectUrl); } catch (_e) {}
+            SPLIT_PANE_STATE.uploadObjectUrl = '';
+        }
+        var fileEl = document.getElementById('cvSplitPaneFile');
+        if (fileEl) fileEl.value = '';
+        var metaEl = document.getElementById('cvSplitPaneFileMeta');
+        if (metaEl) metaEl.textContent = 'or drag and drop here';
+        var reasonEl = document.getElementById('cvSplitPaneReason');
+        if (reasonEl) reasonEl.value = '';
+        splitPaneRenderDoc('cvSplitPaneUploadPreview', '', '');
+        updateSplitPaneLayout();
+        setSplitPaneMessage('', '');
+    }
+
+    function updateSplitPaneHeader(context) {
+        var lineEl = document.getElementById('cvSplitPaneContext');
+        if (!lineEl) return;
+        context = context || {};
+        var parts = [];
+        if (context.applicationId) parts.push('Application: ' + context.applicationId);
+        if (context.componentKey) parts.push('Component: ' + sectionLabel(context.componentKey));
+        if (context.itemKey) parts.push('Item: ' + context.itemKey);
+        lineEl.textContent = parts.length ? parts.join(' | ') : 'Selected document';
+    }
+
+    function closePane() {
+        var overlay = document.getElementById('cvSplitPaneOverlay');
+        if (!overlay) return;
+        overlay.classList.remove('open');
+        overlay.classList.remove('has-upload-preview');
+        overlay.setAttribute('aria-hidden', 'true');
+        document.body.style.removeProperty('overflow');
+        if (document.querySelector('.cr-report-root.cr-validator-workspace') && String(qs('print') || '') !== '1') {
+            document.body.style.overflow = 'hidden';
+        }
+
+        SPLIT_PANE_STATE.isOpen = false;
+        SPLIT_PANE_STATE.context = null;
+        SPLIT_PANE_STATE.sourceDocUrl = '';
+        SPLIT_PANE_STATE.sourceMimeType = '';
+        resetSplitPaneUploadState();
+        splitPaneRenderDoc('cvSplitPaneCandidatePreview', '', '');
+    }
+
+    function openPane(docUrl, context) {
+        return false;
+    }
+
+    function setSplitPaneUploadFile(file) {
+        if (!file) return;
+        SPLIT_PANE_STATE.uploadFile = file;
+        if (SPLIT_PANE_STATE.uploadObjectUrl) {
+            try { URL.revokeObjectURL(SPLIT_PANE_STATE.uploadObjectUrl); } catch (_e) {}
+            SPLIT_PANE_STATE.uploadObjectUrl = '';
+        }
+        SPLIT_PANE_STATE.uploadObjectUrl = URL.createObjectURL(file);
+        var metaEl = document.getElementById('cvSplitPaneFileMeta');
+        if (metaEl) metaEl.textContent = String(file.name || 'Selected file');
+        splitPaneRenderDoc('cvSplitPaneUploadPreview', SPLIT_PANE_STATE.uploadObjectUrl, String(file.type || ''));
+        updateSplitPaneLayout();
+    }
+
+    function detectContextFromDocLink(linkEl) {
+        var context = {
+            applicationId: CURRENT_APP_ID || '',
+            componentKey: '',
+            itemKey: ''
+        };
+        if (!linkEl || !linkEl.closest) return context;
+        var host = linkEl.closest('#cv_identification_table, #cv_education_table, #cv_employment_table');
+        if (host && host.id) {
+            context.componentKey = sectionKeyForTableHost(host.id);
+        } else {
+            context.componentKey = activeComponentSectionKey();
+        }
+        context.componentKey = normSection(context.componentKey || '');
+        if (context.componentKey) {
+            context.itemKey = getActiveItemKeyForSection(context.componentKey);
+        }
+        return context;
+    }
+
+    async function runSplitPaneAction(action) {
+        var mode = String(action || '').toLowerCase().trim();
+        if (!mode) return;
+        var ctx = SPLIT_PANE_STATE.context || {};
+        var applicationId = String(ctx.applicationId || CURRENT_APP_ID || '');
+        var componentKey = normSection(ctx.componentKey || '');
+        var itemKey = String(ctx.itemKey || '');
+        var reasonEl = document.getElementById('cvSplitPaneReason');
+        var reason = reasonEl ? String(reasonEl.value || '').trim() : '';
+
+        if (!applicationId) {
+            setSplitPaneMessage('Application not found for this action.', 'error');
+            return;
+        }
+        if (!componentKey) {
+            setSplitPaneMessage('Please open a document from Identification, Education, or Employment.', 'error');
+            return;
+        }
+        if (!isRecordComponent(componentKey)) {
+            setSplitPaneMessage('Actions are available for Identification, Education, and Employment items only.', 'error');
+            return;
+        }
+        if (mode === 'reject' || mode === 'hold') {
+            if (!reason) {
+                setSplitPaneMessage('Reason is required for ' + mode + '.', 'error');
+                if (reasonEl) reasonEl.focus();
+                return;
+            }
+        }
+
+        var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
+        var endpoint = base + '/api/shared/component_action.php';
+        var caseId = REPORT_PAYLOAD && REPORT_PAYLOAD.case && REPORT_PAYLOAD.case.case_id ? parseInt(REPORT_PAYLOAD.case.case_id, 10) : 0;
+        var role = getRole();
+        var group = role === 'verifier' ? (getVerifierGroup() || null) : null;
+
+        var approveBtn = document.getElementById('cvSplitPaneApprove');
+        var rejectBtn = document.getElementById('cvSplitPaneReject');
+        var holdBtn = document.getElementById('cvSplitPaneHold');
+        [approveBtn, rejectBtn, holdBtn].forEach(function (btn) {
+            if (btn) btn.disabled = true;
+        });
+        setSplitPaneMessage('Submitting ' + mode + '...', '');
+
+        try {
+            var out = await postJson(endpoint, {
+                application_id: applicationId,
+                case_id: caseId || null,
+                component_key: componentKey,
+                item_key: itemKey || null,
+                action: mode,
+                group: group,
+                reason: reason || null,
+                override_reason: reason || null
+            });
+            if (!out.res.ok || !out.payload || out.payload.status !== 1) {
+                var message = (out.payload && out.payload.message) ? out.payload.message : 'Failed to submit action.';
+                setSplitPaneMessage(message, 'error');
+                return;
+            }
+            setSplitPaneMessage('Action updated successfully.', 'success');
+            setBoxMessage('cvTopMessage', 'Updated successfully.', 'success');
+            closePane();
+            try {
+                await loadReport();
+            } catch (_e) {
+            }
+        } catch (e) {
+            setSplitPaneMessage((e && e.message) ? e.message : 'Network error. Please try again.', 'error');
+        } finally {
+            [approveBtn, rejectBtn, holdBtn].forEach(function (btn) {
+                if (btn) btn.disabled = false;
+            });
+        }
+    }
+
+    function initSplitPaneWorkspace() {
+        var overlay = document.getElementById('cvSplitPaneOverlay');
+        if (!overlay || overlay.dataset.bound === '1') return;
+        overlay.dataset.bound = '1';
+
+        var closeBtn = document.getElementById('cvSplitPaneClose');
+        var fileEl = document.getElementById('cvSplitPaneFile');
+        var dropEl = document.getElementById('cvSplitPaneDrop');
+        var approveBtn = document.getElementById('cvSplitPaneApprove');
+        var rejectBtn = document.getElementById('cvSplitPaneReject');
+        var holdBtn = document.getElementById('cvSplitPaneHold');
+
+        if (closeBtn) {
+            closeBtn.addEventListener('click', function () {
+                closePane();
+            });
+        }
+        overlay.addEventListener('click', function (e) {
+            if (e.target === overlay) closePane();
+        });
+        document.addEventListener('keydown', function (e) {
+            if (!SPLIT_PANE_STATE.isOpen) return;
+            if (e && e.key === 'Escape') closePane();
+        });
+        if (fileEl) {
+            fileEl.addEventListener('change', function () {
+                var file = fileEl.files && fileEl.files[0] ? fileEl.files[0] : null;
+                if (file) setSplitPaneUploadFile(file);
+            });
+        }
+        if (dropEl) {
+            ['dragenter', 'dragover'].forEach(function (evt) {
+                dropEl.addEventListener(evt, function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropEl.classList.add('dragover');
+                });
+            });
+            ['dragleave', 'drop'].forEach(function (evt2) {
+                dropEl.addEventListener(evt2, function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropEl.classList.remove('dragover');
+                });
+            });
+            dropEl.addEventListener('drop', function (e) {
+                var dt = e.dataTransfer;
+                var file = dt && dt.files && dt.files[0] ? dt.files[0] : null;
+                if (!file) return;
+                if (fileEl) {
+                    try {
+                        var transfer = new DataTransfer();
+                        transfer.items.add(file);
+                        fileEl.files = transfer.files;
+                    } catch (_e) {
+                    }
+                }
+                setSplitPaneUploadFile(file);
+            });
+        }
+        if (approveBtn) approveBtn.addEventListener('click', function () { runSplitPaneAction('approve'); });
+        if (rejectBtn) rejectBtn.addEventListener('click', function () { runSplitPaneAction('reject'); });
+        if (holdBtn) holdBtn.addEventListener('click', function () { runSplitPaneAction('hold'); });
+
+        window.openPane = openPane;
+        window.closePane = closePane;
+    }
+
+    function renderDocViewerContent(hostId, url, mimeType) {
+        var host = document.getElementById(hostId);
+        if (!host) return;
+        var safeUrl = escHtml(url || '');
+        var mt = String(mimeType || '').toLowerCase();
+        if (!safeUrl) {
+            host.innerHTML = '<div class="cv-docviewer-empty">No document selected.</div>';
+            return;
+        }
+        if (isImageMime(mt) || isLikelyImageUrl(safeUrl)) {
+            host.innerHTML = '<img src="' + safeUrl + '" alt="document">';
+            return;
+        }
+        if (isPdfMime(mt) || isLikelyPdfUrl(safeUrl)) {
+            var pdfUrl = escHtml(buildPdfViewerUrl(safeUrl));
+            host.innerHTML = '<iframe src="' + pdfUrl + '" width="100%" height="100%" style="border:none;"></iframe>';
+            return;
+        }
+        host.innerHTML = '<div class="cv-docviewer-empty">Preview unavailable. <a href="' + safeUrl + '" target="_blank" rel="noopener">Open document</a></div>';
+    }
+
+    function resetDocViewerUpload() {
+        if (DOC_VIEWER_STATE.uploadObjectUrl) {
+            try { URL.revokeObjectURL(DOC_VIEWER_STATE.uploadObjectUrl); } catch (_e) {}
+            DOC_VIEWER_STATE.uploadObjectUrl = '';
+        }
+        var uploadInput = document.getElementById('cvDocViewerUploadInput');
+        if (uploadInput) uploadInput.value = '';
+        var split = document.getElementById('cvDocViewerSplit');
+        if (split) split.classList.remove('is-split');
+        renderDocViewerContent('cvDocViewerUploadPane', '', '');
+    }
+
+    function clampDocViewerRect(left, top, width, height) {
+        var vw = Math.max(320, window.innerWidth || 0);
+        var vh = Math.max(220, window.innerHeight || 0);
+        var minW = 600;
+        var minH = 400;
+        var edgePad = DOC_VIEWER_STATE.isMaximized ? 0 : 10;
+
+        width = Math.max(minW, Math.min(vw, parseInt(String(width || 0), 10) || minW));
+        height = Math.max(minH, Math.min(vh, parseInt(String(height || 0), 10) || minH));
+
+        var maxLeft = Math.max(edgePad, vw - width - edgePad);
+        var maxTop = Math.max(edgePad, vh - height - edgePad);
+        left = Math.max(edgePad, Math.min(maxLeft, parseInt(String(left || 0), 10) || edgePad));
+        top = Math.max(edgePad, Math.min(maxTop, parseInt(String(top || 0), 10) || edgePad));
+
+        return { left: left, top: top, width: width, height: height };
+    }
+
+    function ensureHeaderVisible(modal, top) {
+        if (!modal) return parseInt(String(top || 0), 10) || 0;
+        var t = parseInt(String(top || 0), 10) || 0;
+        return t < 0 ? 0 : t;
+    }
+
+    function fixModalBounds(modal, left, top, width, height) {
+        if (!modal) return { left: 0, top: 0, width: 600, height: 400 };
+        var r = clampDocViewerRect(left, top, width, height);
+        r.top = ensureHeaderVisible(modal, r.top);
+        return r;
+    }
+
+    function setDocViewerRect(modal, left, top, width, height) {
+        if (!modal) return;
+        var r = fixModalBounds(modal, left, top, width, height);
+        modal.style.left = r.left + 'px';
+        modal.style.top = r.top + 'px';
+        modal.style.width = r.width + 'px';
+        modal.style.height = r.height + 'px';
+    }
+
+    function ensureDocViewerInViewport(modal) {
+        if (!modal || DOC_VIEWER_STATE.isMaximized) return;
+        var rect = modal.getBoundingClientRect();
+        setDocViewerRect(modal, rect.left, rect.top, rect.width, rect.height);
+    }
+
+    function closeDocViewer() {
+        var overlay = document.getElementById('cvDocViewerOverlay');
+        var modal = document.getElementById('cvDocViewerModal');
+        if (overlay) {
+            overlay.classList.remove('open');
+            overlay.setAttribute('aria-hidden', 'true');
+        }
+        if (modal) {
+            modal.classList.remove('is-maximized');
+            modal.classList.remove('is-minimized');
+            setDocViewerRect(modal, 50, 50, Math.min((window.innerWidth || 1200) * 0.8, 1100), Math.min((window.innerHeight || 900) * 0.8, 700));
+        }
+        DOC_VIEWER_STATE.isOpen = false;
+        DOC_VIEWER_STATE.isMaximized = false;
+        DOC_VIEWER_STATE.context = null;
+        DOC_VIEWER_STATE.restoreRect = null;
+        resetDocViewerUpload();
+        renderDocViewerContent('cvDocViewerCandidatePane', '', '');
+    }
+
+    function minimizeDocViewer() {
+        var modal = document.getElementById('cvDocViewerModal');
+        if (!modal) return;
+        if (DOC_VIEWER_STATE.isMaximized) toggleDocViewerMaximize();
+        modal.classList.toggle('is-minimized');
+    }
+
+    function toggleDocViewerMaximize() {
+        var modal = document.getElementById('cvDocViewerModal');
+        if (!modal) return;
+        modal.classList.remove('is-minimized');
+        if (!DOC_VIEWER_STATE.isMaximized) {
+            var rect = modal.getBoundingClientRect();
+            DOC_VIEWER_STATE.restoreRect = {
+                left: rect.left,
+                top: rect.top,
+                width: rect.width,
+                height: rect.height
+            };
+            DOC_VIEWER_STATE.isMaximized = true;
+            modal.classList.add('is-maximized');
+            setDocViewerRect(modal, 0, 0, window.innerWidth || 0, window.innerHeight || 0);
+        } else {
+            DOC_VIEWER_STATE.isMaximized = false;
+            modal.classList.remove('is-maximized');
+            if (DOC_VIEWER_STATE.restoreRect) {
+                setDocViewerRect(
+                    modal,
+                    DOC_VIEWER_STATE.restoreRect.left,
+                    DOC_VIEWER_STATE.restoreRect.top,
+                    DOC_VIEWER_STATE.restoreRect.width,
+                    DOC_VIEWER_STATE.restoreRect.height
+                );
+            } else {
+                setDocViewerRect(modal, 50, 50, Math.min((window.innerWidth || 1200) * 0.8, 1100), Math.min((window.innerHeight || 900) * 0.8, 700));
+            }
+        }
+    }
+
+    function openDocViewer(docUrl, context) {
+        var overlay = document.getElementById('cvDocViewerOverlay');
+        var modal = document.getElementById('cvDocViewerModal');
+        if (!overlay || !modal) return false;
+        closePane();
+        closePdfViewer();
+        closeBsModal('cvViewDocModal');
+
+        var ctx = context && typeof context === 'object' ? context : {};
+        DOC_VIEWER_STATE.context = {
+            applicationId: String(ctx.applicationId || CURRENT_APP_ID || ''),
+            componentKey: normSection(ctx.componentKey || ''),
+            itemKey: String(ctx.itemKey || ''),
+            mimeType: String(ctx.mimeType || '')
+        };
+        DOC_VIEWER_STATE.isOpen = true;
+        DOC_VIEWER_STATE.isMaximized = false;
+        DOC_VIEWER_STATE.restoreRect = null;
+
+        resetDocViewerUpload();
+        renderDocViewerContent('cvDocViewerCandidatePane', String(docUrl || ''), DOC_VIEWER_STATE.context.mimeType);
+        overlay.classList.add('open');
+        overlay.setAttribute('aria-hidden', 'false');
+        modal.classList.remove('is-maximized');
+        modal.classList.remove('is-minimized');
+        setDocViewerRect(
+            modal,
+            50,
+            50,
+            Math.min((window.innerWidth || 1200) * 0.8, 1100),
+            Math.min((window.innerHeight || 900) * 0.8, 700)
+        );
+        return true;
+    }
+
+    function initDocViewer() {
+        var overlay = document.getElementById('cvDocViewerOverlay');
+        if (overlay && overlay.parentNode !== document.body) {
+            document.body.appendChild(overlay);
+        }
+        var modal = document.getElementById('cvDocViewerModal');
+        var header = document.getElementById('cvDocViewerHeader');
+        var closeBtn = document.getElementById('cvDocViewerClose');
+        var minBtn = document.getElementById('cvDocViewerMinimize');
+        var maxBtn = document.getElementById('cvDocViewerMaximize');
+        var uploadBtn = document.getElementById('cvDocViewerUploadBtn');
+        var uploadRemoveBtn = document.getElementById('cvDocViewerUploadRemove');
+        var uploadInput = document.getElementById('cvDocViewerUploadInput');
+        var split = document.getElementById('cvDocViewerSplit');
+        var handleRight = document.getElementById('cvDocViewerResizeRight');
+        var handleBottom = document.getElementById('cvDocViewerResizeBottom');
+        var handleCorner = document.getElementById('cvDocViewerResizeCorner');
+        if (!overlay || !modal || !header || overlay.dataset.bound === '1') return;
+        overlay.dataset.bound = '1';
+
+        var dragging = false;
+        var startX = 0;
+        var startY = 0;
+        var startLeft = 0;
+        var startTop = 0;
+
+        header.addEventListener('mousedown', function (e) {
+            if (e.button !== 0) return;
+            if (e.target && e.target.closest && e.target.closest('.cv-docviewer-actions')) return;
+            if (DOC_VIEWER_STATE.isMaximized) return;
+            dragging = true;
+            var rect = modal.getBoundingClientRect();
+            startX = e.clientX;
+            startY = e.clientY;
+            startLeft = rect.left;
+            startTop = rect.top;
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', function (e) {
+            if (!dragging) return;
+            var nextLeft = startLeft + (e.clientX - startX);
+            var nextTop = startTop + (e.clientY - startY);
+            setDocViewerRect(modal, nextLeft, nextTop, modal.offsetWidth, modal.offsetHeight);
+        });
+
+        document.addEventListener('mouseup', function () {
+            dragging = false;
+        });
+
+        if (closeBtn) closeBtn.addEventListener('click', closeDocViewer);
+        if (minBtn) minBtn.addEventListener('click', minimizeDocViewer);
+        if (maxBtn) maxBtn.addEventListener('click', toggleDocViewerMaximize);
+        if (uploadBtn && uploadInput) {
+            uploadBtn.addEventListener('click', function () { uploadInput.click(); });
+        }
+        if (uploadInput) {
+            uploadInput.addEventListener('change', function () {
+                var file = uploadInput.files && uploadInput.files[0] ? uploadInput.files[0] : null;
+                if (!file) return;
+                resetDocViewerUpload();
+                DOC_VIEWER_STATE.uploadObjectUrl = URL.createObjectURL(file);
+                renderDocViewerContent('cvDocViewerUploadPane', DOC_VIEWER_STATE.uploadObjectUrl, String(file.type || ''));
+                if (split) split.classList.add('is-split');
+            });
+        }
+        if (uploadRemoveBtn) {
+            uploadRemoveBtn.addEventListener('click', function () {
+                resetDocViewerUpload();
+            });
+        }
+
+        var resizing = false;
+        var resizeMode = '';
+        var resizeStartX = 0;
+        var resizeStartY = 0;
+        var resizeStartRect = null;
+
+        function startResize(mode, e) {
+            if (DOC_VIEWER_STATE.isMaximized) return;
+            resizing = true;
+            resizeMode = mode;
+            resizeStartX = e.clientX;
+            resizeStartY = e.clientY;
+            resizeStartRect = modal.getBoundingClientRect();
+            e.preventDefault();
+        }
+
+        if (handleRight) handleRight.addEventListener('mousedown', function (e) { startResize('right', e); });
+        if (handleBottom) handleBottom.addEventListener('mousedown', function (e) { startResize('bottom', e); });
+        if (handleCorner) handleCorner.addEventListener('mousedown', function (e) { startResize('corner', e); });
+
+        document.addEventListener('mousemove', function (e) {
+            if (!resizing || !resizeStartRect) return;
+            var dx = e.clientX - resizeStartX;
+            var dy = e.clientY - resizeStartY;
+            var nextWidth = resizeStartRect.width;
+            var nextHeight = resizeStartRect.height;
+            if (resizeMode === 'right' || resizeMode === 'corner') nextWidth = resizeStartRect.width + dx;
+            if (resizeMode === 'bottom' || resizeMode === 'corner') nextHeight = resizeStartRect.height + dy;
+            setDocViewerRect(modal, resizeStartRect.left, resizeStartRect.top, nextWidth, nextHeight);
+        });
+
+        document.addEventListener('mouseup', function () {
+            resizing = false;
+            resizeMode = '';
+            resizeStartRect = null;
+        });
+
+        overlay.addEventListener('click', function (e) {
+            if (e.target === overlay) closeDocViewer();
+        });
+        document.addEventListener('keydown', function (e) {
+            if (!DOC_VIEWER_STATE.isOpen) return;
+            if (e && e.key === 'Escape') closeDocViewer();
+        });
+        window.addEventListener('resize', function () {
+            setDocViewerRect(modal, modal.offsetLeft, modal.offsetTop, modal.offsetWidth, modal.offsetHeight);
+        });
+
+        window.openDocViewer = openDocViewer;
+        window.closeDocViewer = closeDocViewer;
+        window.closeDocModal = closeDocViewer;
+    }
+
+    function setPdfViewerMessage(text, tone) {
+        var el = document.getElementById('pdfViewerMessage');
+        if (!el) return;
+        el.classList.remove('error', 'success');
+        var msg = String(text || '').trim();
+        if (!msg) {
+            el.textContent = '';
+            return;
+        }
+        if (tone === 'error') el.classList.add('error');
+        if (tone === 'success') el.classList.add('success');
+        el.textContent = msg;
+    }
+
+    function closePdfViewer() {
+        var root = document.getElementById('pdfViewer');
+        var frame = document.getElementById('pdfViewerFrame');
+        var reason = document.getElementById('pdfViewerReason');
+        if (!root) return;
+        root.style.display = 'none';
+        root.setAttribute('aria-hidden', 'true');
+        if (frame) frame.src = 'about:blank';
+        if (reason) reason.value = '';
+        setPdfViewerMessage('', '');
+        PDF_VIEWER_STATE.open = false;
+        PDF_VIEWER_STATE.context = null;
+    }
+
+function openPdfViewer(url, context) {
+    if (!isLegacyPdfViewerEnabled()) return false;
+    if (SPLIT_PANE_STATE && SPLIT_PANE_STATE.isOpen) return false;
+    return false;
+}
+function triggerUpload() {
+    if (!isLegacyPdfViewerEnabled()) return;
+    document.getElementById('uploadInput').click();
+}
+
+var uploadInput = document.getElementById('uploadInput');
+if (uploadInput) {
+    uploadInput.addEventListener('change', function(e) {
+        if (!isLegacyPdfViewerEnabled()) return;
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const url = URL.createObjectURL(file);
+
+        PDF_VIEWER_STATE.mode = 'split';
+        PDF_VIEWER_STATE.uploadFile = file;
+        PDF_VIEWER_STATE.uploadUrl = url;
+
+        document.getElementById('uploadPane').style.display = 'block';
+        document.getElementById('pdfViewerContent').classList.add('split');
+
+        document.getElementById('uploadPreview').innerHTML =
+            `<iframe src="${buildPdfViewerUrl(url)}" style="width:100%;height:100%;border:none;"></iframe>`;
+    });
+}
+
+    async function runPdfViewerAction(action) {
+        var mode = String(action || '').toLowerCase().trim();
+        var ctx = PDF_VIEWER_STATE.context || {};
+        var applicationId = String(ctx.application_id || CURRENT_APP_ID || '');
+        var componentKey = normSection(ctx.component_key || '');
+        var itemKey = String(ctx.item_key || '');
+        var reasonEl = document.getElementById('pdfViewerReason');
+        var reason = reasonEl ? String(reasonEl.value || '').trim() : '';
+
+        if (!applicationId || !componentKey) {
+            setPdfViewerMessage('Missing context. Re-open the document from a tab item.', 'error');
+            return;
+        }
+        if (!isRecordComponent(componentKey)) {
+            setPdfViewerMessage('Actions are available for Identification, Education, and Employment items only.', 'error');
+            return;
+        }
+        if ((mode === 'reject' || mode === 'hold') && !reason) {
+            setPdfViewerMessage('Reason is required for ' + mode + '.', 'error');
+            if (reasonEl) reasonEl.focus();
+            return;
+        }
+
+        var approveBtn = document.getElementById('pdfViewerApprove');
+        var rejectBtn = document.getElementById('pdfViewerReject');
+        var holdBtn = document.getElementById('pdfViewerHold');
+        [approveBtn, rejectBtn, holdBtn].forEach(function (btn) { if (btn) btn.disabled = true; });
+        setPdfViewerMessage('Submitting ' + mode + '...', '');
+
+        try {
+            var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
+            var caseId = REPORT_PAYLOAD && REPORT_PAYLOAD.case && REPORT_PAYLOAD.case.case_id ? parseInt(REPORT_PAYLOAD.case.case_id, 10) : 0;
+            var role = getRole();
+            var group = role === 'verifier' ? (getVerifierGroup() || null) : null;
+
+            var out = await postJson(base + '/api/shared/component_action.php', {
+                application_id: applicationId,
+                case_id: caseId || null,
+                component_key: componentKey,
+                item_key: itemKey || null,
+                action: mode,
+                group: group,
+                reason: reason || null,
+                override_reason: reason || null
+            });
+            if (!out.res.ok || !out.payload || out.payload.status !== 1) {
+                setPdfViewerMessage((out.payload && out.payload.message) ? out.payload.message : 'Failed to submit action.', 'error');
+                return;
+            }
+            setPdfViewerMessage('Action updated successfully.', 'success');
+            setBoxMessage('cvTopMessage', 'Updated successfully.', 'success');
+            try { await loadReport(); } catch (_e) {}
+        } catch (e) {
+            setPdfViewerMessage((e && e.message) ? e.message : 'Network error. Please try again.', 'error');
+        } finally {
+            [approveBtn, rejectBtn, holdBtn].forEach(function (btn) { if (btn) btn.disabled = false; });
+        }
+    }
+
+    function initPdfViewer() {
+        if (!isLegacyPdfViewerEnabled()) return;
+        var root = document.getElementById('pdfViewer');
+        var header = document.getElementById('pdfViewerHeader');
+        var closeBtn = document.getElementById('pdfViewerClose');
+        var approveBtn = document.getElementById('pdfViewerApprove');
+        var rejectBtn = document.getElementById('pdfViewerReject');
+        var holdBtn = document.getElementById('pdfViewerHold');
+        if (!root || !header || root.dataset.bound === '1') return;
+        root.dataset.bound = '1';
+
+        var dragging = false;
+        var startX = 0;
+        var startY = 0;
+        var startLeft = 0;
+        var startTop = 0;
+
+        header.addEventListener('mousedown', function (e) {
+            if (e.button !== 0) return;
+            var t = e.target;
+            if (t && t.closest && t.closest('#pdfViewerClose')) return;
+            dragging = true;
+            var rect = root.getBoundingClientRect();
+            startX = e.clientX;
+            startY = e.clientY;
+            startLeft = rect.left;
+            startTop = rect.top;
+            root.style.left = rect.left + 'px';
+            root.style.top = rect.top + 'px';
+            root.style.right = 'auto';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', function (e) {
+            if (!dragging) return;
+            var dx = e.clientX - startX;
+            var dy = e.clientY - startY;
+            var nextLeft = startLeft + dx;
+            var nextTop = startTop + dy;
+            var maxLeft = Math.max(0, window.innerWidth - root.offsetWidth);
+            var maxTop = Math.max(0, window.innerHeight - root.offsetHeight);
+            if (nextLeft < 0) nextLeft = 0;
+            if (nextTop < 0) nextTop = 0;
+            if (nextLeft > maxLeft) nextLeft = maxLeft;
+            if (nextTop > maxTop) nextTop = maxTop;
+            root.style.left = nextLeft + 'px';
+            root.style.top = nextTop + 'px';
+            PDF_VIEWER_STATE.dragged = true;
+        });
+
+        document.addEventListener('mouseup', function () {
+            if (!dragging) return;
+            dragging = false;
+            document.body.style.removeProperty('user-select');
+        });
+
+        if (closeBtn) closeBtn.addEventListener('click', function () { closePdfViewer(); });
+        if (approveBtn) approveBtn.addEventListener('click', function () { runPdfViewerAction('approve'); });
+        if (rejectBtn) rejectBtn.addEventListener('click', function () { runPdfViewerAction('reject'); });
+        if (holdBtn) holdBtn.addEventListener('click', function () { runPdfViewerAction('hold'); });
+
+        window.closePdfViewer = closePdfViewer;
     }
 
     async function initVerifierMailAndPrint(getPayload) {
@@ -640,6 +1492,16 @@ function closeBsModal(id) {
         payload = payload || {};
         var d = payload.data || payload;
         var role = getRole();
+        var isStaffRole = (role === 'verifier' || role === 'validator' || role === 'db_verifier');
+        var visible = Array.isArray(d.visible_sections) ? d.visible_sections : (Array.isArray(d.visibleSections) ? d.visibleSections : []);
+        if (isStaffRole && visible.length) {
+            var strict = {};
+            visible.forEach(function (k) {
+                var nk = normSection(k);
+                if (nk) strict[nk] = true;
+            });
+            return Object.keys(strict);
+        }
         var list = Array.isArray(d.assigned_components) ? d.assigned_components : [];
         var out = {};
         list.forEach(function (r) {
@@ -648,8 +1510,12 @@ function closeBsModal(id) {
             if (k) out[k] = true;
         });
 
-        // Defensive union: if payload has section data but assigned_components is stale/partial,
-        // keep those sections visible for staff users to avoid sidebar dropping valid sections.
+        if (isStaffRole) {
+            return Object.keys(out);
+        }
+
+        // Defensive union for non-staff views: if payload has section data but
+        // assigned_components is stale/partial, keep valid sections visible.
         if (d && typeof d === 'object') {
             if (Array.isArray(d.identification) && d.identification.length) out.id = true;
             if (Array.isArray(d.education) && d.education.length) out.education = true;
@@ -843,7 +1709,86 @@ function closeBsModal(id) {
         return '<div class="cr-flow">' + html + '</div>';
     }
 
+    function emailRepliesHtml(items) {
+        if (!Array.isArray(items) || items.length === 0) {
+            return '<div style="color:#6b7280; font-size:13px;">No email replies yet.</div>';
+        }
+
+        return items.map(function (it) {
+            var sender = it && it.sender ? String(it.sender) : 'Unknown';
+            var msg = it && it.message ? String(it.message) : '';
+            var when = it && it.created_at ? String(it.created_at) : '';
+            var ts = '';
+            try {
+                ts = when ? window.GSS_DATE.formatDbDateTime(when) : '';
+            } catch (_e) {
+                ts = when;
+            }
+
+            var safeMsg = esc(msg).replace(/\n/g, '<br>');
+
+            return ''
+                + '<div style="border:1px solid rgba(148,163,184,0.3); border-radius:10px; padding:10px; background:#fff;">'
+                + '<div style="display:flex; justify-content:space-between; gap:8px; margin-bottom:6px;">'
+                + '<b style="font-size:12px; color:#0f172a;">' + esc(sender) + '</b>'
+                + '<span style="font-size:11px; color:#64748b;">' + esc(ts) + '</span>'
+                + '</div>'
+                + '<div style="font-size:12px; color:#0f172a; line-height:1.5; white-space:normal;">' + safeMsg + '</div>'
+                + '</div>';
+        }).join('');
+    }
+
+    async function loadEmailReplies(applicationId) {
+        var hosts = [];
+        var hostModal = document.getElementById('cvEmailReplies');
+        var hostSidebar = document.getElementById('emailReplies');
+        if (hostModal) hosts.push(hostModal);
+        if (hostSidebar) hosts.push(hostSidebar);
+        var countEl = document.getElementById('cvEmailRepliesCount');
+        if (!hosts.length) return;
+
+        function renderAll(html) {
+            hosts.forEach(function (el) {
+                el.innerHTML = html;
+            });
+        }
+
+        if (!applicationId) {
+            EMAIL_REPLIES_CACHE = [];
+            renderAll('<div style="color:#6b7280; font-size:13px;">application_id not found.</div>');
+            if (countEl) countEl.textContent = '0';
+            return;
+        }
+
+        renderAll('<div style="color:#6b7280; font-size:13px;">Loading email replies...</div>');
+        var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
+        var url = base + '/api/get_replies.php?application_id=' + encodeURIComponent(applicationId);
+
+        try {
+            var res = await fetch(url, { credentials: 'same-origin' });
+            var data = await res.json().catch(function () { return null; });
+            var rows = [];
+            if (Array.isArray(data)) {
+                rows = data;
+            } else if (data && data.status === 1 && Array.isArray(data.data)) {
+                rows = data.data;
+            } else {
+                renderAll('<div style="color:#b91c1c; font-size:13px;">Failed to load email replies.</div>');
+                if (countEl) countEl.textContent = '0';
+                return;
+            }
+
+            EMAIL_REPLIES_CACHE = rows;
+            renderAll(emailRepliesHtml(EMAIL_REPLIES_CACHE));
+            if (countEl) countEl.textContent = String(EMAIL_REPLIES_CACHE.length);
+        } catch (_e) {
+            renderAll('<div style="color:#b91c1c; font-size:13px;">Network error loading email replies.</div>');
+            if (countEl) countEl.textContent = '0';
+        }
+    }
+
     async function loadTimeline(applicationId) {
+        loadEmailReplies(applicationId);
         var host = document.getElementById('cvTimeline');
         if (!host) return;
 
@@ -1143,6 +2088,7 @@ function closeBsModal(id) {
             var actions = document.createElement('div');
             actions.className = 'cr-comp-actions-host';
             actions.innerHTML = '' +
+                '<button type="button" class="cr-action-btn" data-comp-action="insufficient_documents">Insufficient Documents</button>' +
                 '<button type="button" class="cr-action-btn cr-dark" data-comp-action="hold">Hold</button>' +
                 '<button type="button" class="cr-action-btn cr-danger" data-comp-action="reject">Reject</button>' +
                 '<button type="button" class="cr-action-btn cr-ok" data-comp-action="approve">Approve</button>';
@@ -1701,7 +2647,7 @@ function closeBsModal(id) {
             }
 
             if (isPdfMime(mt) || href.toLowerCase().indexOf('.pdf') !== -1) {
-                frameHost.innerHTML = '<iframe src="' + esc(href) + '"></iframe>';
+                frameHost.innerHTML = '<iframe src="' + esc(buildPdfViewerUrl(href)) + '"></iframe>';
                 return;
             }
 
@@ -1710,6 +2656,8 @@ function closeBsModal(id) {
                 '<a href="' + esc(href) + '" target="_blank" style="text-decoration:none; color:#2563eb; font-weight:800;">Open document</a>' +
                 '</div>';
         }
+        listHost.__cvDocSetActive = setActive;
+        listHost.__cvDocList = list;
 
         if (!listHost.dataset.bound) {
             listHost.dataset.bound = '1';
@@ -1718,7 +2666,30 @@ function closeBsModal(id) {
                 var item = t && t.closest ? t.closest('.cr-docbar-item') : null;
                 if (!item) return;
                 var idx = item.getAttribute('data-doc-idx');
-                setActive(idx);
+                if (typeof listHost.__cvDocSetActive === 'function') {
+                    listHost.__cvDocSetActive(idx);
+                }
+                var n = parseInt(String(idx || '0'), 10);
+                var rows = Array.isArray(listHost.__cvDocList) ? listHost.__cvDocList : [];
+                var row = (!isNaN(n) && n >= 0 && n < rows.length) ? rows[n] : null;
+                var href = row ? docHref(row) : '';
+                var docType = row && row.doc_type ? normSection(String(row.doc_type)) : '';
+                var componentKey = isRecordComponent(docType) ? docType : activeComponentSectionKey();
+                var context = {
+                    applicationId: CURRENT_APP_ID || '',
+                    componentKey: componentKey,
+                    itemKey: componentKey ? getActiveItemKeyForSection(componentKey) : '',
+                    mimeType: row && row.mime_type ? String(row.mime_type) : ''
+                };
+                if (href) {
+                    if (openDocViewer(href, {
+                        applicationId: context.applicationId || '',
+                        componentKey: context.componentKey || '',
+                        itemKey: context.itemKey || '',
+                        mimeType: row && row.mime_type ? String(row.mime_type) : ''
+                    })) return;
+                    try { window.open(href, '_blank'); } catch (_e) {}
+                }
             });
         }
 
@@ -2260,7 +3231,7 @@ function closeBsModal(id) {
         if (!host) return;
 
         if (!Array.isArray(rows) || rows.length === 0) {
-            host.innerHTML = '<div style="color:#6b7280; font-size:13px;">No data.</div>';
+            host.innerHTML = '<div style="color:#6b7280; font-size:13px;">No data available.</div>';
             return;
         }
 
@@ -2288,9 +3259,10 @@ function closeBsModal(id) {
     function renderTabbedTable(hostId, rows, columns, tabPrefix) {
         var host = document.getElementById(hostId);
         if (!host) return;
+        var sectionKey = sectionKeyForTableHost(hostId);
 
         if (!Array.isArray(rows) || rows.length === 0) {
-            host.innerHTML = '<div style="color:#6b7280; font-size:13px;">No data.</div>';
+            host.innerHTML = '<div style="color:#6b7280; font-size:13px;">No data available.</div>';
             return;
         }
 
@@ -2301,8 +3273,55 @@ function closeBsModal(id) {
             return;
         }
 
+        function setActiveRecordTab(idx) {
+            var max = rows.length - 1;
+            var n = parseInt(String(idx || '0'), 10);
+            if (!isFinite(n) || n < 0) n = 0;
+            if (n > max) n = 0;
+            var key = String(n);
+            host.dataset.activeRecordTab = key;
+            var currentItemKey = '';
+
+            Array.prototype.slice.call(host.querySelectorAll('[data-record-tab]')).forEach(function (el) {
+                var on = String(el.getAttribute('data-record-tab') || '') === key;
+                el.classList.toggle('active', on);
+                el.setAttribute('aria-selected', on ? 'true' : 'false');
+                if (on) {
+                    currentItemKey = String(el.getAttribute('data-record-item-key') || '');
+                }
+            });
+
+            Array.prototype.slice.call(host.querySelectorAll('[data-record-panel]')).forEach(function (el) {
+                var on = String(el.getAttribute('data-record-panel') || '') === key;
+                el.classList.toggle('active', on);
+                // Force deterministic visibility even if external CSS/classes interfere.
+                el.style.display = on ? 'block' : 'none';
+                el.setAttribute('aria-hidden', on ? 'false' : 'true');
+            });
+
+            if (currentItemKey) {
+                host.dataset.activeRecordItemKey = currentItemKey;
+                if (sectionKey) {
+                    ACTIVE_ITEM_BY_SECTION[sectionKey] = currentItemKey;
+                }
+            } else {
+                host.dataset.activeRecordItemKey = '';
+                if (sectionKey) {
+                    delete ACTIVE_ITEM_BY_SECTION[sectionKey];
+                }
+            }
+
+            try {
+                document.dispatchEvent(new CustomEvent('cv:record-tab-changed', {
+                    detail: { section: sectionKey, hostId: hostId, index: n, item_key: host.dataset.activeRecordItemKey || '' }
+                }));
+            } catch (_e) {
+            }
+        }
+
         var tabsHtml = rows.map(function (_r, idx) {
-            return '<button type="button" class="cr-record-tab' + (idx === 0 ? ' active' : '') + '" data-record-tab="' + esc(String(idx)) + '">' +
+            var itemKey = deriveRecordItemKey(sectionKey, _r || {}, idx);
+            return '<button type="button" class="cr-record-tab' + (idx === 0 ? ' active' : '') + '" data-record-tab="' + esc(String(idx)) + '" data-record-item-key="' + esc(itemKey) + '">' +
                 esc((tabPrefix || 'Item') + ' ' + String(idx + 1)) +
             '</button>';
         }).join('');
@@ -2329,6 +3348,7 @@ function closeBsModal(id) {
         }).join('');
 
         host.innerHTML = '<div class="cr-record-tabs">' + tabsHtml + '</div>' + panelsHtml;
+        setActiveRecordTab(host.dataset.activeRecordTab || '0');
 
         if (!host.dataset.tabsBound) {
             host.dataset.tabsBound = '1';
@@ -2338,12 +3358,7 @@ function closeBsModal(id) {
                 if (!btn) return;
 
                 var idx = String(btn.getAttribute('data-record-tab') || '0');
-                Array.prototype.slice.call(host.querySelectorAll('[data-record-tab]')).forEach(function (el) {
-                    el.classList.toggle('active', String(el.getAttribute('data-record-tab')) === idx);
-                });
-                Array.prototype.slice.call(host.querySelectorAll('[data-record-panel]')).forEach(function (el) {
-                    el.classList.toggle('active', String(el.getAttribute('data-record-panel')) === idx);
-                });
+                setActiveRecordTab(idx);
             });
         }
     }
@@ -2583,7 +3598,7 @@ function closeBsModal(id) {
     }
 
     function setActionsDisabled(disabled) {
-        ['cvActionHold', 'cvActionReject', 'cvActionStopBgv', 'cvActionApprove', 'cvValidatorActionHold', 'cvValidatorActionReject', 'cvValidatorActionApprove'].forEach(function (id) {
+        ['cvActionInsufficient', 'cvActionHold', 'cvActionReject', 'cvActionStopBgv', 'cvActionApprove', 'cvValidatorActionInsufficient', 'cvValidatorActionHold', 'cvValidatorActionReject', 'cvValidatorActionApprove'].forEach(function (id) {
             var b = document.getElementById(id);
             if (!b) return;
             b.disabled = !!disabled;
@@ -2633,11 +3648,59 @@ function closeBsModal(id) {
             }
         }
 
-        function getStageStatusFor(componentKey, stage) {
+        function getItemStageStatusFor(componentKey, itemKey, stage) {
+            try {
+                componentKey = normSection(componentKey);
+                itemKey = String(itemKey || '').toLowerCase().trim();
+                stage = String(stage || '').toLowerCase().trim();
+                if (!componentKey || !itemKey || !stage) return '';
+                var d = REPORT_PAYLOAD || {};
+                var byComp = d.component_item_workflow && typeof d.component_item_workflow === 'object'
+                    ? d.component_item_workflow
+                    : (d.componentItemWorkflow && typeof d.componentItemWorkflow === 'object' ? d.componentItemWorkflow : null);
+                if (!byComp || typeof byComp !== 'object') return '';
+
+                var compRow = byComp[componentKey] && typeof byComp[componentKey] === 'object' ? byComp[componentKey] : null;
+                if (!compRow) {
+                    var keys = Object.keys(byComp);
+                    for (var i = 0; i < keys.length; i++) {
+                        if (normSection(keys[i]) === componentKey) {
+                            compRow = byComp[keys[i]];
+                            break;
+                        }
+                    }
+                }
+                if (!compRow || typeof compRow !== 'object') return '';
+
+                var itemRow = compRow[itemKey] && typeof compRow[itemKey] === 'object' ? compRow[itemKey] : null;
+                if (!itemRow) {
+                    var itemKeys = Object.keys(compRow);
+                    for (var j = 0; j < itemKeys.length; j++) {
+                        if (String(itemKeys[j]).toLowerCase().trim() === itemKey) {
+                            itemRow = compRow[itemKeys[j]];
+                            break;
+                        }
+                    }
+                }
+                if (!itemRow || typeof itemRow !== 'object') return '';
+                if (!itemRow[stage] || typeof itemRow[stage] !== 'object') return '';
+                return String(itemRow[stage].status || '').toLowerCase().trim();
+            } catch (e) {
+                return '';
+            }
+        }
+
+        function getStageStatusFor(componentKey, stage, itemKey) {
             try {
                 componentKey = normSection(componentKey);
                 stage = String(stage || '').toLowerCase().trim();
                 if (!componentKey || !stage) return '';
+
+                var scopedItemKey = String(itemKey || '').toLowerCase().trim();
+                if (scopedItemKey) {
+                    var itemScoped = getItemStageStatusFor(componentKey, scopedItemKey, stage);
+                    if (itemScoped) return itemScoped;
+                }
 
                 var d = REPORT_PAYLOAD || {};
                 var byComp = getWorkflowComponentRow(d, componentKey);
@@ -2657,7 +3720,7 @@ function closeBsModal(id) {
         }
 
         function setComponentActionButtonsEnabled(enabled) {
-            ['cvActionHold', 'cvActionReject', 'cvActionApprove', 'cvValidatorActionHold', 'cvValidatorActionReject', 'cvValidatorActionApprove'].forEach(function (id) {
+            ['cvActionInsufficient', 'cvActionHold', 'cvActionReject', 'cvActionApprove', 'cvValidatorActionInsufficient', 'cvValidatorActionHold', 'cvValidatorActionReject', 'cvValidatorActionApprove'].forEach(function (id) {
                 var b = document.getElementById(id);
                 if (!b) return;
                 b.disabled = !enabled;
@@ -2673,33 +3736,41 @@ function closeBsModal(id) {
                 }
 
                 var componentKey = currentSectionKey();
-                if (!componentKey || componentKey === 'timeline') return;
+                if (!componentKey || componentKey === 'timeline') {
+                    setComponentActionButtonsEnabled(false);
+                    return;
+                }
+                if (!isRecordComponent(componentKey)) {
+                    setComponentActionButtonsEnabled(false);
+                    return;
+                }
+                var itemKey = getActiveItemKeyForSection(componentKey);
 
-                var st = getStageStatusFor(componentKey, stage);
+                var st = getStageStatusFor(componentKey, stage, itemKey);
                 if (role === 'verifier') {
                     if (st === 'approved' || st === 'rejected') {
                         setComponentActionButtonsEnabled(false);
-                        setText('cvTopMessage', 'This component is already ' + st + ' for ' + stage + '.');
+                        setText('cvTopMessage', 'This item is already ' + st + ' for ' + stage + '.');
                         return;
                     }
-                    var validatorSt = getStageStatusFor(componentKey, 'validator');
+                    var validatorSt = getStageStatusFor(componentKey, 'validator', itemKey);
                     if (validatorSt === 'rejected') {
                         setComponentActionButtonsEnabled(true);
-                        setText('cvTopMessage', 'Validator rejected this component. Approval requires reason.');
+                        setText('cvTopMessage', 'Validator rejected this item. Approval requires reason.');
                     } else {
                         setComponentActionButtonsEnabled(true);
                     }
                     return;
                 }
                 if (role === 'qa' || role === 'team_lead') {
-                    var verifierSt = getStageStatusFor(componentKey, 'verifier');
+                    var verifierSt = getStageStatusFor(componentKey, 'verifier', itemKey);
                     if (verifierSt === 'rejected' && !(st === 'approved' || st === 'rejected')) {
-                        setText('cvTopMessage', 'Verifier rejected this component. QA action requires reason.');
+                        setText('cvTopMessage', 'Verifier rejected this item. QA action requires reason.');
                     }
                 }
                 if (st === 'approved' || st === 'rejected') {
                     setComponentActionButtonsEnabled(false);
-                    setText('cvTopMessage', 'This component is already ' + st + ' for ' + stage + '.');
+                    setText('cvTopMessage', 'This item is already ' + st + ' for ' + stage + '.');
                 } else {
                     setComponentActionButtonsEnabled(true);
                 }
@@ -2902,6 +3973,9 @@ function askActionConfirm(label) {
             document.addEventListener('cv:section-changed', function () {
                 applyComponentActionLock();
             });
+            document.addEventListener('cv:record-tab-changed', function () {
+                applyComponentActionLock();
+            });
         }
 
         function currentSectionKey() {
@@ -2944,50 +4018,70 @@ function askActionConfirm(label) {
                 var isComponentRole = canUseComponentWorkflowRole(role);
                 var overrideReason = '';
                 var componentKey = '';
+                var itemKey = '';
+                var reasonType = '';
 
-                if (isComponentRole && (action === 'hold' || action === 'reject' || action === 'approve')) {
+                if (isComponentRole && (action === 'hold' || action === 'reject' || action === 'approve' || action === 'insufficient_documents')) {
                     componentKey = currentSectionKey();
                     if (!componentKey || componentKey === 'timeline') {
                         setBoxMessage('cvTopMessage', 'Please select a component first.', 'warning');
                         return;
                     }
+                    if (!isRecordComponent(componentKey)) {
+                        setBoxMessage('cvTopMessage', 'Actions are available for Identification, Education, and Employment only.', 'warning');
+                        return;
+                    }
+                    itemKey = getActiveItemKeyForSection(componentKey);
                 }
 
+                var requiresReason = (action === 'reject' || action === 'hold' || action === 'insufficient_documents');
                 var reasonTitle = 'Reason Required';
                 var reasonPrompt = 'Enter reason to ' + String(label || action || 'continue').toLowerCase();
+                if (action === 'reject') reasonType = 'reject';
+                if (action === 'hold') reasonType = 'hold';
+                if (action === 'insufficient_documents') reasonType = 'insufficient_documents';
+
                 if (action === 'approve' && componentKey) {
-                    var validatorStatus = getStageStatusFor(componentKey, 'validator');
-                    var verifierStatus = getStageStatusFor(componentKey, 'verifier');
+                    var validatorStatus = getStageStatusFor(componentKey, 'validator', itemKey);
+                    var verifierStatus = getStageStatusFor(componentKey, 'verifier', itemKey);
                     if (validatorStatus === 'rejected') {
+                        requiresReason = true;
                         reasonTitle = 'Verifier Reason Required';
-                        reasonPrompt = 'Validator rejected this component. Enter reason to approve';
+                        reasonPrompt = 'Validator rejected this item. Enter reason to approve';
+                        reasonType = 'reprocess_action';
                     } else if (verifierStatus === 'rejected') {
+                        requiresReason = true;
                         reasonTitle = 'QA Reason Required';
-                        reasonPrompt = 'Verifier rejected this component. Enter reason to proceed';
+                        reasonPrompt = 'Verifier rejected this item. Enter reason to proceed';
+                        reasonType = 'reprocess_action';
                     }
                 }
 
-                var reasonPayload = await askOverrideReason(
-                    componentKey || 'case',
-                    reasonPrompt,
-                    reasonTitle,
-                    'reprocess_action'
-                );
-                if (reasonPayload == null) return;
-                overrideReason = String(reasonPayload.reason || '').trim();
-                if (!overrideReason) {
-                    setBoxMessage('cvTopMessage', 'Reason is required to continue.', 'warning');
-                    return;
+                if (requiresReason) {
+                    var reasonPayload = await askOverrideReason(
+                        componentKey || 'case',
+                        reasonPrompt,
+                        reasonTitle,
+                        reasonType || 'reprocess_action'
+                    );
+                    if (reasonPayload == null) return;
+                    overrideReason = String(reasonPayload.reason || '').trim();
+                    if (!overrideReason) {
+                        setBoxMessage('cvTopMessage', 'Reason is required to continue.', 'warning');
+                        return;
+                    }
                 }
 
-                var ok = await askActionConfirm(label);
-                if (!ok) return;
+                if (action === 'stop_bgv') {
+                    var ok = await askActionConfirm(label);
+                    if (!ok) return;
+                }
 
                 setActionsDisabled(true);
                 setBoxMessage('cvTopMessage', '', '');
 
                 var out;
-                if (isComponentRole && (action === 'hold' || action === 'reject' || action === 'approve')) {
+                if (isComponentRole && (action === 'hold' || action === 'reject' || action === 'approve' || action === 'insufficient_documents')) {
                     var group2 = null;
                     if (role === 'verifier') {
                         group2 = getVerifierGroup() || null;
@@ -2996,8 +4090,10 @@ function askActionConfirm(label) {
                         application_id: applicationId,
                         case_id: caseId || null,
                         component_key: componentKey,
+                        item_key: itemKey || null,
                         action: action,
                         group: group2,
+                        reason: overrideReason || null,
                         override_reason: overrideReason || null
                     });
                 } else {
@@ -3014,15 +4110,15 @@ function askActionConfirm(label) {
                     var msgLower = String(msg || '').toLowerCase();
                     if (msgLower.indexOf('validator rejected') !== -1) {
                         if (msgLower.indexOf('reason is required') !== -1 || msgLower.indexOf('reason required') !== -1) {
-                            msg = 'Reason is required to approve validator rejected component.';
+                            msg = 'Reason is required to approve validator rejected item.';
                         } else {
-                            msg = 'Validator rejected this component. Add reason and approve.';
+                            msg = 'Validator rejected this item. Add reason and approve.';
                         }
                     } else if (msgLower.indexOf('verifier rejected') !== -1) {
                         if (msgLower.indexOf('reason is required') !== -1 || msgLower.indexOf('reason required') !== -1) {
-                            msg = 'Reason is required for QA action on verifier rejected component.';
+                            msg = 'Reason is required for QA action on verifier rejected item.';
                         } else {
-                            msg = 'Verifier rejected this component. Add QA reason to proceed.';
+                            msg = 'Verifier rejected this item. Add QA reason to proceed.';
                         }
                     }
                     setBoxMessage('cvTopMessage', msg, 'danger');
@@ -3044,10 +4140,22 @@ function askActionConfirm(label) {
                     setText('cvHeaderStatus', statusLabel);
                 }
 
+                function actionToWorkflowStatus(a) {
+                    if (a === 'approve') return 'approved';
+                    if (a === 'reject') return 'rejected';
+                    if (a === 'hold') return 'hold';
+                    if (a === 'insufficient_documents') return 'insufficient_documents';
+                    return '';
+                }
+
                 // Update local workflow state so buttons lock immediately without reload
-                if (isComponentRole && (action === 'hold' || action === 'reject' || action === 'approve')) {
+                if (isComponentRole && (action === 'hold' || action === 'reject' || action === 'approve' || action === 'insufficient_documents')) {
                     var componentKey2 = currentSectionKey();
+                    var itemKey2 = getActiveItemKeyForSection(componentKey2);
                     var stage2 = roleToStage(role);
+                    var stageStatusForItem = actionToWorkflowStatus(action);
+                    var stageStatusForComponent = String((d && d.component_status) ? d.component_status : stageStatusForItem).toLowerCase().trim();
+                    if (!stageStatusForComponent) stageStatusForComponent = stageStatusForItem;
                     var row2 = getAssignedRowForComponent(REPORT_PAYLOAD || {}, componentKey2);
                     if (!row2) {
                         if (!REPORT_PAYLOAD.assigned_components || !Array.isArray(REPORT_PAYLOAD.assigned_components)) {
@@ -3057,7 +4165,7 @@ function askActionConfirm(label) {
                         REPORT_PAYLOAD.assigned_components.push(row2);
                     }
                     if (!row2.workflow || typeof row2.workflow !== 'object') row2.workflow = {};
-                    row2.workflow[stage2] = (action === 'approve') ? 'approved' : ((action === 'reject') ? 'rejected' : 'hold');
+                    row2.workflow[stage2] = stageStatusForComponent;
                     row2.current_stage = computeComponentStageLabel(row2.workflow);
 
                     if (!REPORT_PAYLOAD.component_workflow || typeof REPORT_PAYLOAD.component_workflow !== 'object') {
@@ -3066,7 +4174,20 @@ function askActionConfirm(label) {
                     if (!REPORT_PAYLOAD.component_workflow[componentKey2] || typeof REPORT_PAYLOAD.component_workflow[componentKey2] !== 'object') {
                         REPORT_PAYLOAD.component_workflow[componentKey2] = {};
                     }
-                    REPORT_PAYLOAD.component_workflow[componentKey2][stage2] = { status: row2.workflow[stage2] };
+                    REPORT_PAYLOAD.component_workflow[componentKey2][stage2] = { status: stageStatusForComponent };
+
+                    if (itemKey2) {
+                        if (!REPORT_PAYLOAD.component_item_workflow || typeof REPORT_PAYLOAD.component_item_workflow !== 'object') {
+                            REPORT_PAYLOAD.component_item_workflow = {};
+                        }
+                        if (!REPORT_PAYLOAD.component_item_workflow[componentKey2] || typeof REPORT_PAYLOAD.component_item_workflow[componentKey2] !== 'object') {
+                            REPORT_PAYLOAD.component_item_workflow[componentKey2] = {};
+                        }
+                        if (!REPORT_PAYLOAD.component_item_workflow[componentKey2][itemKey2] || typeof REPORT_PAYLOAD.component_item_workflow[componentKey2][itemKey2] !== 'object') {
+                            REPORT_PAYLOAD.component_item_workflow[componentKey2][itemKey2] = {};
+                        }
+                        REPORT_PAYLOAD.component_item_workflow[componentKey2][itemKey2][stage2] = { status: stageStatusForItem };
+                    }
                     CURRENT_SECTION_KEY = componentKey2;
                     LAST_COMPONENT_SECTION_KEY = componentKey2;
                     try {
@@ -3087,14 +4208,20 @@ function askActionConfirm(label) {
         // expose for per-component toolbars
         window.__CR_RUN_ACTION = run;
 
+        var insufficientBtn = document.getElementById('cvActionInsufficient');
         var holdBtn = document.getElementById('cvActionHold');
         var rejectBtn = document.getElementById('cvActionReject');
         var stopBtn = document.getElementById('cvActionStopBgv');
         var approveBtn = document.getElementById('cvActionApprove');
+        var validatorInsufficientBtn = document.getElementById('cvValidatorActionInsufficient');
         var validatorHoldBtn = document.getElementById('cvValidatorActionHold');
         var validatorRejectBtn = document.getElementById('cvValidatorActionReject');
         var validatorApproveBtn = document.getElementById('cvValidatorActionApprove');
 
+        if (insufficientBtn && !insufficientBtn.dataset.bound) {
+            insufficientBtn.dataset.bound = '1';
+            insufficientBtn.addEventListener('click', function () { run('insufficient_documents', 'Insufficient Documents'); });
+        }
         if (holdBtn && !holdBtn.dataset.bound) {
             holdBtn.dataset.bound = '1';
             holdBtn.addEventListener('click', function () { run('hold', 'Hold'); });
@@ -3110,6 +4237,10 @@ function askActionConfirm(label) {
         if (approveBtn && !approveBtn.dataset.bound) {
             approveBtn.dataset.bound = '1';
             approveBtn.addEventListener('click', function () { run('approve', 'Approve'); });
+        }
+        if (validatorInsufficientBtn && !validatorInsufficientBtn.dataset.bound) {
+            validatorInsufficientBtn.dataset.bound = '1';
+            validatorInsufficientBtn.addEventListener('click', function () { run('insufficient_documents', 'Insufficient Documents'); });
         }
         if (validatorHoldBtn && !validatorHoldBtn.dataset.bound) {
             validatorHoldBtn.dataset.bound = '1';
@@ -3132,18 +4263,24 @@ function askActionConfirm(label) {
     function initSectionNav() {
         var items = Array.prototype.slice.call(document.querySelectorAll('.list-group-item[data-section]'));
         if (!items.length) return;
+        var reviewTabHost = document.getElementById('cvReviewTabs');
+        var reviewTabButtons = reviewTabHost ? Array.prototype.slice.call(reviewTabHost.querySelectorAll('[data-review-section]')) : [];
 
         var role = getRole();
+        var isStaffRole = (role === 'verifier' || role === 'db_verifier' || role === 'validator');
+        var isAssignmentScopedRole = (role === 'verifier' || role === 'db_verifier');
+        var hasBackendVisibleSections = false;
         if ((role === 'verifier' || role === 'db_verifier' || role === 'validator') && !REPORT_PAYLOAD) {
             // Avoid pre-payload flicker/override; render once with resolved assigned components.
             return;
         }
         var assignedKeys = [];
-        if ((role === 'verifier' || role === 'db_verifier' || role === 'validator') && REPORT_PAYLOAD) {
+        if (isAssignmentScopedRole && REPORT_PAYLOAD) {
+            hasBackendVisibleSections = Array.isArray(REPORT_PAYLOAD.visible_sections) || Array.isArray(REPORT_PAYLOAD.visibleSections);
             assignedKeys = getAssignedComponentKeys(REPORT_PAYLOAD);
 
             // Hide nav items and panels not assigned
-            if (assignedKeys.length) {
+            if (assignedKeys.length || hasBackendVisibleSections) {
                 items.forEach(function (btn) {
                     var s = (btn.getAttribute('data-section') || '').toLowerCase();
                     var ok = assignedKeys.indexOf(s) !== -1 || s === 'timeline';
@@ -3165,6 +4302,21 @@ function askActionConfirm(label) {
 
         var uploadTypeEl = document.getElementById('cvUploadDocType');
         var currentSection = null;
+
+        function setReviewTabsActive(section) {
+            if (!reviewTabButtons.length) return;
+            var s = normSection(section);
+            reviewTabButtons.forEach(function (btn) {
+                btn.classList.toggle('active', normSection(btn.getAttribute('data-review-section') || '') === s);
+            });
+        }
+
+        function sectionVisibleInNav(section) {
+            var s = normSection(section);
+            if (!s) return false;
+            var btn = items.find(function (it) { return normSection(it.getAttribute('data-section') || '') === s; });
+            return !!(btn && btn.style.display !== 'none');
+        }
 
         function syncUploadType(section) {
             if (!uploadTypeEl) return;
@@ -3191,6 +4343,7 @@ function askActionConfirm(label) {
             items.forEach(function (btn) {
                 btn.classList.toggle('active', btn.getAttribute('data-section') === section);
             });
+            setReviewTabsActive(section);
 
             var panels = Array.prototype.slice.call(document.querySelectorAll('.candidate-section'));
             panels.forEach(function (p) {
@@ -3238,10 +4391,21 @@ function askActionConfirm(label) {
             }
         });
 
+        if (reviewTabButtons.length && !reviewTabHost.dataset.bound) {
+            reviewTabHost.dataset.bound = '1';
+            reviewTabButtons.forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    var section = normSection(btn.getAttribute('data-review-section') || '');
+                    if (!section || !sectionVisibleInNav(section)) return;
+                    show(section);
+                });
+            });
+        }
+
         // Hide sidebar items for disallowed sections.
         // For staff roles with payload-assigned components, assignedKeys is authoritative.
         var allowSet = allowedSectionsSet();
-        if (!((role === 'verifier' || role === 'db_verifier' || role === 'validator') && assignedKeys.length)) {
+        if (!(isAssignmentScopedRole && (assignedKeys.length || hasBackendVisibleSections))) {
             items.forEach(function (btn) {
                 var s = String(btn.getAttribute('data-section') || '').toLowerCase();
                 if (s && s !== 'timeline' && !canSeeSection(s, allowSet)) {
@@ -3253,13 +4417,23 @@ function askActionConfirm(label) {
             });
         }
 
+        if (reviewTabButtons.length) {
+            reviewTabButtons.forEach(function (btn) {
+                var s = normSection(btn.getAttribute('data-review-section') || '');
+                var visible = !!s && sectionVisibleInNav(s);
+                btn.style.display = visible ? '' : 'none';
+            });
+            var hasVisibleTabs = reviewTabButtons.some(function (btn) { return btn.style.display !== 'none'; });
+            reviewTabHost.style.display = hasVisibleTabs ? '' : 'none';
+        }
+
         var active = items.find(function (b) { return b.classList.contains('active') && b.style.display !== 'none'; });
         var initial = active ? active.getAttribute('data-section') : 'basic';
-        if (!((role === 'verifier' || role === 'db_verifier' || role === 'validator') && assignedKeys.length) && !canSeeSection(initial, allowSet)) {
+        if (!(isAssignmentScopedRole && (assignedKeys.length || hasBackendVisibleSections)) && !canSeeSection(initial, allowSet)) {
             var firstVisible = items.find(function (b) { return b.style.display !== 'none'; });
             initial = firstVisible ? firstVisible.getAttribute('data-section') : '';
         }
-        if (assignedKeys && assignedKeys.length) {
+        if (isAssignmentScopedRole && assignedKeys && assignedKeys.length) {
             initial = assignedKeys[0] || initial;
         }
 
@@ -3505,36 +4679,20 @@ function askActionConfirm(label) {
         });
     }
 
-    function openDocInModal(href, label) {
+    function openDocInModal(href, label, sourceEl) {
         href = String(href || '').trim();
         if (!href || href === '#') return;
 
-        var body = document.getElementById('cvViewDocModalBody');
-        if (!body) {
-            // Fallback to opening in new tab if modal is not present
-            try { window.open(href, '_blank'); } catch (_e) {}
+        var ctx = detectContextFromDocLink(sourceEl);
+        if (openDocViewer(href, {
+            applicationId: ctx.applicationId || '',
+            componentKey: ctx.componentKey || '',
+            itemKey: ctx.itemKey || '',
+            mimeType: ''
+        })) {
             return;
         }
-
-        var safeLabel = esc(label || href);
-        var lower = href.toLowerCase();
-        var isImg = lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png') || lower.endsWith('.gif') || lower.endsWith('.webp');
-        var isPdf = lower.endsWith('.pdf');
-        var html;
-
-        if (isImg) {
-            html = '<img src="' + esc(href) + '" alt="' + safeLabel + '" style="width:100%; max-height:65vh; object-fit:contain; background:#000;" />';
-        } else if (isPdf) {
-            html = '<iframe src="' + esc(href) + '" title="' + safeLabel + '" style="width:100%; height:65vh; border:0;"></iframe>';
-        } else {
-            html = '<div style="padding:10px; color:#0f172a; font-size:13px;">' +
-                '<div style="font-weight:900; margin-bottom:6px;">Preview not available</div>' +
-                '<a href="' + esc(href) + '" target="_blank" style="text-decoration:none; color:#2563eb; font-weight:800;">Open in new tab</a>' +
-                '</div>';
-        }
-
-        body.innerHTML = html;
-        openBsModal('cvViewDocModal');
+        try { window.open(href, '_blank'); } catch (_e) {}
     }
 
     function initDocViewModal() {
@@ -3556,7 +4714,7 @@ function askActionConfirm(label) {
 
             e.preventDefault();
             var label = link.getAttribute('data-doc-label') || link.textContent || 'Document';
-            openDocInModal(href, label);
+            openDocInModal(href, label, link);
         });
     }
 
@@ -3848,12 +5006,20 @@ function askActionConfirm(label) {
         // If case is already approved, prevent further action changes from this view
         var statusStr = String(displayCaseStatus(app.status, cs.case_status) || '').toUpperCase();
         if (statusStr === 'APPROVED' || statusStr.indexOf('APPROVE') !== -1) {
+            var insufficientBtn = document.getElementById('cvActionInsufficient');
             var holdBtn = document.getElementById('cvActionHold');
             var rejectBtn = document.getElementById('cvActionReject');
             var stopBtn = document.getElementById('cvActionStopBgv');
+            var validatorInsufficientBtn = document.getElementById('cvValidatorActionInsufficient');
+            var validatorHoldBtn = document.getElementById('cvValidatorActionHold');
+            var validatorRejectBtn = document.getElementById('cvValidatorActionReject');
             if (holdBtn) holdBtn.style.display = 'none';
             if (rejectBtn) rejectBtn.style.display = 'none';
             if (stopBtn) stopBtn.style.display = 'none';
+            if (insufficientBtn) insufficientBtn.style.display = 'none';
+            if (validatorInsufficientBtn) validatorInsufficientBtn.style.display = 'none';
+            if (validatorHoldBtn) validatorHoldBtn.style.display = 'none';
+            if (validatorRejectBtn) validatorRejectBtn.style.display = 'none';
         }
 
         initCaseActions(applicationId);
@@ -4020,6 +5186,7 @@ function askActionConfirm(label) {
         }
         initUploadPicker();
         initValidatorRemarks();
+        initDocViewer();
         initDocViewModal();
         if (document.querySelector('.cr-report-root.cr-validator-workspace') && String(qs('print') || '') !== '1') {
             document.body.style.overflow = 'hidden';
@@ -4032,4 +5199,44 @@ function askActionConfirm(label) {
             setText('cvTopMessage', (e && e.message) ? e.message : 'Failed to load report');
         });
     });
+
+// DRAG & DROP UPLOAD
+setTimeout(function () {
+    if (!isLegacyPdfViewerEnabled()) return;
+
+    const dropZone = document.getElementById('dropZone');
+    const input = document.getElementById('uploadInput');
+
+    if (!dropZone || !input) return;
+
+    function handleFile(file) {
+        if (!file) return;
+
+        const url = URL.createObjectURL(file);
+
+        document.getElementById('uploadPane').style.display = 'block';
+        document.getElementById('pdfViewerContent').classList.add('split');
+
+        document.getElementById('uploadPreview').innerHTML =
+            `<iframe src="${buildPdfViewerUrl(url)}" style="width:100%;height:100%"></iframe>`;
+    }
+
+    dropZone.addEventListener('click', function () {
+        input.click();
+    });
+
+    dropZone.addEventListener('dragover', function (e) {
+        e.preventDefault();
+    });
+
+    dropZone.addEventListener('drop', function (e) {
+        e.preventDefault();
+        handleFile(e.dataTransfer.files[0]);
+    });
+
+    input.addEventListener('change', function (e) {
+        handleFile(e.target.files[0]);
+    });
+
+}, 500);
 })();

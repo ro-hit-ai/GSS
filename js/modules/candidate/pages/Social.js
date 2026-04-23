@@ -21,10 +21,6 @@ class Social {
         );
         this._listeners = [];
         this._initialized = false;
-
-        // Remove any existing notifications
-        const existing = document.querySelector('.social-notification');
-        if (existing) existing.remove();
     }
 
     static on(el, type, fn) {
@@ -40,40 +36,25 @@ class Social {
     /* ===================== NOTIFICATION ===================== */
 
     static showNotification(message, isError = false) {
-        // Remove existing notification
-        const existing = document.querySelector('.social-notification');
-        if (existing) existing.remove();
+        const text = String(message || '').trim();
+        if (!text) return;
 
-        const notification = document.createElement('div');
-        notification.className = `
-            social-notification
-            alert
-            ${isError ? 'alert-danger' : 'alert-success'}
-            alert-dismissible
-            fade
-            show
-        `;
-        notification.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 9999;
-            min-width: 320px;
-            max-width: 420px;
-        `;
+        if (window.CandidateNotify && typeof window.CandidateNotify.show === 'function') {
+            window.CandidateNotify.show({
+                type: isError ? 'error' : 'success',
+                title: isError ? 'Social media details not saved' : 'Social media details saved',
+                message: text.replace(/^[^\w]+/, ''),
+                sticky: !!isError
+            });
+            return;
+        }
 
-        notification.innerHTML = `
-            ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        `;
+        if (typeof window.showAlert === 'function') {
+            window.showAlert({ type: isError ? 'error' : 'success', message: text });
+            return;
+        }
 
-        document.body.appendChild(notification);
-
-        setTimeout(() => {
-            if (notification.parentNode) {
-                notification.remove();
-            }
-        }, 5000);
+        console[isError ? 'error' : 'log'](text);
     }
 
     /* ===================== FORM INIT ===================== */
@@ -129,18 +110,16 @@ class Social {
     /* ===================== PREFILL DATA ===================== */
 
     static prefillFormData() {
-        if (!window.SOCIAL_DATA) {
-            const dataEl = document.getElementById('socialData');
-            if (dataEl && dataEl.dataset && dataEl.dataset.social) {
-                try {
-                    window.SOCIAL_DATA = JSON.parse(dataEl.dataset.social || '{}');
-                } catch (e) {
-                    window.SOCIAL_DATA = null;
-                }
+        // Always re-read the latest server-provided data for this page load.
+        const dataEl = document.getElementById('socialData');
+        if (dataEl && dataEl.dataset && dataEl.dataset.social) {
+            try {
+                window.SOCIAL_DATA = JSON.parse(dataEl.dataset.social || '{}');
+            } catch (e) {
+                window.SOCIAL_DATA = null;
             }
         }
 
-        // Prefill from window.SOCIAL_DATA if available
         if (window.SOCIAL_DATA) {
             const form = this.form;
             if (!form) return;
@@ -171,16 +150,24 @@ class Social {
         const form = this.form;
         if (!form) return false;
 
-        // Clear previous errors
-        form.querySelectorAll('.is-invalid').forEach(el =>
-            el.classList.remove('is-invalid')
-        );
+        if (window.CandidateNotify && typeof window.CandidateNotify.clearValidation === 'function') {
+            window.CandidateNotify.clearValidation(form);
+        } else {
+            form.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+        }
 
         // For draft saves, skip strict validation
         if (!final) return true;
 
-        let valid = true;
         const errors = [];
+        const addError = (field, message) => {
+            if (window.CandidateNotify && typeof window.CandidateNotify.addFieldError === 'function') {
+                window.CandidateNotify.addFieldError(errors, field, message);
+            } else {
+                if (field && field.classList) field.classList.add('is-invalid');
+                errors.push({ field, message });
+            }
+        };
 
         // Check required fields
         const requiredFields = [
@@ -191,41 +178,45 @@ class Social {
         requiredFields.forEach(field => {
             const input = form.querySelector(`[name="${field.name}"]`);
             if (input && !input.value.trim()) {
-                input.classList.add('is-invalid');
-                valid = false;
-                errors.push(field.label);
+                addError(input, `${field.label} is required`);
             }
         });
 
         // Check consent checkbox (required for final submission)
         const consentCheckbox = form.querySelector('[name="consent_bgv"]');
         if (consentCheckbox && !consentCheckbox.checked) {
-            consentCheckbox.classList.add('is-invalid');
-            valid = false;
-            errors.push("Consent to verification");
+            addError(consentCheckbox, 'You must consent to social media verification');
         }
 
         // Validate URL formats
         const urlInputs = form.querySelectorAll('input[type="url"]');
         urlInputs.forEach(input => {
             if (input.value && !this.isValidUrl(input.value)) {
-                input.classList.add('is-invalid');
-                valid = false;
                 const label = input.previousElementSibling?.textContent || input.name;
-                errors.push(`Valid URL for ${label}`);
+                addError(input, `Please enter a valid URL for ${String(label).replace(/\*/g, '').trim()}`);
             }
         });
 
-        if (!valid) {
-            this.showNotification(
-                `Please fix: ${errors.slice(0, 3).join(', ')}${errors.length > 3 ? '...' : ''}`,
-                true
-            );
-            // Focus first invalid field
-            form.querySelector('.is-invalid')?.focus();
+        const otherUrl = form.querySelector('[name="other_url"]');
+        if (otherUrl && otherUrl.value && !this.isValidUrl(otherUrl.value)) {
+            addError(otherUrl, 'Please enter a valid URL for Other Profile/Portfolio');
         }
 
-        return valid;
+        if (errors.length > 0) {
+            if (window.CandidateNotify && typeof window.CandidateNotify.validation === 'function') {
+                window.CandidateNotify.validation({
+                    form,
+                    title: 'Social media details need attention',
+                    message: `Please fix ${errors.length} issue${errors.length === 1 ? '' : 's'} before continuing.`,
+                    errors
+                });
+            } else {
+                this.showNotification(errors[0].message || 'Please fix highlighted fields', true);
+            }
+            return false;
+        }
+
+        return true;
     }
 
     /* ===================== ACTIONS ===================== */
@@ -237,7 +228,7 @@ class Social {
         fd.append("save_draft", "1");
 
         const ok = await this.send(fd);
-        if (ok) this.showNotification("✅ Social media draft saved");
+        if (ok) this.showNotification("Social media draft saved");
     }
 
     static async submitFinal() {
@@ -282,7 +273,24 @@ class Social {
                 throw new Error(data.message || "Save failed");
             }
 
-            this.showNotification("✅ Social media information saved successfully");
+            // Keep client-side cache in sync (helps when navigating back).
+            try {
+                const form = this.form;
+                if (form) {
+                    window.SOCIAL_DATA = {
+                        content: String(form.querySelector('[name="content"]')?.value || ''),
+                        linkedin_url: String(form.querySelector('[name="linkedin_url"]')?.value || ''),
+                        facebook_url: String(form.querySelector('[name="facebook_url"]')?.value || ''),
+                        instagram_url: String(form.querySelector('[name="instagram_url"]')?.value || ''),
+                        twitter_url: String(form.querySelector('[name="twitter_url"]')?.value || ''),
+                        other_url: String(form.querySelector('[name="other_url"]')?.value || ''),
+                        consent_bgv: (form.querySelector('[name="consent_bgv"]')?.checked ? 1 : 0),
+                    };
+                }
+            } catch (_e) {
+            }
+
+            this.showNotification("Social media information saved successfully");
             return true;
 
         } catch (err) {
@@ -303,23 +311,64 @@ class Social {
         urlInputs.forEach(input => {
             this.on(input, 'blur', () => {
                 if (input.value && !this.isValidUrl(input.value)) {
-                    input.classList.add('is-invalid');
+                    if (window.CandidateNotify && typeof window.CandidateNotify.setFieldError === 'function') {
+                        const label = input.previousElementSibling?.textContent || input.name;
+                        window.CandidateNotify.setFieldError(input, `Please enter a valid URL for ${String(label).replace(/\*/g, '').trim()}`);
+                    } else {
+                        input.classList.add('is-invalid');
+                    }
                 }
             });
-            this.on(input, 'input', () => input.classList.remove('is-invalid'));
+            this.on(input, 'input', () => {
+                if (window.CandidateNotify && typeof window.CandidateNotify.clearFieldError === 'function') {
+                    window.CandidateNotify.clearFieldError(input);
+                } else {
+                    input.classList.remove('is-invalid');
+                }
+            });
         });
+
+        const otherUrl = form.querySelector('[name="other_url"]');
+        if (otherUrl) {
+            this.on(otherUrl, 'blur', () => {
+                if (otherUrl.value && !this.isValidUrl(otherUrl.value)) {
+                    if (window.CandidateNotify && typeof window.CandidateNotify.setFieldError === 'function') {
+                        window.CandidateNotify.setFieldError(otherUrl, 'Please enter a valid URL for Other Profile/Portfolio');
+                    } else {
+                        otherUrl.classList.add('is-invalid');
+                    }
+                }
+            });
+            this.on(otherUrl, 'input', () => {
+                if (window.CandidateNotify && typeof window.CandidateNotify.clearFieldError === 'function') {
+                    window.CandidateNotify.clearFieldError(otherUrl);
+                } else {
+                    otherUrl.classList.remove('is-invalid');
+                }
+            });
+        }
 
         // Consent checkbox validation
         const consentCheckbox = form.querySelector('[name="consent_bgv"]');
         if (consentCheckbox) {
-            this.on(consentCheckbox, 'change', () => 
-                consentCheckbox.classList.remove('is-invalid')
-            );
+            this.on(consentCheckbox, 'change', () => {
+                if (window.CandidateNotify && typeof window.CandidateNotify.clearFieldError === 'function') {
+                    window.CandidateNotify.clearFieldError(consentCheckbox);
+                } else {
+                    consentCheckbox.classList.remove('is-invalid');
+                }
+            });
         }
 
         // Clear errors on input for required fields
         form.querySelectorAll('[required]').forEach(f => {
-            this.on(f, 'input', () => f.classList.remove('is-invalid'));
+            this.on(f, 'input', () => {
+                if (window.CandidateNotify && typeof window.CandidateNotify.clearFieldError === 'function') {
+                    window.CandidateNotify.clearFieldError(f);
+                } else {
+                    f.classList.remove('is-invalid');
+                }
+            });
         });
     }
 

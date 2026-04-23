@@ -81,7 +81,7 @@ class Success {
         if (downloadBtn && !downloadBtn.dataset.bound) {
             downloadBtn.addEventListener('click', (e) => {
                 e.preventDefault();
-                this.openApplicationPDF('view');
+                this.openApplicationPDF('download');
             });
             downloadBtn.dataset.bound = 'true';
             console.log("✅ Download button bound");
@@ -270,9 +270,9 @@ class Success {
             return;
         }
         
-        const button = action === 'print' ? 
-            document.querySelector('.print-btn') : 
-            document.getElementById('downloadApplicationBtn');
+        const button = action === 'print'
+            ? document.querySelector('.print-btn')
+            : document.getElementById('downloadApplicationBtn');
         
         if (button) {
             this.setButtonLoading(button, action);
@@ -290,6 +290,12 @@ class Success {
                         if (typeof PdfViewer.printIframe === 'function') {
                             // Wait for iframe to load
                             setTimeout(() => PdfViewer.printIframe(), 1000);
+                        }
+                    }, 500);
+                } else if (action === 'download') {
+                    setTimeout(() => {
+                        if (typeof PdfViewer.downloadIframe === 'function') {
+                            setTimeout(() => PdfViewer.downloadIframe(), 700);
                         }
                     }, 500);
                 }
@@ -351,8 +357,11 @@ class Success {
                     printWindow.print();
                 };
             }
+        } else if (action === 'download') {
+            const downloadUrl = `${baseUrl}/api/candidate/generate_pdf.php?application_id=${appId}&bypass=1&force_download=1`;
+            window.open(downloadUrl, '_blank');
         } else {
-            // Open in new tab for viewing/download
+            // Open in new tab for viewing
             const viewUrl = `${baseUrl}/api/candidate/generate_pdf.php?application_id=${appId}&bypass=1&embedded=1`;
             window.open(viewUrl, '_blank');
         }

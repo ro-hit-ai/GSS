@@ -489,6 +489,17 @@ class IdentificationManager extends TabManager {
         }
     }
 
+    cardRequiresDocumentDates(card) {
+        const select = card ? card.querySelector('.document-type-select') : null;
+        if (!select) return false;
+
+        const value = select.value;
+        const text = select.options[select.selectedIndex]?.textContent || '';
+        const docsWithDates = ['Passport', 'Driving Licence', 'Driver License', 'Driving License'];
+
+        return docsWithDates.includes(value) || docsWithDates.includes(text);
+    }
+
     setupDocumentTypeHandlers() {
         this.addEventListener(document, 'change', (e) => {
             if (!e.target.classList.contains('document-type-select')) return;
@@ -703,6 +714,38 @@ validateForm(isFinalSubmit = false) {
 
         if (!nameInput || !String(nameInput.value || '').trim()) {
             addError(nameInput || card, `Document ${i + 1}: Name on document is required`);
+        }
+
+        const issueDateInput = card.querySelector('[name="issue_date[]"]');
+        const expiryDateInput = card.querySelector('[name="expiry_date[]"]');
+        const requiresDates = this.cardRequiresDocumentDates(card);
+
+        if (requiresDates) {
+            if (!issueDateInput || !String(issueDateInput.value || '').trim()) {
+                addError(issueDateInput || card, `Document ${i + 1}: Issue date is required`);
+            }
+
+            if (!expiryDateInput || !String(expiryDateInput.value || '').trim()) {
+                addError(expiryDateInput || card, `Document ${i + 1}: Expiry date is required`);
+            }
+
+            if (
+                issueDateInput &&
+                expiryDateInput &&
+                issueDateInput.value &&
+                expiryDateInput.value
+            ) {
+                const issueDate = new Date(issueDateInput.value);
+                const expiryDate = new Date(expiryDateInput.value);
+
+                if (
+                    !Number.isNaN(issueDate.getTime()) &&
+                    !Number.isNaN(expiryDate.getTime()) &&
+                    expiryDate <= issueDate
+                ) {
+                    addError(expiryDateInput, `Document ${i + 1}: Expiry date must be after issue date`);
+                }
+            }
         }
 
 if (isFinalSubmit) {

@@ -49,9 +49,6 @@ class Reference {
         this._listeners = [];
         this._initialized = false;
         this._activeSections = [];
-
-        const notif = document.querySelector('.reference-notification');
-        if (notif) notif.remove();
     }
 
     static on(el, type, fn) {
@@ -61,37 +58,25 @@ class Reference {
     }
 
     static showNotification(message, isError = false) {
-        const existing = document.querySelector('.reference-notification');
-        if (existing) existing.remove();
+        const text = String(message || '').trim();
+        if (!text) return;
 
-        const notif = document.createElement('div');
-        notif.className = `
-            reference-notification
-            alert
-            ${isError ? 'alert-danger' : 'alert-success'}
-            alert-dismissible
-            fade
-            show
-        `;
-        notif.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 9999;
-            min-width: 320px;
-            max-width: 420px;
-        `;
+        if (window.CandidateNotify && typeof window.CandidateNotify.show === 'function') {
+            window.CandidateNotify.show({
+                type: isError ? 'error' : 'success',
+                title: isError ? 'Reference details not saved' : 'Reference details saved',
+                message: text.replace(/^[^\w]+/, ''),
+                sticky: !!isError
+            });
+            return;
+        }
 
-        notif.innerHTML = `
-            ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        `;
+        if (typeof window.showAlert === 'function') {
+            window.showAlert({ type: isError ? 'error' : 'success', message: text });
+            return;
+        }
 
-        document.body.appendChild(notif);
-
-        setTimeout(() => {
-            if (notif.parentNode) notif.remove();
-        }, 5000);
+        console[isError ? 'error' : 'log'](text);
     }
 
     static getConfig() {
@@ -305,7 +290,7 @@ class Reference {
         return values;
     }
 
-    static validateSection(sectionKey, finalSubmit = false) {
+    static validateSection(sectionKey, finalSubmit = false, errors = []) {
         const form = document.getElementById('referenceForm');
         if (!form) return false;
 
@@ -313,38 +298,49 @@ class Reference {
         const filledCount = Object.values(values).filter((v) => v).length;
         const totalCount = Object.keys(values).length;
         const label = this._sectionConfig[sectionKey]?.label || 'Reference';
+        const fields = this._sectionConfig[sectionKey]?.fields || [];
+        const beforeCount = errors.length;
+        const fieldByKey = (key) => {
+            const fieldName = fields.find((name) => name.endsWith(`_${key}`));
+            return fieldName ? form.querySelector(`[name="${fieldName}"]`) : null;
+        };
+        const addError = (field, message) => {
+            if (window.CandidateNotify && typeof window.CandidateNotify.addFieldError === 'function') {
+                window.CandidateNotify.addFieldError(errors, field, message);
+            } else {
+                if (field && field.classList) field.classList.add('is-invalid');
+                errors.push({ field, message });
+            }
+        };
 
         if (!finalSubmit && filledCount === 0) return true;
         if (!finalSubmit && filledCount > 0 && filledCount < totalCount) {
-            this.showNotification(`Fill all fields or leave all empty for ${label} draft save`, true);
+            const missingKey = Object.entries(values).find(([, value]) => !String(value || '').trim())?.[0] || '';
+            addError(fieldByKey(missingKey) || form, `Fill all fields or leave all empty for ${label} draft save`);
             return false;
         }
 
         if (finalSubmit) {
             for (const [key, value] of Object.entries(values)) {
                 if (!value) {
-                    this.showNotification(`${label}: ${key.replace(/_/g, ' ')} is required`, true);
-                    return false;
+                    addError(fieldByKey(key) || form, `${label}: ${key.replace(/_/g, ' ')} is required`);
                 }
             }
         }
 
         if (values.email && !this.validateEmail(values.email)) {
-            this.showNotification(`${label}: Invalid email format`, true);
-            return false;
+            addError(fieldByKey('email') || form, `${label}: Invalid email format`);
         }
 
         if (values.mobile && !this.validateMobile(values.mobile)) {
-            this.showNotification(`${label}: Mobile must be 10 digits`, true);
-            return false;
+            addError(fieldByKey('mobile') || form, `${label}: Mobile must be 10 digits`);
         }
 
         if (values.years_known && (!this.validateNumber(values.years_known) || parseInt(values.years_known, 10) <= 0)) {
-            this.showNotification(`${label}: Years known must be a positive number`, true);
-            return false;
+            addError(fieldByKey('years_known') || form, `${label}: Years known must be a positive number`);
         }
 
-        return true;
+        return errors.length === beforeCount;
     }
 
     static validateForm(finalSubmit = false) {
@@ -352,10 +348,29 @@ class Reference {
             return true;
         }
 
+        const form = document.getElementById('referenceForm');
+        if (window.CandidateNotify && form && typeof window.CandidateNotify.clearValidation === 'function') {
+            window.CandidateNotify.clearValidation(form);
+        }
+
+        const errors = [];
+
         for (const sectionKey of this._activeSections) {
-            if (!this.validateSection(sectionKey, finalSubmit)) {
-                return false;
+            this.validateSection(sectionKey, finalSubmit, errors);
+        }
+
+        if (errors.length > 0) {
+            if (window.CandidateNotify && form && typeof window.CandidateNotify.validation === 'function') {
+                window.CandidateNotify.validation({
+                    form,
+                    title: 'Reference details need attention',
+                    message: `Please fix ${errors.length} issue${errors.length === 1 ? '' : 's'} before continuing.`,
+                    errors
+                });
+            } else {
+                this.showNotification(errors[0].message || 'Please fix highlighted fields', true);
             }
+            return false;
         }
 
         return true;
@@ -417,7 +432,7 @@ class Reference {
                 return;
             }
 
-            this.showNotification(isDraft ? '✅ Reference draft saved' : '✅ Reference details saved successfully');
+            this.showNotification(isDraft ? 'Reference draft saved' : 'Reference details saved successfully');
 
             if (!isDraft) {
                 window.Router?.markCompleted?.('reference');
@@ -434,3 +449,4 @@ class Reference {
 }
 
 window.Reference = Reference;
+

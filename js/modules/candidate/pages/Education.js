@@ -835,6 +835,17 @@ validateForm(isFinalSubmit = false) {
             }
         });
 
+        const fromInput = card.querySelector('[name="year_from[]"]');
+        const toInput = card.querySelector('[name="year_to[]"]');
+        if (fromInput && toInput && fromInput.value && toInput.value) {
+            const fromDate = new Date(`${fromInput.value}-01`);
+            const toDate = new Date(`${toInput.value}-01`);
+
+            if (!Number.isNaN(fromDate.getTime()) && !Number.isNaN(toDate.getTime()) && toDate < fromDate) {
+                addError(toInput, `Education ${i + 1}: To Year must be the same as or later than From Year`);
+            }
+        }
+
         /* ================= DOCUMENT VALIDATION ================= */
 
         if (isFinalSubmit) {

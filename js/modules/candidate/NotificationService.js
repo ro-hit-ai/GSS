@@ -81,18 +81,23 @@
             if (!message) return null;
 
             const title = String(opts.title || DEFAULT_TITLES[type] || DEFAULT_TITLES.info);
-            const timeout = typeof opts.timeout === 'number' ? opts.timeout : (type === 'error' ? 5000 : 3800);
+            // React-like quick toasts by default.
+            const timeout = typeof opts.timeout === 'number' ? opts.timeout : 2800;
             const sticky = !!opts.sticky;
             const dedupeKey = String(opts.id || `${type}:${title}:${message}`);
 
             const root = ensureToastRoot();
-            const existing = root.querySelector(`[data-toast-key="${CSS.escape(dedupeKey)}"]`);
-            if (existing) {
-                existing.remove();
+            // Avoid relying on CSS.escape (not available in some environments).
+            try {
+                const existing = Array.from(root.querySelectorAll('[data-toast-key]'))
+                    .find((node) => node && node.dataset && node.dataset.toastKey === dedupeKey);
+                if (existing) existing.remove();
+            } catch (_e) {
             }
 
             const toast = document.createElement('div');
-            toast.className = `toast toast-card ${type}`;
+            // Use a dedicated class to avoid Bootstrap's `.toast` visibility rules.
+            toast.className = `candidate-toast toast-card ${type}`;
             toast.dataset.toastKey = dedupeKey;
             toast.setAttribute('role', type === 'error' || type === 'warn' ? 'alert' : 'status');
             toast.setAttribute('aria-live', type === 'error' || type === 'warn' ? 'assertive' : 'polite');
@@ -117,11 +122,32 @@
                 if (toast.parentNode) toast.remove();
             };
 
-            toast.querySelector('.toast-close').addEventListener('click', close);
             root.appendChild(toast);
 
+            // Ensure visibility even if Bootstrap toast styles are present.
+            try {
+                toast.style.display = 'flex';
+                toast.style.opacity = '1';
+                toast.style.visibility = 'visible';
+                toast.style.pointerEvents = 'auto';
+            } catch (_e) {
+            }
+
+            try {
+                const closeBtn = toast.querySelector('.toast-close');
+                if (closeBtn) closeBtn.addEventListener('click', close);
+            } catch (_e2) {
+            }
+
             if (!sticky) {
-                const timer = window.setTimeout(close, timeout);
+                const startClose = () => {
+                    try {
+                        toast.classList.add('is-closing');
+                    } catch (_e3) {
+                    }
+                    window.setTimeout(close, 220);
+                };
+                const timer = window.setTimeout(startClose, timeout);
                 toast.addEventListener('mouseenter', () => window.clearTimeout(timer), { once: true });
             }
 
@@ -133,7 +159,8 @@
         },
 
         error(message, opts = {}) {
-            return this.show({ sticky: true, ...opts, type: 'error', message });
+            // Auto-fade by default; callers can pass `sticky: true` when needed.
+            return this.show({ ...opts, type: 'error', message });
         },
 
         info(message, opts = {}) {
@@ -250,10 +277,6 @@
         },
 
         validation({ form, title, message, errors = [] } = {}) {
-            if (form instanceof HTMLElement) {
-                this.renderValidationSummary(form, title || 'Please correct the highlighted fields', errors);
-            }
-
             const first = errors.find((entry) => entry && entry.field);
             if (first) {
                 this.focusField(first.field);
@@ -263,8 +286,8 @@
                 message || `Please fix ${errors.length} issue${errors.length === 1 ? '' : 's'} before continuing.`,
                 {
                     title: title || 'Validation required',
-                    sticky: true,
-                    timeout: 6500,
+                    sticky: false,
+                    timeout: 3000,
                     id: `validation:${form && form.id ? form.id : 'candidate-form'}`
                 }
             );

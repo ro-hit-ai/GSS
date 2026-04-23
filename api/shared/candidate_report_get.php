@@ -26,12 +26,48 @@ function workflow_table_available(PDO $pdo): bool {
     }
 }
 
+function component_item_workflow_table_available(PDO $pdo): bool {
+    try {
+        $pdo->query('SELECT 1 FROM Vati_Payfiller_Case_Component_Item_Workflow LIMIT 1');
+        return true;
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
 function norm_component_key(string $k): string {
     $k = strtolower(trim($k));
     if ($k === 'identification') return 'id';
     if ($k === 'social_media' || $k === 'social-media') return 'socialmedia';
     if ($k === 'driving' || $k === 'driving_license') return 'driving_licence';
     return $k;
+}
+
+function norm_item_key(string $k): string {
+    $k = strtolower(trim($k));
+    if ($k === '') return '';
+    if (strlen($k) > 191) {
+        $k = substr($k, 0, 191);
+    }
+    return $k;
+}
+
+function item_key_for_row(string $componentKey, array $row, int $idx): string {
+    $k = norm_component_key($componentKey);
+    $seq = $idx + 1;
+    if ($k === 'id') {
+        $v = $row['document_index'] ?? '';
+        if ($v !== '' && $v !== null) return 'id:' . norm_item_key((string)$v);
+    }
+    if ($k === 'education') {
+        $v = $row['education_index'] ?? '';
+        if ($v !== '' && $v !== null) return 'education:' . norm_item_key((string)$v);
+    }
+    if ($k === 'employment') {
+        $v = $row['employment_index'] ?? '';
+        if ($v !== '' && $v !== null) return 'employment:' . norm_item_key((string)$v);
+    }
+    return $k . ':' . (string)$seq;
 }
 
 function compute_component_stage_label(array $stages): string {
@@ -365,6 +401,19 @@ try {
         exit;
     }
 
+    foreach ($identification as $i => $row) {
+        if (!is_array($row)) continue;
+        $identification[$i]['item_key'] = item_key_for_row('id', $row, (int)$i);
+    }
+    foreach ($education as $i => $row) {
+        if (!is_array($row)) continue;
+        $education[$i]['item_key'] = item_key_for_row('education', $row, (int)$i);
+    }
+    foreach ($employment as $i => $row) {
+        if (!is_array($row)) continue;
+        $employment[$i]['item_key'] = item_key_for_row('employment', $row, (int)$i);
+    }
+
     $caseClientId = isset($case['client_id']) ? (int)$case['client_id'] : 0;
 
     // Component model:
@@ -420,20 +469,6 @@ try {
 
     $allowedSet = session_allowed_sections($pdo);
 
-    // If staff role, also include any components from allowed_sections so UI shows what user can work on
-    // even when job role -> verification type mapping doesn't detect them.
-    if ($role === 'verifier' || $role === 'db_verifier' || $role === 'validator') {
-        if (!isset($allowedSet['*']) && count($allowedSet) > 0) {
-            $known = ['basic', 'id', 'education', 'employment', 'reference', 'socialmedia', 'ecourt', 'database', 'driving_licence', 'reports', 'contact'];
-            foreach ($known as $k) {
-                if (can_section($allowedSet, $k)) {
-                    $requiredComponents[] = $k;
-                }
-            }
-            $requiredComponents = array_values(array_unique($requiredComponents));
-        }
-    }
-
     // Best-effort: ensure required components exist in DB table (if installed)
     try {
         $caseIdInt = isset($case['case_id']) ? (int)$case['case_id'] : 0;
@@ -465,15 +500,6 @@ try {
     } catch (Throwable $e) {
         $assignedComponents = [];
     }
-
-    // Merge DB component keys into required list so anything that was assigned/inserted shows in UI,
-    // even if job role -> verification type mapping didn't detect it.
-    foreach ($assignedComponents as $r) {
-        $k = strtolower(trim((string)($r['component_key'] ?? '')));
-        if ($k === '') continue;
-        $requiredComponents[] = $k;
-    }
-    $requiredComponents = array_values(array_unique($requiredComponents));
 
     // Ensure all required components exist in response (even if DB table not filled yet)
     $assignedMap = [];
@@ -544,17 +570,124 @@ try {
         $it['workflow'] = $stSimple;
         $it['current_stage'] = compute_component_stage_label($stSimple);
     }
+
+    $itemWorkflowByComponent = [];
+    if (component_item_workflow_table_available($pdo)) {
+        try {
+            $iw = $pdo->prepare(
+                'SELECT component_key, item_key, stage, status, completed_at, updated_at '
+                . 'FROM Vati_Payfiller_Case_Component_Item_Workflow '
+                . 'WHERE application_id = ?'
+            );
+            $iw->execute([$applicationId]);
+            $rows = $iw->fetchAll(PDO::FETCH_ASSOC) ?: [];
+            foreach ($rows as $r) {
+                $ck = norm_component_key((string)($r['component_key'] ?? ''));
+                $ik = norm_item_key((string)($r['item_key'] ?? ''));
+                $st = strtolower(trim((string)($r['stage'] ?? '')));
+                if ($ck === '' || $ik === '' || $st === '') continue;
+                if (!isset($itemWorkflowByComponent[$ck])) $itemWorkflowByComponent[$ck] = [];
+                if (!isset($itemWorkflowByComponent[$ck][$ik])) $itemWorkflowByComponent[$ck][$ik] = [];
+                $itemWorkflowByComponent[$ck][$ik][$st] = [
+                    'status' => (string)($r['status'] ?? ''),
+                    'completed_at' => $r['completed_at'] ?? null,
+                    'updated_at' => $r['updated_at'] ?? null,
+                ];
+            }
+        } catch (Throwable $e) {
+            $itemWorkflowByComponent = [];
+        }
+    }
+
+    $applyItemWorkflow = function (array $rows, string $componentKey) use ($itemWorkflowByComponent): array {
+        $ck = norm_component_key($componentKey);
+        $out = [];
+        foreach ($rows as $idx => $row) {
+            if (!is_array($row)) {
+                $out[] = $row;
+                continue;
+            }
+            $itemKey = norm_item_key((string)($row['item_key'] ?? item_key_for_row($ck, $row, (int)$idx)));
+            if ($itemKey === '') $itemKey = $ck . ':' . (string)($idx + 1);
+            $row['item_key'] = $itemKey;
+            $st = isset($itemWorkflowByComponent[$ck][$itemKey]) && is_array($itemWorkflowByComponent[$ck][$itemKey])
+                ? $itemWorkflowByComponent[$ck][$itemKey]
+                : [];
+            $stSimple = [
+                'candidate' => isset($st['candidate']['status']) ? (string)$st['candidate']['status'] : '',
+                'validator' => isset($st['validator']['status']) ? (string)$st['validator']['status'] : '',
+                'verifier' => isset($st['verifier']['status']) ? (string)$st['verifier']['status'] : '',
+                'qa' => isset($st['qa']['status']) ? (string)$st['qa']['status'] : '',
+            ];
+            $row['workflow'] = $stSimple;
+            $row['current_stage'] = compute_component_stage_label($stSimple);
+            $out[] = $row;
+        }
+        return $out;
+    };
+
+    $identification = $applyItemWorkflow($identification, 'id');
+    $education = $applyItemWorkflow($education, 'education');
+    $employment = $applyItemWorkflow($employment, 'employment');
     unset($it);
+
+    $clientRequiredMap = [];
+    foreach ($requiredComponents as $ck) {
+        $k = norm_component_key((string)$ck);
+        if ($k === '') continue;
+        $clientRequiredMap[$k] = true;
+    }
+
+    $visibleSections = [];
+    if ($role === 'verifier') {
+        $verifierAssignedMap = [];
+        foreach ($assignedComponents as $r) {
+            $k = norm_component_key((string)($r['component_key'] ?? ''));
+            if ($k === '') continue;
+            $ar = strtolower(trim((string)($r['assigned_role'] ?? '')));
+            $au = isset($r['assigned_user_id']) ? (int)$r['assigned_user_id'] : 0;
+            if ($ar === 'verifier' && $userId > 0 && $au === $userId) {
+                $verifierAssignedMap[$k] = true;
+            }
+        }
+
+        // Legacy fallback: when per-component assignment is absent, use verifier group mapping.
+        if (count($verifierAssignedMap) === 0 && in_array($groupKey, ['BASIC', 'EDUCATION', 'ADDITIONAL'], true)) {
+            foreach (group_components($groupKey) as $gk) {
+                $nk = norm_component_key((string)$gk);
+                if ($nk !== '') $verifierAssignedMap[$nk] = true;
+            }
+        }
+
+        foreach ($clientRequiredMap as $k => $_v) {
+            if (!isset($verifierAssignedMap[$k])) continue;
+            if (!can_section($allowedSet, $k)) continue;
+            $visibleSections[] = $k;
+        }
+    } elseif ($role === 'validator' || $role === 'db_verifier') {
+        foreach ($clientRequiredMap as $k => $_v) {
+            if (!can_section($allowedSet, $k)) continue;
+            $visibleSections[] = $k;
+        }
+    } else {
+        foreach ($clientRequiredMap as $k => $_v) {
+            $visibleSections[] = $k;
+        }
+    }
+    $visibleSections = array_values(array_unique($visibleSections));
+    $visibleSectionsMap = [];
+    foreach ($visibleSections as $k) {
+        $visibleSectionsMap[$k] = true;
+    }
 
     // Staff views should respect allowed section scope in assigned components payload.
     // Action APIs still enforce assignment/rejection rules.
     $visibleAssigned = $outAssigned;
     if ($role === 'verifier' || $role === 'db_verifier' || $role === 'validator') {
-        $visibleAssigned = array_values(array_filter($outAssigned, function ($it) use ($allowedSet) {
+        $visibleAssigned = array_values(array_filter($outAssigned, function ($it) use ($visibleSectionsMap) {
             $k = norm_component_key((string)($it['component_key'] ?? ''));
             if ($k === '') return false;
-            if (!can_section($allowedSet, $k)) return false;
-            return true;
+            return isset($visibleSectionsMap[$k]);
         }));
     }
 
@@ -652,31 +785,31 @@ try {
 
     // Redact disallowed sections for verifier/db_verifier/validator
     if ($role === 'verifier' || $role === 'db_verifier' || $role === 'validator') {
-        if (!can_section($allowedSet, 'basic')) {
+        if (!isset($visibleSectionsMap['basic'])) {
             $basic = null;
         }
-        if (!can_section($allowedSet, 'id')) {
+        if (!isset($visibleSectionsMap['id'])) {
             $identification = [];
         }
-        if (!can_section($allowedSet, 'contact')) {
+        if (!isset($visibleSectionsMap['contact'])) {
             $contact = null;
         }
-        if (!can_section($allowedSet, 'education')) {
+        if (!isset($visibleSectionsMap['education'])) {
             $education = [];
         }
-        if (!can_section($allowedSet, 'employment')) {
+        if (!isset($visibleSectionsMap['employment'])) {
             $employment = [];
         }
-        if (!can_section($allowedSet, 'reference')) {
+        if (!isset($visibleSectionsMap['reference'])) {
             $reference = null;
         }
-        if (!can_section($allowedSet, 'socialmedia')) {
+        if (!isset($visibleSectionsMap['socialmedia'])) {
             $socialMedia = null;
         }
-        if (!can_section($allowedSet, 'ecourt')) {
+        if (!isset($visibleSectionsMap['ecourt'])) {
             $ecourt = null;
         }
-        if (!can_section($allowedSet, 'reports')) {
+        if (!isset($visibleSectionsMap['reports'])) {
             $authorization = null;
         }
     }
@@ -744,10 +877,14 @@ try {
             'ecourt' => $ecourt,
             'authorization' => $authorization,
             'uploaded_docs' => $uploadedDocs,
+            'visible_sections' => $visibleSections,
+            'visibleSections' => $visibleSections,
             'assigned_components' => $visibleAssigned,
             'assignedComponents' => $visibleAssigned,
             'component_workflow' => $workflowByComponent,
             'componentWorkflow' => $workflowByComponent,
+            'component_item_workflow' => $itemWorkflowByComponent,
+            'componentItemWorkflow' => $itemWorkflowByComponent,
             'applicationUrl' => $links['applicationUrl'],
             'candidateUrl' => $links['candidateUrl'],
             'timelineUrl' => $links['timelineUrl']

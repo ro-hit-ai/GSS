@@ -2,6 +2,8 @@
 require_once __DIR__ . '/../../includes/layout.php';
 require_once __DIR__ . '/../../includes/menus.php';
 require_once __DIR__ . '/../../includes/auth.php';
+// header('Content-Type: application/pdf');
+// header('Content-Disposition: inline; filename="document.pdf"');
 
 $candidateReportJsVersion = '1';
 try {
@@ -49,18 +51,29 @@ if (!empty($_SESSION['auth_allowed_sections'])) {
 }
 // Keep UI scope in sync with latest admin assignment (avoid stale session values).
 try {
-    if ($role === 'verifier' || $role === 'validator' || $role === 'db_verifier') {
-        require_once __DIR__ . '/../../config/db.php';
-        $uid = (int)($_SESSION['auth_user_id'] ?? 0);
-        if ($uid > 0) {
-            $pdo = getDB();
-            $st = $pdo->prepare('SELECT allowed_sections FROM Vati_Payfiller_Users WHERE user_id = ? LIMIT 1');
-            $st->execute([$uid]);
-            $dbAllowed = (string)($st->fetchColumn() ?: '');
+if ($role === 'verifier' || $role === 'validator' || $role === 'db_verifier') {
+    require_once __DIR__ . '/../../config/db.php';
+    $uid = (int)($_SESSION['auth_user_id'] ?? 0);
+
+    if ($uid > 0) {
+        $pdo = getDB();
+        $st = $pdo->prepare('SELECT allowed_sections FROM Vati_Payfiller_Users WHERE user_id = ? LIMIT 1');
+        $st->execute([$uid]);
+        $dbAllowed = (string)($st->fetchColumn() ?: '');
+
+        // ✅ FIX START
+        if ($role === 'validator') {
+            // Validator should see all client-required sections
+            $allowedSections = '*';
+            $_SESSION['auth_allowed_sections'] = '*';
+        } else {
+            // Verifier should still respect assigned sections
             $allowedSections = $dbAllowed;
             $_SESSION['auth_allowed_sections'] = $dbAllowed;
         }
+        // ✅ FIX END
     }
+}
 } catch (Throwable $e) {
 }
 if ($role === 'qa') {
@@ -370,6 +383,31 @@ ob_start();
     .cr-report-root.cr-role-validator .cr-compnav-btn,
     .cr-report-root.cr-role-db_verifier .cr-compnav-btn{border-radius:6px; padding:6px 10px; font-size:12px;}
 
+    .cr-review-tabs{
+        display:none;
+        align-items:center;
+        gap:8px;
+        flex-wrap:wrap;
+        margin:10px 0 12px;
+        padding-bottom:10px;
+        border-bottom:1px solid rgba(148,163,184,0.20);
+    }
+    .cr-review-tab{
+        border:1px solid rgba(148,163,184,0.36);
+        background:#fff;
+        color:#0f172a;
+        border-radius:999px;
+        padding:7px 12px;
+        font-size:12px;
+        font-weight:900;
+        cursor:pointer;
+        line-height:1;
+    }
+    .cr-review-tab:hover{border-color:rgba(59,130,246,0.28); background:rgba(59,130,246,0.06);}
+    .cr-review-tab.active{border-color:rgba(59,130,246,0.42); background:rgba(59,130,246,0.12); color:#1d4ed8;}
+    .cr-report-root.cr-role-verifier .cr-review-tabs,
+    .cr-report-root.cr-role-validator .cr-review-tabs{display:flex;}
+
     .cr-case-actions-card{border:1px solid rgba(148,163,184,0.24); border-radius:12px; background:linear-gradient(180deg,#ffffff,#f8fafc); padding:10px; margin-bottom:10px;}
     .cr-case-actions-head{font-size:11px; font-weight:950; letter-spacing:.10em; text-transform:uppercase; color:#64748b; margin-bottom:8px;}
     .cr-case-actions-row{display:flex; gap:8px; flex-wrap:wrap;}
@@ -379,7 +417,8 @@ ob_start();
     .cr-report-root.cr-role-db_verifier .cr-upload-inline{display:none !important;}
 
     .cr-report-root.cr-role-verifier .cr-docbar,
-    .cr-report-root.cr-role-validator .cr-docbar,
+    .cr-report-root.cr-role-validator .cr-docbar{display:block;}
+
     .cr-report-root.cr-role-db_verifier .cr-docbar{display:none !important;}
 
     .cr-report-root.cr-role-verifier .cr-sections-scroll,
@@ -585,7 +624,7 @@ ob_start();
     }
     .cr-report-root.cr-validator-workspace .cr-shell.cr-layout{
         display:grid;
-        grid-template-columns:320px minmax(0, 1fr) 290px;
+        grid-template-columns:300px minmax(0, 1fr) 320px;
         gap:16px;
         align-items:start;
         margin-top:14px;
@@ -765,6 +804,7 @@ ob_start();
         flex-direction:column;
         gap:12px;
         align-self:start;
+        grid-column:3;
     }
     .cr-validator-side .cr-case-actions-card{
         margin-bottom:0;
@@ -802,6 +842,26 @@ ob_start();
         font-size:14px;
         color:#0f172a;
         font-weight:800;
+    }
+    .cr-report-root.cr-validator-workspace .cr-docbar{
+        width:auto;
+        position:sticky;
+        top:14px;
+        align-self:start;
+        max-height:calc(100vh - 42px);
+        overflow:hidden;
+        display:flex;
+        flex-direction:column;
+        grid-column:3;
+    }
+    .cr-report-root.cr-validator-workspace .cr-docbar-frame{
+        height:420px;
+        flex:0 0 auto;
+    }
+    .cr-report-root.cr-validator-workspace .cr-docbar-list{
+        flex:1 1 auto;
+        max-height:none;
+        min-height:150px;
     }
     .cr-validator-action-grid{
         display:grid;
@@ -899,7 +959,7 @@ ob_start();
     }
     @media (max-width: 1400px){
         .cr-report-root.cr-validator-workspace .cr-shell.cr-layout{
-            grid-template-columns:290px minmax(0, 1fr) 280px;
+            grid-template-columns:280px minmax(0, 1fr) 300px;
         }
     }
     @media (max-width: 1180px){
@@ -909,7 +969,8 @@ ob_start();
         .cr-report-root.cr-validator-workspace .cr-shell.cr-layout{
             grid-template-columns:220px minmax(0, 1fr);
         }
-        .cr-validator-side{
+        .cr-validator-side,
+        .cr-report-root.cr-validator-workspace .cr-docbar{
             position:relative;
             top:auto;
             grid-column:1 / -1;
@@ -926,7 +987,8 @@ ob_start();
             grid-template-columns:1fr;
         }
         .cr-report-root.cr-validator-workspace .cr-sidebar,
-        .cr-validator-side{
+        .cr-validator-side,
+        .cr-report-root.cr-validator-workspace .cr-docbar{
             position:relative;
             top:auto;
         }
@@ -1138,13 +1200,13 @@ ob_start();
         background:#fff;
         padding:8px;
     }
-    .cr-kv2-grid{display:grid; grid-template-columns:1fr 1fr; column-gap:0; row-gap:0; border-left:1px solid rgba(148,163,184,0.20); border-right:1px solid rgba(148,163,184,0.20);}
-    .cr-kv2-cell{position:relative; padding:6px 8px 8px; background:transparent;}
+    .cr-kv2-grid{display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); column-gap:0; row-gap:0; border-left:1px solid rgba(148,163,184,0.20); border-right:1px solid rgba(148,163,184,0.20);}
+    .cr-kv2-cell{position:relative; padding:6px 8px 8px; background:transparent; min-width:0;}
     .cr-kv2-cell:nth-child(2n+1){border-right:1px solid rgba(148,163,184,0.20);}
     .cr-kv2-cell:after{content:''; position:absolute; left:8px; right:8px; bottom:0; height:1px; background:rgba(148,163,184,0.20);}
     .cr-kv2-cell:nth-last-child(-n+2):after{display:none;}
     .cr-kv2-k{font-size:11px; font-weight:900; color:#475569; margin-bottom:1px;}
-    .cr-kv2-v{font-size:13px; color:#0f172a;}
+    .cr-kv2-v{font-size:13px; color:#0f172a; min-width:0; overflow-wrap:anywhere; word-break:break-word;}
     .cr-record-tabs{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;}
     .cr-record-tab{
         border:1px solid rgba(148,163,184,0.28);
@@ -1188,6 +1250,7 @@ ob_start();
         display:inline-flex;
         align-items:center;
         gap:8px;
+        width:100%;
         min-width:0;
         max-width:100%;
         border:1px solid rgba(37,99,235,0.18);
@@ -1201,6 +1264,7 @@ ob_start();
     }
     .cr-doc-uploadname i{font-style:normal; opacity:.9;}
     .cr-doc-uploadname span{
+        flex:1 1 auto;
         min-width:0;
         overflow:hidden;
         text-overflow:ellipsis;
@@ -1738,7 +1802,556 @@ ob_start();
     background: #e2e8f0;
 }
 
+/* Split pane document verification workspace */
+.cr-splitpane-overlay{
+    position:fixed;
+    inset:0;
+    z-index:2100;
+    display:none;
+    background:rgba(15,23,42,0.58);
+    padding:14px;
+}
+.cr-splitpane-overlay.open{display:flex;}
+.cr-splitpane-modal{
+    width:100%;
+    height:100%;
+    background:#f8fafc;
+    border-radius:14px;
+    border:1px solid rgba(148,163,184,0.35);
+    overflow:hidden;
+    display:flex;
+    flex-direction:column;
+}
+.cr-splitpane-head{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    padding:10px 14px;
+    border-bottom:1px solid rgba(148,163,184,0.30);
+    background:#fff;
+}
+.cr-splitpane-title{font-size:13px; font-weight:900; color:#0f172a;}
+.cr-splitpane-context{font-size:11px; color:#64748b; margin-top:2px;}
+.cr-splitpane-close{
+    border:1px solid rgba(148,163,184,0.45);
+    background:#fff;
+    border-radius:10px;
+    padding:7px 10px;
+    font-size:12px;
+    font-weight:800;
+    cursor:pointer;
+}
+.cr-splitpane-close:hover{background:#f8fafc;}
+.cr-splitpane-body{
+    flex:1;
+    min-height:0;
+    display:grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap:0;
+}
+.cr-splitpane-overlay.has-upload-preview .cr-splitpane-body{
+    grid-template-columns: 1fr 1fr;
+}
+.cr-splitpane-pane{
+    min-height:0;
+    overflow:auto;
+    padding:12px;
+}
+.cr-splitpane-pane + .cr-splitpane-pane{
+    border-left:1px solid rgba(148,163,184,0.28);
+    background:#fff;
+}
+.cr-splitpane-pane h4{
+    margin:0 0 8px;
+    font-size:11px;
+    font-weight:900;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    color:#475569;
+}
+.cr-splitpane-doc{
+    width:100%;
+    min-height:58vh;
+    border:1px solid rgba(148,163,184,0.3);
+    border-radius:12px;
+    background:#fff;
+    overflow:hidden;
+}
+.cr-splitpane-doc iframe{
+    width:100%;
+    height:68vh;
+    border:0;
+}
+.cr-splitpane-doc img{
+    width:100%;
+    height:68vh;
+    object-fit:contain;
+    background:#fff;
+}
+.cr-splitpane-doc-empty{
+    padding:16px;
+    color:#64748b;
+    font-size:12px;
+}
+.cr-splitpane-drop{
+    border:1px dashed rgba(37,99,235,0.40);
+    border-radius:12px;
+    padding:12px;
+    background:rgba(37,99,235,0.04);
+}
+.cr-splitpane-drop.dragover{
+    background:rgba(37,99,235,0.10);
+    border-color:rgba(37,99,235,0.70);
+}
+.cr-splitpane-drop input[type="file"]{display:none;}
+.cr-splitpane-droprow{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
+.cr-splitpane-filebtn{
+    border:1px solid rgba(37,99,235,0.42);
+    background:#2563eb;
+    color:#fff;
+    border-radius:10px;
+    padding:7px 11px;
+    font-size:12px;
+    font-weight:800;
+    cursor:pointer;
+}
+.cr-splitpane-filemeta{font-size:12px; color:#334155; font-weight:700;}
+.cr-splitpane-reason{
+    margin-top:10px;
+}
+.cr-splitpane-reason label{
+    font-size:11px;
+    font-weight:900;
+    text-transform:uppercase;
+    letter-spacing:.05em;
+    color:#475569;
+    display:block;
+    margin-bottom:6px;
+}
+.cr-splitpane-reason textarea{
+    width:100%;
+    min-height:84px;
+    border:1px solid rgba(148,163,184,0.36);
+    border-radius:10px;
+    padding:9px 10px;
+    font-size:12px;
+    resize:vertical;
+}
+.cr-splitpane-actions{
+    display:flex;
+    gap:8px;
+    justify-content:flex-end;
+    align-items:center;
+    padding:10px 14px;
+    border-top:1px solid rgba(148,163,184,0.30);
+    background:#fff;
+}
+.cr-splitpane-actions .cr-action-btn{min-width:98px;}
+.cr-splitpane-message{
+    margin-right:auto;
+    font-size:12px;
+    font-weight:700;
+    color:#334155;
+    max-width:50%;
+}
+.cr-splitpane-message.error{color:#b91c1c;}
+.cr-splitpane-message.success{color:#065f46;}
+@media (max-width: 960px){
+    .cr-splitpane-overlay{padding:8px;}
+    .cr-splitpane-body{grid-template-columns:1fr;}
+    .cr-splitpane-pane + .cr-splitpane-pane{border-left:0; border-top:1px solid rgba(148,163,184,0.28);}
+    .cr-splitpane-doc iframe,.cr-splitpane-doc img{height:45vh;}
+}
 
+/* Draggable modeless PDF viewer */
+#pdfViewer{
+    position:fixed;
+    top:76px;
+    right:18px;
+    width:min(560px, calc(100vw - 32px));
+    height:min(78vh, 760px);
+    z-index:2200;
+    display:none;
+    border:1px solid rgba(148,163,184,0.35);
+    border-radius:14px;
+    background:#fff;
+    box-shadow:0 22px 48px rgba(15,23,42,0.28);
+    overflow:hidden;
+}
+#pdfViewer .pv-header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+    padding:9px 11px;
+    background:linear-gradient(180deg,#f8fafc,#f1f5f9);
+    border-bottom:1px solid rgba(148,163,184,0.30);
+    cursor:move;
+    user-select:none;
+}
+#pdfViewer .pv-title{font-size:12px; font-weight:900; color:#0f172a;}
+#pdfViewer .pv-sub{font-size:11px; color:#64748b; margin-top:1px;}
+#pdfViewer .pv-close{
+    border:1px solid rgba(148,163,184,0.45);
+    background:#fff;
+    border-radius:9px;
+    padding:5px 9px;
+    font-size:12px;
+    font-weight:800;
+    cursor:pointer;
+}
+#pdfViewer .pv-close:hover{background:#f8fafc;}
+#pdfViewer .pv-body{
+    display:flex;
+    flex-direction:column;
+    height:calc(100% - 48px);
+}
+#pdfViewer iframe{
+    width:100%;
+    height:100%;
+    min-height:360px;
+    border:0;
+    background:#fff;
+}
+#pdfViewer .pv-actions{
+    border-top:1px solid rgba(148,163,184,0.30);
+    padding:8px 10px;
+    background:#fff;
+}
+#pdfViewer .pv-reason{
+    width:100%;
+    min-height:58px;
+    border:1px solid rgba(148,163,184,0.38);
+    border-radius:9px;
+    padding:8px 10px;
+    font-size:12px;
+    resize:vertical;
+}
+#pdfViewer .pv-actrow{
+    margin-top:8px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    flex-wrap:wrap;
+}
+#pdfViewer .pv-msg{
+    font-size:12px;
+    font-weight:700;
+    color:#334155;
+    margin-right:auto;
+}
+#pdfViewer .pv-msg.error{color:#b91c1c;}
+#pdfViewer .pv-msg.success{color:#065f46;}
+@media (max-width: 900px){
+    #pdfViewer{
+        top:66px;
+        right:8px;
+        left:8px;
+        width:auto;
+        height:72vh;
+    }
+}
+
+.viewer-content {
+    display: flex;
+    height: 100%;
+}
+
+.viewer-left {
+    width: 100%;
+}
+
+.viewer-right {
+    width: 40%;
+    border-left: 1px solid #ddd;
+    padding: 10px;
+}
+
+.viewer-content.split .viewer-left {
+    width: 60%;
+}
+
+#pdfViewer {
+    position: fixed !important;
+    top: 80px;
+    left: 100px;
+    transform: none !important; /* VERY IMPORTANT */
+    width: 900px;
+    height: 600px;
+    z-index: 99999;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.2);
+}
+
+#pdfViewer {
+    position: fixed;
+    top: 80px;
+    left: 100px;
+    width: 900px;
+    height: 600px;
+    background: #fff;
+    z-index: 99999;
+    border-radius: 12px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.2);
+    resize: both;
+    overflow: hidden;
+}
+
+#pdfViewerContent {
+    display: flex;
+    height: calc(100% - 50px);
+}
+
+#pdfViewerFrame {
+    width: 100%;
+    height: 100%;
+    border: none;
+}
+
+#pdfViewerContent.split #pdfViewerFrame {
+    width: 50%;
+}
+
+#uploadPane {
+    display: none;
+    width: 50%;
+    height: 100%;
+    border-left: 1px solid #ddd;
+}
+
+#dropZone {
+    border: 2px dashed #ccc;
+    height: 40%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+#uploadPreview {
+    height: 60%;
+}
+
+#cvSplitPaneOverlay .cr-splitpane-container {
+    resize: both;
+    overflow: auto;
+    min-width: 600px;
+    min-height: 400px;
+}
+
+.cv-docviewer-overlay{
+    position:fixed;
+    inset:0;
+    display:none;
+    z-index:9999;
+    background:rgba(15,23,42,0.45);
+    pointer-events:none;
+}
+.cv-docviewer-overlay.open{
+    display:block;
+    pointer-events:auto;
+}
+.cv-docviewer-modal{
+    position:fixed;
+    top:72px;
+    left:80px;
+    width:min(1040px, calc(100vw - 140px));
+    height:min(78vh, 760px);
+    min-width:620px;
+    min-height:420px;
+    resize:none;
+    overflow:hidden;
+    z-index:10000;
+    pointer-events:auto;
+    border:1px solid rgba(148,163,184,0.35);
+    border-radius:14px;
+    background:#fff;
+    box-shadow:0 24px 56px rgba(15,23,42,0.3);
+    display:flex;
+    flex-direction:column;
+}
+.cv-docviewer-modal.is-maximized{
+    inset:0;
+    width:auto !important;
+    height:auto !important;
+    resize:none;
+    border-radius:0;
+}
+.cv-docviewer-modal.is-minimized{
+    height:50px !important;
+    min-height:50px !important;
+    resize:none;
+}
+.cv-docviewer-modal.is-minimized .cv-docviewer-split,
+.cv-docviewer-modal.is-minimized .cv-docviewer-footer{
+    display:none;
+}
+.cv-docviewer-header{
+    position:sticky;
+    top:0;
+    z-index:10;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:8px;
+    padding:10px 12px;
+    background:linear-gradient(180deg,#f8fafc,#eef2f7);
+    border-bottom:1px solid rgba(148,163,184,0.3);
+    cursor:move;
+    user-select:none;
+}
+.cv-docviewer-title{
+    font-size:12px;
+    font-weight:900;
+    color:#0f172a;
+}
+.cv-docviewer-actions{
+    display:flex;
+    gap:6px;
+}
+.cv-docviewer-btn{
+    border:1px solid rgba(148,163,184,0.45);
+    background:#fff;
+    border-radius:8px;
+    min-width:30px;
+    height:28px;
+    font-size:12px;
+    font-weight:800;
+    cursor:pointer;
+    color:#0f172a;
+}
+.cv-docviewer-btn.danger{
+    border-color:rgba(239,68,68,0.4);
+    color:#b91c1c;
+}
+.cv-docviewer-split{
+    flex:1;
+    min-height:0;
+    display:flex;
+    height:100%;
+}
+.cv-docviewer-pane{
+    min-height:0;
+    min-width:0;
+    flex:1 1 0;
+    height:100%;
+    border-right:0;
+    background:#fff;
+    overflow:hidden;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+}
+.cv-docviewer-pane object,
+.cv-docviewer-pane iframe{
+    width:100%;
+    height:100%;
+    border:0;
+}
+.cv-docviewer-pane img{
+    width:100%;
+    height:100%;
+    object-fit:contain;
+    background:#fff;
+}
+.cv-docviewer-empty{
+    padding:14px;
+    font-size:12px;
+    color:#64748b;
+}
+.cv-docviewer-upload{
+    display:none;
+    flex:1 1 0;
+    height:100%;
+    border-left:1px solid rgba(148,163,184,0.26);
+    background:#f8fafc;
+    min-width:0;
+}
+.cv-docviewer-upload .cv-docviewer-pane{
+    flex:1 1 0;
+    height:100%;
+}
+.cv-docviewer-upload-head{
+    display:flex;
+    justify-content:flex-end;
+    padding:6px;
+}
+.cv-docviewer-upload-remove{
+    border:1px solid rgba(239,68,68,0.45);
+    background:#fff;
+    color:#b91c1c;
+    border-radius:8px;
+    padding:4px 8px;
+    font-size:11px;
+    font-weight:800;
+    cursor:pointer;
+}
+.cv-docviewer-split.is-split > .cv-docviewer-pane,
+.cv-docviewer-split.is-split > .cv-docviewer-upload{
+    flex:1 1 0;
+}
+.cv-docviewer-split.is-split .cv-docviewer-upload{
+    display:flex;
+    flex-direction:column;
+}
+.cv-docviewer-footer{
+    position:relative;
+    z-index:5;
+    border-top:1px solid rgba(148,163,184,0.25);
+    padding:8px 10px;
+    background:#fff;
+    display:flex;
+    justify-content:flex-end;
+}
+.cv-docviewer-upload-btn{
+    border:1px solid rgba(37,99,235,0.42);
+    background:#2563eb;
+    color:#fff;
+    border-radius:8px;
+    padding:6px 10px;
+    font-size:12px;
+    font-weight:800;
+    cursor:pointer;
+}
+#cvDocViewerUploadInput{display:none;}
+.cv-docviewer-resize{
+    position:absolute;
+    z-index:12;
+}
+.cv-docviewer-resize.right{
+    top:0;
+    right:0;
+    width:8px;
+    height:100%;
+    cursor:e-resize;
+}
+.cv-docviewer-resize.bottom{
+    left:0;
+    bottom:0;
+    width:100%;
+    height:8px;
+    cursor:s-resize;
+}
+.cv-docviewer-resize.corner{
+    right:0;
+    bottom:0;
+    width:14px;
+    height:14px;
+    cursor:se-resize;
+}
+@media (max-width: 900px){
+    .cv-docviewer-modal{
+        top:12px;
+        left:12px;
+        width:calc(100vw - 24px);
+        height:calc(100vh - 24px);
+        min-width:0;
+        min-height:0;
+        resize:none;
+    }
+}
 </style>
 <div class="card cr-report-root cr-role-<?php echo htmlspecialchars($role); ?><?php echo $isPrint ? ' cr-print' : ''; ?><?php echo (in_array($role, ['validator', 'verifier'], true) && !$isPrint && !$isEmbed) ? ' cr-validator-workspace' : ''; ?>" data-ui-ready="<?php echo $isPrint ? '1' : '0'; ?>">
     <!-- <h3>Candidate Report</h3>
@@ -1833,6 +2446,13 @@ ob_start();
         <div class="cr-compnav-title">Components</div>
         <div id="cvComponentNavItems" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
     </div>
+    <?php if (in_array($role, ['validator', 'verifier'], true) && !$isPrint && !$isEmbed): ?>
+    <div class="cr-review-tabs" id="cvReviewTabs" aria-label="Review Sections">
+        <button type="button" class="cr-review-tab" data-review-section="id">Identification</button>
+        <button type="button" class="cr-review-tab" data-review-section="education">Education</button>
+        <button type="button" class="cr-review-tab" data-review-section="employment">Employment</button>
+    </div>
+    <?php endif; ?>
 
     <div class="cr-shell cr-layout">
         <aside class="cr-sidebar cr-validator-nav">
@@ -2331,6 +2951,7 @@ ob_start();
                 <div class="cr-case-actions-card">
                     <div class="cr-case-actions-head">Section Decision</div>
                     <div class="cr-validator-action-grid">
+                        <button type="button" class="cr-action-btn" id="cvValidatorActionInsufficient">Insufficient Documents</button>
                         <button type="button" class="cr-action-btn cr-dark" id="cvValidatorActionHold">Hold</button>
                         <button type="button" class="cr-action-btn cr-danger" id="cvValidatorActionReject">Reject</button>
                         <button type="button" class="cr-action-btn cr-ok" id="cvValidatorActionApprove">Approve</button>
@@ -2351,6 +2972,15 @@ ob_start();
                 <div class="cr-case-actions-card">
                     <div class="cr-case-actions-head">Recent Activity</div>
                     <div id="cvValidatorTimeline" class="cr-validator-timeline">No activity yet.</div>
+                </div>
+
+                <div class="email-replies-container">
+                    <div class="cr-case-actions-card" style="margin-top:12px;">
+                        <div class="cr-case-actions-head"><strong>Email Replies</strong></div>
+                        <div id="emailReplies" class="card-body" style="max-height:250px; overflow-y:auto; background:#fafafa;">
+                            <p style="color:#888; margin:0;">No replies yet</p>
+                        </div>
+                    </div>
                 </div>
             </aside>
         <?php endif; ?>
@@ -2472,6 +3102,7 @@ ob_start();
                     <div class="cr-case-actions-card" id="cvCaseActionsCard">
                         <div class="cr-case-actions-head">Case Actions</div>
                         <div class="cr-case-actions-row">
+                            <button type="button" class="cr-action-btn" id="cvActionInsufficient">Insufficient Documents</button>
                             <button type="button" class="cr-action-btn cr-dark" id="cvActionHold">Hold</button>
                             <button type="button" class="cr-action-btn cr-danger" id="cvActionReject">Reject</button>
                             <button type="button" class="cr-action-btn cr-ok" id="cvActionApprove">Approve</button>
@@ -2489,24 +3120,52 @@ ob_start();
                         <button type="button" class="cr-tl-pill" data-tl-section="reports">Reports</button>
                     </div>
                     <div id="cvTimeline" style="margin-top:12px;"></div>
+                    <div style="margin-top:16px; border-top:1px solid rgba(148,163,184,0.25); padding-top:12px;">
+                        <h6 style="margin:0 0 8px 0; font-size:13px; font-weight:800; color:#0f172a; display:flex; align-items:center; gap:8px;">
+                            <span>Email Replies</span>
+                            <span class="badge bg-secondary" id="cvEmailRepliesCount">0</span>
+                        </h6>
+                        <div id="cvEmailReplies" style="display:flex; flex-direction:column; gap:8px;"></div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <div class="modal fade" id="cvViewDocModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-centered">
-            <div class="modal-content" style="border-radius:16px; overflow:hidden;">
-                <div class="modal-header" style="border-bottom:1px solid rgba(148,163,184,0.25);">
-                    <h5 class="modal-title" style="font-size:14px; font-weight:900;">View Document</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <div id="cvViewDocModalBody" style="min-height:320px; max-height:70vh; overflow:auto;"></div>
+    <?php if (in_array($role, ['validator', 'verifier', 'qa'], true) && !$isPrint && !$isEmbed): ?>
+    <div id="cvDocViewerOverlay" class="cv-docviewer-overlay" aria-hidden="true">
+        <div id="cvDocViewerModal" class="cv-docviewer-modal" role="dialog" aria-modal="true" aria-label="Document viewer">
+            <div id="cvDocViewerHeader" class="cv-docviewer-header">
+                <div class="cv-docviewer-title">Document Viewer</div>
+                <div class="cv-docviewer-actions">
+                    <button type="button" id="cvDocViewerMinimize" class="cv-docviewer-btn" title="Minimize">_</button>
+                    <button type="button" id="cvDocViewerMaximize" class="cv-docviewer-btn" title="Maximize">□</button>
+                    <button type="button" id="cvDocViewerClose" class="cv-docviewer-btn danger" title="Close">✕</button>
                 </div>
             </div>
+            <div id="cvDocViewerSplit" class="cv-docviewer-split">
+                <div id="cvDocViewerCandidatePane" class="cv-docviewer-pane">
+                    <div class="cv-docviewer-empty">No document selected.</div>
+                </div>
+                <div class="cv-docviewer-upload">
+                    <div class="cv-docviewer-upload-head">
+                        <button type="button" id="cvDocViewerUploadRemove" class="cv-docviewer-upload-remove">Remove</button>
+                    </div>
+                    <div id="cvDocViewerUploadPane" class="cv-docviewer-pane">
+                        <div class="cv-docviewer-empty">No uploaded document.</div>
+                    </div>
+                </div>
+            </div>
+            <div class="cv-docviewer-footer">
+                <button type="button" id="cvDocViewerUploadBtn" class="cv-docviewer-upload-btn">Upload Document</button>
+                <input type="file" id="cvDocViewerUploadInput" accept=".pdf,image/*">
+            </div>
+            <div id="cvDocViewerResizeRight" class="cv-docviewer-resize right" aria-hidden="true"></div>
+            <div id="cvDocViewerResizeBottom" class="cv-docviewer-resize bottom" aria-hidden="true"></div>
+            <div id="cvDocViewerResizeCorner" class="cv-docviewer-resize corner" aria-hidden="true"></div>
         </div>
     </div>
+    <?php endif; ?>
 
     <?php if (!$isPrint): ?>
     <?php if (!$isPrint): ?>

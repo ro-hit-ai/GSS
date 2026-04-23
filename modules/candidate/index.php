@@ -596,6 +596,28 @@ window.showAlert = function ({ type = 'info', message = '' } = {}) {
         return;
     }
 
+    // Last-resort fallback (if CandidateNotify failed to load): show a simple floating message.
+    try {
+        let root = document.getElementById('candidate-fallback-alert-root');
+        if (!root) {
+            root = document.createElement('div');
+            root.id = 'candidate-fallback-alert-root';
+            root.style.cssText = 'position:fixed; top:18px; right:18px; z-index:99999; display:flex; flex-direction:column; gap:10px;';
+            document.body.appendChild(root);
+        }
+
+        const card = document.createElement('div');
+        const bg = (t === 'error') ? '#fee2e2' : (t === 'warning' || t === 'warn') ? '#ffedd5' : (t === 'success') ? '#dcfce7' : '#e0f2fe';
+        const bd = (t === 'error') ? '#ef4444' : (t === 'warning' || t === 'warn') ? '#f59e0b' : (t === 'success') ? '#22c55e' : '#3b82f6';
+        card.style.cssText = `min-width:320px; max-width:400px; background:${bg}; color:#0f172a; border:1px solid rgba(15,23,42,0.10); border-left:4px solid ${bd}; border-radius:14px; padding:12px 12px; box-shadow:0 14px 32px rgba(15,23,42,0.12); font-size:12px; line-height:1.4;`;
+        card.textContent = m;
+        root.appendChild(card);
+
+        window.setTimeout(() => { if (card.parentNode) card.remove(); }, 4500);
+        return;
+    } catch (_e) {
+    }
+
     console[t === 'error' ? 'error' : 'log'](m);
 };
 </script>

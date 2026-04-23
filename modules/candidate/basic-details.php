@@ -112,7 +112,7 @@ if ($photoPathRaw !== '' && strpos($photoPathRaw, '/uploads/') === 0) {
         Please provide your personal information accurately.
     </p>
 
-    <form id="basic-detailsForm" enctype="multipart/form-data">
+    <form id="basic-detailsForm" enctype="multipart/form-data" novalidate>
 
         <div class="basic-top-grid">
 
@@ -204,7 +204,7 @@ if ($photoPathRaw !== '' && strpos($photoPathRaw, '/uploads/') === 0) {
 
             <div class="basic-photo-area">
                 <div class="basic-photo-card">
-                    <label class="compact-label">Profile Photo</label>
+                    <label class="compact-label">Profile Photo <span class="required">*</span></label>
 
                     <div class="photo-wrapper compact-photo" id="photoUploadTrigger">
                         <?php if (!empty($photoPathRaw)): ?>

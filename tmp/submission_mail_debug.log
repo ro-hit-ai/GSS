@@ -13,3 +13,8 @@
 [2026-04-11 15:12:54] submit notify: candidate_email=256testingtest123@gmail.com client_id=3 job_role=SDE78
 [2026-04-11 15:12:59] submit notify: candidate_confirmation_sent=yes
 [2026-04-11 15:13:04] submit notify: internal_recipient_count=1 internal_sent_count=1
+[2026-04-20 10:22:44] submit notify: start application_id=APP-20260416143603310
+[2026-04-20 10:22:44] submit notify: row_found=yes
+[2026-04-20 10:22:44] submit notify: candidate_email=256testingtest123@gmail.com client_id=3 job_role=SDE
+[2026-04-20 10:22:47] submit notify: candidate_confirmation_sent=yes
+[2026-04-20 10:22:51] submit notify: internal_recipient_count=1 internal_sent_count=1

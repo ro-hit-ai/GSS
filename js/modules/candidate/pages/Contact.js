@@ -22,9 +22,6 @@ class Contact {
         this._listeners = [];
         this._initialized = false;
         this._activeAddressSections = [];
-
-        const existing = document.querySelector('.contact-notification');
-        if (existing) existing.remove();
     }
 
     static on(el, type, fn) {
@@ -37,40 +34,27 @@ class Contact {
         return document.getElementById("contactForm");
     }
 
-    static showNotification(message, isError = false) {
-        const existing = document.querySelector('.contact-notification');
-        if (existing) existing.remove();
+    static showNotification(message, isError = false, opts = {}) {
+        const text = String(message || '').trim();
+        if (!text) return;
 
-        const notification = document.createElement('div');
-        notification.className = `
-            contact-notification
-            alert
-            ${isError ? 'alert-danger' : 'alert-success'}
-            alert-dismissible
-            fade
-            show
-        `;
-        notification.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 9999;
-            min-width: 320px;
-            max-width: 420px;
-        `;
+        if (window.CandidateNotify && typeof window.CandidateNotify.show === 'function') {
+            window.CandidateNotify.show({
+                type: isError ? 'error' : 'success',
+                title: isError ? 'Address details not saved' : 'Address details saved',
+                message: text.replace(/^[^\w]+/, ''),
+                ...(opts || {})
+            });
+            return;
+        }
 
-        notification.innerHTML = `
-            ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        `;
+        // Fallback
+        if (typeof window.showAlert === 'function') {
+            window.showAlert({ type: isError ? 'error' : 'success', message: text });
+            return;
+        }
 
-        document.body.appendChild(notification);
-
-        setTimeout(() => {
-            if (notification.parentNode) {
-                notification.remove();
-            }
-        }, 5000);
+        console[isError ? 'error' : 'log'](text);
     }
 
     static initForm() {
@@ -150,7 +134,8 @@ class Contact {
             }
         }
 
-        return out;
+        // Default: validate both sections (permanent can still be "same as current").
+        return out.length ? out : ['current_address', 'permanent_address'];
     }
 
     static activateTab(tabId) {
@@ -347,10 +332,10 @@ class Contact {
                     return;
                 }
 
-                if (file.size > 10 * 1024 * 1024) {
+                if (file.size > 5 * 1024 * 1024) {
                     e.target.value = '';
-                    if (errEl) errEl.textContent = 'File too large. Maximum 10MB allowed.';
-                    this.showNotification('File must be under 10MB', true);
+                    if (errEl) errEl.textContent = 'File too large. Maximum 5MB allowed.';
+                    this.showNotification('File must be under 5MB', true);
                     this.clearUploadBox(box);
                     return;
                 }
@@ -449,14 +434,20 @@ class Contact {
         const form = this.form;
         if (!form) return false;
 
-        form.querySelectorAll('.is-invalid').forEach((el) => el.classList.remove('is-invalid'));
+        if (window.CandidateNotify && typeof window.CandidateNotify.clearValidation === 'function') {
+            window.CandidateNotify.clearValidation(form);
+        } else {
+            form.querySelectorAll('.is-invalid').forEach((el) => el.classList.remove('is-invalid'));
+        }
         if (!final) return true;
 
-        let valid = true;
         const errors = [];
         const isSame = this.getSameAsCurrentValue();
-        const hasCurrent = this._activeAddressSections.includes('current_address');
-        const hasPermanent = this._activeAddressSections.includes('permanent_address');
+        const active = (this._activeAddressSections && this._activeAddressSections.length)
+            ? this._activeAddressSections.slice()
+            : ['current_address', 'permanent_address'];
+        const hasCurrent = active.includes('current_address');
+        const hasPermanent = active.includes('permanent_address');
 
         const requiredFields = [];
 
@@ -483,23 +474,93 @@ class Contact {
         requiredFields.forEach((name) => {
             const field = form.querySelector(`[name="${name}"]`);
             if (!field || field.disabled) return;
-            const value = field.value ? field.value.trim() : '';
-            if (!value) {
+            const value = field.value ? String(field.value).trim() : '';
+            if (value) return;
+
+            const label = (field.labels && field.labels[0] && field.labels[0].innerText)
+                ? field.labels[0].innerText
+                : name.replace(/_/g, ' ');
+
+            if (window.CandidateNotify && typeof window.CandidateNotify.addFieldError === 'function') {
+                window.CandidateNotify.addFieldError(errors, field, `Please enter ${label.replace(/\*/g, '').trim()}`);
+            } else {
                 field.classList.add('is-invalid');
-                valid = false;
-                errors.push(field.labels?.[0]?.innerText || name.replace(/_/g, ' '));
+                errors.push({ field, message: `Please enter ${label.replace(/\*/g, '').trim()}` });
             }
         });
 
-        if (!valid) {
-            this.showNotification(
-                `Please fix: ${errors.slice(0, 3).join(', ')}${errors.length > 3 ? '...' : ''}`,
-                true
-            );
-            form.querySelector('.is-invalid')?.focus();
+        // Postal code rules
+        const validatePostal = (countryName, postalField, labelPrefix) => {
+            if (!postalField || postalField.disabled) return;
+            const country = String(countryName || '').trim().toLowerCase();
+            const code = String(postalField.value || '').trim();
+            if (!code) return;
+
+            if (country === 'india') {
+                if (!/^\d{6}$/.test(code)) {
+                    if (window.CandidateNotify && typeof window.CandidateNotify.addFieldError === 'function') {
+                        window.CandidateNotify.addFieldError(errors, postalField, `${labelPrefix} pin code must be 6 digits`);
+                    } else {
+                        postalField.classList.add('is-invalid');
+                        errors.push({ field: postalField, message: `${labelPrefix} pin code must be 6 digits` });
+                    }
+                }
+                return;
+            }
+
+            if (code.length < 3) {
+                if (window.CandidateNotify && typeof window.CandidateNotify.addFieldError === 'function') {
+                    window.CandidateNotify.addFieldError(errors, postalField, `${labelPrefix} postal code is too short`);
+                } else {
+                    postalField.classList.add('is-invalid');
+                    errors.push({ field: postalField, message: `${labelPrefix} postal code is too short` });
+                }
+            }
+        };
+
+        if (hasCurrent) {
+            const cCountry = form.querySelector('[name="current_country"]');
+            const cPostal = form.querySelector('[name="current_postal_code"]');
+            validatePostal(cCountry ? cCountry.value : '', cPostal, 'Current');
         }
 
-        return valid;
+        if (hasPermanent && (!hasCurrent || !isSame)) {
+            const pCountry = form.querySelector('[name="permanent_country"]');
+            const pPostal = form.querySelector('[name="permanent_postal_code"]');
+            validatePostal(pCountry ? pCountry.value : '', pPostal, 'Permanent');
+        }
+
+        // Current address proof required (if field exists)
+        if (hasCurrent) {
+            const proofInput = form.querySelector('input[type="file"][name="current_address_proof"]');
+            const hasNew = !!(proofInput && proofInput.files && proofInput.files.length > 0);
+            const hasExisting = !!form.querySelector('input[name="existing_current_address_proof"]');
+            if (!hasNew && !hasExisting && proofInput && !proofInput.disabled) {
+                if (window.CandidateNotify && typeof window.CandidateNotify.addFieldError === 'function') {
+                    const box = proofInput.closest('.form-control') || proofInput;
+                    window.CandidateNotify.addFieldError(errors, box, 'Please upload current address proof');
+                } else {
+                    proofInput.classList.add('is-invalid');
+                    errors.push({ field: proofInput, message: 'Please upload current address proof' });
+                }
+            }
+        }
+
+        if (errors.length) {
+            if (window.CandidateNotify && typeof window.CandidateNotify.validation === 'function') {
+                window.CandidateNotify.validation({
+                    form,
+                    title: 'Please correct the highlighted fields',
+                    errors: errors
+                });
+            } else {
+                this.showNotification(errors[0].message || 'Please fix highlighted fields', true);
+                try { (errors[0].field || form.querySelector('.is-invalid'))?.focus(); } catch (_e) {}
+            }
+            return false;
+        }
+
+        return true;
     }
 
     static async saveDraft() {
@@ -536,6 +597,14 @@ class Contact {
         try {
             const endpoint = `${window.APP_BASE_URL || ''}/api/candidate/store_contact.php`;
 
+            // Backward compatibility: API expects `address_proof_file`
+            if (!formData.has('address_proof_file') && formData.has('current_address_proof')) {
+                const f = formData.get('current_address_proof');
+                if (f instanceof File) {
+                    formData.append('address_proof_file', f);
+                }
+            }
+
             const res = await fetch(endpoint, {
                 method: "POST",
                 body: formData,
@@ -547,7 +616,7 @@ class Contact {
                 throw new Error(data.message || "Save failed");
             }
 
-            this.showNotification("✅ Contact details saved successfully");
+            this.showNotification(data.message || "Contact details saved successfully");
             return true;
         } catch (err) {
             console.error("❌ Contact error:", err);
@@ -562,7 +631,11 @@ class Contact {
 
         form.querySelectorAll('input, select').forEach((field) => {
             this.on(field, field.tagName === 'SELECT' ? 'change' : 'input', () => {
-                field.classList.remove('is-invalid');
+                if (window.CandidateNotify && typeof window.CandidateNotify.clearFieldError === 'function') {
+                    window.CandidateNotify.clearFieldError(field);
+                } else {
+                    field.classList.remove('is-invalid');
+                }
             });
         });
     }

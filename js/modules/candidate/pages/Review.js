@@ -139,7 +139,8 @@ class Review {
             this.kv('ID Number', row.id_number),
             this.kv('Name on Document', row.name),
             this.kv('Issue Date', row.issue_date),
-            this.kv('Expiry Date', row.expiry_date)
+            this.kv('Expiry Date', row.expiry_date),
+            this.kv('Uploaded Document', this.fileName(row.upload_document || row.document_file || row.file_path))
         ]), 'No identification details added.'));
         sections.push(this.renderSection('Contact Details', this.renderContact(data.contact)));
         sections.push(this.renderSection('Education Details', this.renderList(data.education, (row, index) => [
@@ -150,7 +151,9 @@ class Review {
             this.kv('From Year', row.year_from),
             this.kv('To Year', row.year_to),
             this.kv('College Address', row.college_address),
-            this.kv('College Website', row.college_website)
+            this.kv('College Website', row.college_website),
+            this.kv('Marksheet File', this.fileName(row.marksheet_file)),
+            this.kv('Degree File', this.fileName(row.degree_file))
         ]), 'No education details added.'));
         sections.push(this.renderSection('Employment Details', this.renderList(data.employment, (row, index) => [
             this.kv('Employer', row.employer_name),
@@ -165,12 +168,14 @@ class Review {
             this.kv('HR Email', row.hr_manager_email),
             this.kv('Manager Name', row.manager_name),
             this.kv('Manager Phone', row.manager_phone),
-            this.kv('Manager Email', row.manager_email)
+            this.kv('Manager Email', row.manager_email),
+            this.kv('Employment Proof', this.fileName(row.employment_doc || row.document_file || row.file_path))
         ]), 'No employment details added.'));
         sections.push(this.renderSection('Reference Details', this.renderReference(data.reference)));
         sections.push(this.renderSection('Social Media', this.renderSocial(data.social_media)));
         sections.push(this.renderSection('E-Court', this.renderEcourt(data.ecourt)));
         sections.push(this.renderSection('Authorization', this.renderAuthorization(data.authorization)));
+        sections.push(this.renderSection('Evidence Documents', this.renderEvidence(data), 'No evidence documents uploaded.'));
 
         return sections.join('');
     }
@@ -221,7 +226,9 @@ class Review {
             this.kv('Alternative Email', contact.alternative_email),
             this.kv('Current Address', this.joinParts([contact.address1, contact.address2, contact.city, contact.state, contact.country, contact.postal_code], ', ')),
             this.kv('Permanent Address', this.joinParts([contact.permanent_address1, contact.permanent_address2, contact.permanent_city, contact.permanent_state, contact.permanent_country, contact.permanent_postal_code], ', ')),
-            this.kv('Same as Current', this.yesNo(contact.same_as_current))
+            this.kv('Same as Current', this.yesNo(contact.same_as_current)),
+            this.kv('Address Proof Type', contact.proof_type),
+            this.kv('Address Proof File', this.fileName(contact.proof_file || contact.address_proof_file))
         ]);
     }
 
@@ -304,7 +311,8 @@ class Review {
             this.kv('From Date', ecourt.period_from_date),
             this.kv('To Date', ecourt.period_to_date),
             this.kv('Duration (Years)', ecourt.period_duration_years),
-            this.kv('Date of Birth', ecourt.dob)
+            this.kv('Date of Birth', ecourt.dob),
+            this.kv('Evidence Document', this.fileName(ecourt.evidence_document))
         ]);
     }
 
@@ -312,8 +320,120 @@ class Review {
         if (!authorization) return '';
         return this.renderGrid([
             this.kv('Digital Signature', authorization.digital_signature),
-            this.kv('Uploaded At', authorization.uploaded_at)
+            this.kv('Uploaded At', authorization.uploaded_at),
+            this.kv('Authorization File', this.fileName(authorization.file_name || authorization.authorization_file_name || authorization.auth_file_name))
         ]);
+    }
+
+    static renderEvidence(data) {
+        const docs = [];
+        const addDoc = (component, label, filePath, sourceField = '', uploadedBy = '', uploadedAt = '', mimeType = '') => {
+            const raw = String(filePath || '').trim();
+            if (!raw || this.isInsufficientDoc(raw)) return;
+            docs.push({
+                component: String(component || 'general').trim() || 'general',
+                label: String(label || 'Document').trim() || 'Document',
+                filePath: raw,
+                sourceField: String(sourceField || '').trim(),
+                uploadedBy: String(uploadedBy || '').trim(),
+                uploadedAt: String(uploadedAt || '').trim(),
+                mimeType: String(mimeType || '').trim()
+            });
+        };
+
+        const contact = data?.contact || null;
+        if (contact) {
+            addDoc('contact', 'Address Proof', contact.proof_file || contact.address_proof_file, 'proof_file', 'Candidate', contact.created_at || '');
+        }
+
+        const identification = Array.isArray(data?.identification) ? data.identification : [];
+        identification.forEach((row) => {
+            addDoc('id', row?.documentId_type || row?.document_type || 'Identification Document', row?.upload_document || row?.document_file || row?.file_path, 'upload_document', 'Candidate', row?.created_at || '');
+        });
+
+        const education = Array.isArray(data?.education) ? data.education : [];
+        education.forEach((row) => {
+            const q = String(row?.qualification || 'Education').trim();
+            addDoc('education', `${q} Marksheet`, row?.marksheet_file, 'marksheet_file', 'Candidate', row?.created_at || '');
+            addDoc('education', `${q} Degree`, row?.degree_file, 'degree_file', 'Candidate', row?.created_at || '');
+        });
+
+        const employment = Array.isArray(data?.employment) ? data.employment : [];
+        employment.forEach((row) => {
+            const employer = String(row?.employer_name || 'Employment').trim();
+            addDoc('employment', `${employer} Proof`, row?.employment_doc || row?.document_file || row?.file_path, 'employment_doc', 'Candidate', row?.created_at || '');
+        });
+
+        const ecourt = data?.ecourt || null;
+        if (ecourt) {
+            addDoc('ecourt', 'E-Court Evidence', ecourt.evidence_document, 'evidence_document', 'Candidate', ecourt.created_at || '');
+        }
+
+        const authorization = data?.authorization || null;
+        if (authorization) {
+            addDoc('reports', 'Authorization Document', authorization.file_name || authorization.authorization_file_name || authorization.auth_file_name, 'authorization_file', 'Candidate', authorization.uploaded_at || authorization.created_at || '');
+        }
+
+        const uploadedDocs = Array.isArray(data?.uploaded_docs) ? data.uploaded_docs : [];
+        uploadedDocs.forEach((doc) => {
+            addDoc(
+                doc?.doc_type || 'reports',
+                doc?.original_name || doc?.file_path || 'Verification Document',
+                doc?.file_path || '',
+                doc?.source_field || '',
+                doc?.uploaded_by_role || '',
+                doc?.created_at || '',
+                doc?.mime_type || ''
+            );
+        });
+
+        const seen = new Set();
+        const unique = docs.filter((doc) => {
+            const key = `${String(doc.filePath).toLowerCase()}|${String(doc.label).toLowerCase()}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+
+        if (!unique.length) {
+            return `<div class="review-empty">No evidence documents uploaded.</div>`;
+        }
+
+        const grouped = {};
+        unique.forEach((doc) => {
+            const key = this.componentTitle(doc.component);
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push(doc);
+        });
+
+        return Object.keys(grouped).map((groupTitle) => {
+            const itemsHtml = grouped[groupTitle].map((doc) => {
+                const href = this.resolveDocUrl(doc.filePath, doc.sourceField, doc.component);
+                const name = this.fileName(doc.filePath);
+                const uploader = doc.uploadedBy || 'Candidate';
+                const uploadedAt = doc.uploadedAt || '-';
+                const downloadHtml = href
+                    ? `<a class="review-doc-link" href="${this.escape(href)}" target="_blank" rel="noopener">View / Download</a>`
+                    : `<span class="review-empty">Unavailable</span>`;
+
+                return `
+                    <div class="review-doc-item">
+                        <div class="review-doc-name">${this.escape(doc.label || name)}</div>
+                        <div class="review-doc-meta">${this.escape(name)}</div>
+                        <div class="review-doc-meta">Uploaded By: ${this.escape(uploader)}</div>
+                        <div class="review-doc-meta">Uploaded At: ${this.escape(uploadedAt)}</div>
+                        <div class="review-doc-meta">${downloadHtml}</div>
+                    </div>
+                `;
+            }).join('');
+
+            return `
+                <div class="review-record">
+                    <div class="review-doc-group-title">${this.escape(groupTitle)}</div>
+                    <div class="review-doc-list">${itemsHtml}</div>
+                </div>
+            `;
+        }).join('');
     }
 
     static renderList(rows, rowRenderer, emptyText = 'No records added.') {
@@ -352,8 +472,52 @@ class Review {
     static fileName(value) {
         const text = String(value || '').trim();
         if (!text) return 'Not uploaded';
+        if (this.isInsufficientDoc(text)) return 'Insufficient documents declared';
         const clean = text.split('/').pop();
         return clean || text;
+    }
+
+    static isInsufficientDoc(value) {
+        return String(value || '').trim().toUpperCase() === 'INSUFFICIENT_DOCUMENTS';
+    }
+
+    static uploadFolderFor(sourceField, component) {
+        const field = String(sourceField || '').toLowerCase().trim();
+        const comp = String(component || '').toLowerCase().trim();
+        if (field === 'upload_document' || comp === 'id' || comp === 'identification') return '/uploads/identification/';
+        if (field === 'proof_file' || comp === 'contact' || comp === 'address') return '/uploads/address/';
+        if (field === 'marksheet_file' || field === 'degree_file' || comp === 'education') return '/uploads/education/';
+        if (field === 'employment_doc' || comp === 'employment') return '/uploads/employment/';
+        if (field === 'photo_path' || comp === 'basic') return '/uploads/candidate_photos/';
+        if (field === 'evidence_document' || comp === 'ecourt') return '/uploads/ecourt/';
+        if (field === 'authorization_file' || comp === 'reports' || comp === 'authorization') return '/uploads/verification/';
+        return '/uploads/';
+    }
+
+    static resolveDocUrl(filePath, sourceField = '', component = '') {
+        const raw = String(filePath || '').trim().replace(/\\/g, '/');
+        if (!raw || this.isInsufficientDoc(raw)) return '';
+        if (/^https?:\/\//i.test(raw)) return raw;
+
+        const base = (window.APP_BASE_URL || '').replace(/\/$/, '');
+        if (raw.startsWith('/uploads/')) return `${base}${raw}`;
+        if (raw.startsWith('uploads/')) return `${base}/${raw}`;
+        if (raw.includes('/')) return `${base}/${raw.replace(/^\/+/, '')}`;
+        return `${base}${this.uploadFolderFor(sourceField, component)}${encodeURIComponent(raw)}`;
+    }
+
+    static componentTitle(value) {
+        const key = String(value || 'general').trim().toLowerCase();
+        if (key === 'id' || key === 'identification') return 'Identification';
+        if (key === 'contact' || key === 'address') return 'Contact';
+        if (key === 'education') return 'Education';
+        if (key === 'employment') return 'Employment';
+        if (key === 'reference') return 'Reference';
+        if (key === 'socialmedia' || key === 'social_media' || key === 'social') return 'Social Media';
+        if (key === 'ecourt') return 'E-Court';
+        if (key === 'reports' || key === 'authorization') return 'Reports';
+        if (key === 'basic') return 'Basic';
+        return 'General';
     }
 
     static yesNo(value) {

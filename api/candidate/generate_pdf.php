@@ -54,6 +54,48 @@ function safeFetchAll($stmt) {
     }
 }
 
+function normalizeStoredFilePath($path) {
+    $raw = trim((string)$path);
+    if ($raw === '' || strtoupper($raw) === 'INSUFFICIENT_DOCUMENTS') {
+        return '';
+    }
+    return str_replace('\\', '/', $raw);
+}
+
+function inferUploadFolder($sourceField, $component) {
+    $field = strtolower(trim((string)$sourceField));
+    $comp = strtolower(trim((string)$component));
+
+    if ($field === 'upload_document' || $comp === 'id' || $comp === 'identification') return '/uploads/identification/';
+    if ($field === 'proof_file' || $comp === 'contact' || $comp === 'address') return '/uploads/address/';
+    if ($field === 'marksheet_file' || $field === 'degree_file' || $comp === 'education') return '/uploads/education/';
+    if ($field === 'employment_doc' || $comp === 'employment') return '/uploads/employment/';
+    if ($field === 'photo_path' || $comp === 'basic') return '/uploads/candidate_photos/';
+    if ($field === 'evidence_document' || $comp === 'ecourt') return '/uploads/ecourt/';
+    if ($field === 'authorization_file' || $comp === 'reports' || $comp === 'authorization') return '/uploads/verification/';
+    return '/uploads/';
+}
+
+function buildDocumentUrl($path, $sourceField = '', $component = '') {
+    $file = normalizeStoredFilePath($path);
+    if ($file === '') return '';
+    if (preg_match('~^https?://~i', $file)) return $file;
+
+    if (strpos($file, '/uploads/') === 0) {
+        return app_url($file);
+    }
+
+    if (strpos($file, 'uploads/') === 0) {
+        return app_url('/' . ltrim($file, '/'));
+    }
+
+    if (strpos($file, '/') !== false) {
+        return app_url('/' . ltrim($file, '/'));
+    }
+
+    return app_url(inferUploadFolder($sourceField, $component) . rawurlencode(basename($file)));
+}
+
 // Fetch all data
 $data = [];
 
@@ -129,6 +171,54 @@ try {
     $data['reference'] = null;
 }
 
+// Social media details
+try {
+    $stmt = $db->prepare("CALL SP_Vati_Payfiller_get_social_media_details(?)");
+    if ($stmt->execute([$applicationId])) {
+        $data['social'] = safeFetch($stmt);
+    }
+    $stmt->closeCursor();
+} catch (Exception $e) {
+    error_log("Social details error: " . $e->getMessage());
+    $data['social'] = null;
+}
+
+// E-court details
+try {
+    $stmt = $db->prepare("CALL SP_Vati_Payfiller_get_ecourt_details(?)");
+    if ($stmt->execute([$applicationId])) {
+        $data['ecourt'] = safeFetch($stmt);
+    }
+    $stmt->closeCursor();
+} catch (Exception $e) {
+    error_log("E-court details error: " . $e->getMessage());
+    $data['ecourt'] = null;
+}
+
+// Authorization details
+try {
+    $stmt = $db->prepare("SELECT file_name, digital_signature, uploaded_at FROM Vati_Payfiller_Candidate_Authorization_documents WHERE application_id = ? ORDER BY uploaded_at DESC LIMIT 1");
+    if ($stmt->execute([$applicationId])) {
+        $data['authorization'] = safeFetch($stmt);
+    }
+    $stmt->closeCursor();
+} catch (Exception $e) {
+    error_log("Authorization details error: " . $e->getMessage());
+    $data['authorization'] = null;
+}
+
+// Uploaded verification documents
+try {
+    $stmt = $db->prepare("SELECT doc_type, file_path, original_name, mime_type, uploaded_by_role, created_at FROM Vati_Payfiller_Verification_Documents WHERE application_id = ? ORDER BY created_at ASC, id ASC");
+    if ($stmt->execute([$applicationId])) {
+        $data['uploaded_docs'] = safeFetchAll($stmt);
+    }
+    $stmt->closeCursor();
+} catch (Exception $e) {
+    error_log("Uploaded docs error: " . $e->getMessage());
+    $data['uploaded_docs'] = [];
+}
+
 // Clear output buffers
 while (ob_get_level()) {
     ob_end_clean();
@@ -158,6 +248,92 @@ $identifications = $data['identifications'];
 $educations = $data['educations'];
 $employments = $data['employments'];
 $reference = $data['reference'];
+$social = $data['social'] ?? null;
+$ecourt = $data['ecourt'] ?? null;
+$authorization = $data['authorization'] ?? null;
+$uploadedDocs = is_array($data['uploaded_docs'] ?? null) ? $data['uploaded_docs'] : [];
+
+$evidenceDocs = [];
+
+$addEvidence = function ($component, $label, $path, $sourceField = '', $uploadedAt = '', $uploadedBy = '', $mimeType = '') use (&$evidenceDocs) {
+    $file = normalizeStoredFilePath($path);
+    if ($file === '') return;
+    $url = buildDocumentUrl($file, $sourceField, $component);
+    if ($url === '') return;
+
+    $evidenceDocs[] = [
+        'component' => (string)$component,
+        'label' => trim((string)$label) !== '' ? (string)$label : 'Document',
+        'file_name' => basename($file),
+        'file_path' => $file,
+        'url' => $url,
+        'uploaded_at' => trim((string)$uploadedAt),
+        'uploaded_by' => trim((string)$uploadedBy),
+        'mime_type' => trim((string)$mimeType)
+    ];
+};
+
+if (is_array($contact)) {
+    $addEvidence('contact', 'Address Proof', $contact['proof_file'] ?? '', 'proof_file', $contact['created_at'] ?? '', 'Candidate');
+}
+
+if (is_array($identifications)) {
+    foreach ($identifications as $id) {
+        if (!is_array($id)) continue;
+        $label = trim((string)($id['document_type'] ?? 'Identification Document'));
+        $addEvidence('id', $label, $id['upload_document'] ?? '', 'upload_document', $id['created_at'] ?? '', 'Candidate');
+    }
+}
+
+if (is_array($educations)) {
+    foreach ($educations as $edu) {
+        if (!is_array($edu)) continue;
+        $qualification = trim((string)($edu['qualification'] ?? 'Education'));
+        $addEvidence('education', $qualification . ' Marksheet', $edu['marksheet_file'] ?? '', 'marksheet_file', $edu['created_at'] ?? '', 'Candidate');
+        $addEvidence('education', $qualification . ' Degree', $edu['degree_file'] ?? '', 'degree_file', $edu['created_at'] ?? '', 'Candidate');
+    }
+}
+
+if (is_array($employments)) {
+    foreach ($employments as $emp) {
+        if (!is_array($emp)) continue;
+        $company = trim((string)($emp['company_name'] ?? 'Employment'));
+        $addEvidence('employment', $company . ' Employment Proof', $emp['employment_doc'] ?? '', 'employment_doc', $emp['created_at'] ?? '', 'Candidate');
+    }
+}
+
+if (is_array($ecourt)) {
+    $addEvidence('ecourt', 'E-Court Evidence', $ecourt['evidence_document'] ?? '', 'evidence_document', $ecourt['created_at'] ?? '', 'Candidate');
+}
+
+if (is_array($authorization)) {
+    $addEvidence('reports', 'Authorization Document', $authorization['file_name'] ?? '', 'authorization_file', $authorization['uploaded_at'] ?? '', 'Candidate');
+}
+
+foreach ($uploadedDocs as $doc) {
+    if (!is_array($doc)) continue;
+    $comp = trim((string)($doc['doc_type'] ?? 'reports'));
+    $label = trim((string)($doc['original_name'] ?? $doc['file_path'] ?? 'Verification Document'));
+    $addEvidence(
+        $comp !== '' ? $comp : 'reports',
+        $label,
+        $doc['file_path'] ?? '',
+        $doc['source_field'] ?? '',
+        $doc['created_at'] ?? '',
+        $doc['uploaded_by_role'] ?? '',
+        $doc['mime_type'] ?? ''
+    );
+}
+
+$uniqueEvidence = [];
+$seenEvidence = [];
+foreach ($evidenceDocs as $doc) {
+    $key = strtolower(trim((string)($doc['file_path'] ?? ''))) . '|' . strtolower(trim((string)($doc['label'] ?? '')));
+    if (isset($seenEvidence[$key])) continue;
+    $seenEvidence[$key] = true;
+    $uniqueEvidence[] = $doc;
+}
+$evidenceDocs = $uniqueEvidence;
 ?>
 
 <!DOCTYPE html>
@@ -1842,6 +2018,57 @@ $reference = $data['reference'];
                 </div>
             <?php endif; ?>
         </div>
+
+        <!-- 7. Evidence Documents -->
+        <div class="section">
+            <div class="section-header">
+                <div class="section-icon">
+                    <i class="fas fa-file-signature"></i>
+                </div>
+                <h2 class="section-title">Evidence Documents</h2>
+                <div class="section-number">7</div>
+            </div>
+
+            <div class="card">
+                <?php if (!empty($evidenceDocs)): ?>
+                    <div class="data-table-container">
+                        <table class="data-table">
+                            <thead>
+                            <tr>
+                                <th style="width: 70px;">#</th>
+                                <th>Component</th>
+                                <th>Document</th>
+                                <th>Uploaded By</th>
+                                <th>Uploaded At</th>
+                                <th>Action</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            <?php foreach ($evidenceDocs as $idx => $doc): ?>
+                                <tr>
+                                    <td><?php echo (int)$idx + 1; ?></td>
+                                    <td><?php echo htmlspecialchars(ucwords(str_replace(['_', '-'], ' ', (string)($doc['component'] ?? 'General')))); ?></td>
+                                    <td><?php echo htmlspecialchars($doc['label'] ?? ($doc['file_name'] ?? 'Document')); ?></td>
+                                    <td><?php echo htmlspecialchars($doc['uploaded_by'] !== '' ? $doc['uploaded_by'] : 'Candidate'); ?></td>
+                                    <td><?php echo htmlspecialchars($doc['uploaded_at'] !== '' ? $doc['uploaded_at'] : '-'); ?></td>
+                                    <td>
+                                        <a href="<?php echo htmlspecialchars($doc['url']); ?>" target="_blank" rel="noopener">
+                                            View / Download
+                                        </a>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php else: ?>
+                    <div class="text-center py-4">
+                        <i class="fas fa-file-excel fa-2x mb-2" style="color: var(--warning-color);"></i>
+                        <p class="mb-0">No evidence documents found.</p>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
         
 <!-- Action Buttons Section -->
 <div class="action-buttons no-print">
@@ -1850,9 +2077,9 @@ $reference = $data['reference'];
         <button type="button" class="action-btn print" onclick="window.print()">
             <i class="fas fa-print"></i> Print Document
         </button>
-        <!-- <button type="button" class="action-btn download" onclick="downloadAsHTML()">
-            <i class="fas fa-download"></i> Download as HTML
-        </button> -->
+        <a class="action-btn download" href="<?php echo htmlspecialchars(app_url('/api/candidate/generate_pdf.php?application_id=' . rawurlencode((string)$applicationId) . '&bypass=1&force_download=1')); ?>">
+            <i class="fas fa-download"></i> Download Report
+        </a>
     </div>
     <p class="text-muted mt-3 mb-0" style="font-size: 12px;">
         <i class="fas fa-info-circle me-1"></i>

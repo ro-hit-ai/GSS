@@ -93,6 +93,22 @@ function validate_mobile_by_country(string $countryCode, string $mobileNumber): 
     return null;
 }
 
+function get_current_photo_path(PDO $pdo, $application_id): string {
+    try {
+        $stmt = $pdo->prepare("CALL SP_Vati_Payfiller_get_basic_details(?)");
+        $stmt->execute([$application_id]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $stmt->closeCursor();
+        return trim((string)($row['photo_path'] ?? ''));
+    } catch (Throwable $e) {
+        try {
+            if (isset($stmt) && $stmt) $stmt->closeCursor();
+        } catch (Throwable $e2) {
+        }
+        return '';
+    }
+}
+
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         sendError('Invalid request method');
@@ -217,6 +233,19 @@ try {
             }
         } else {
             sendError('Failed to upload profile photo');
+        }
+    }
+
+    // For final submit, photo is mandatory (either existing or new upload).
+    if ($save_draft === '0') {
+        $hasUpload = (isset($_FILES['photo']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK);
+        $effectiveExisting = trim((string)($photoPath ?? ''));
+        if (!$hasUpload && $effectiveExisting === '') {
+            $current = get_current_photo_path($pdo, $application_id);
+            if ($current === '') {
+                sendError('Please upload profile photo');
+            }
+            $photoPath = $current;
         }
     }
 

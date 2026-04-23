@@ -142,7 +142,8 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        setMessage('Validating credentials, please wait...', 'info');
+        // Clear any previous message; avoid showing a "please wait" banner during login.
+        setMessage('', '');
         lastLoginPayload = { username: username, password: password, captcha: captcha };
 
         try {

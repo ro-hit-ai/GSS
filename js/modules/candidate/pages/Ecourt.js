@@ -7,35 +7,25 @@ class Ecourt {
     /* ===================== NOTIFICATION ===================== */
 
     static showNotification(message, isError = false) {
-        const existing = document.querySelector('.ecourt-notification');
-        if (existing) existing.remove();
+        const text = String(message || '').trim();
+        if (!text) return;
 
-        const notification = document.createElement('div');
-        notification.className = `
-            ecourt-notification
-            alert
-            ${isError ? 'alert-danger' : 'alert-success'}
-            alert-dismissible
-            fade
-            show
-        `;
-        notification.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 9999;
-            min-width: 320px;
-            max-width: 460px;
-        `;
+        if (window.CandidateNotify && typeof window.CandidateNotify.show === 'function') {
+            window.CandidateNotify.show({
+                type: isError ? 'error' : 'success',
+                title: isError ? 'E-court details not saved' : 'E-court details saved',
+                message: text.replace(/^[^\w]+/, ''),
+                sticky: !!isError
+            });
+            return;
+        }
 
-        notification.innerHTML = `
-            ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        `;
+        if (typeof window.showAlert === 'function') {
+            window.showAlert({ type: isError ? 'error' : 'success', message: text });
+            return;
+        }
 
-        document.body.appendChild(notification);
-
-        setTimeout(() => notification.remove(), 5000);
+        console[isError ? 'error' : 'log'](text);
     }
 
     /* ===================== LIFECYCLE ===================== */
@@ -85,8 +75,6 @@ class Ecourt {
         this._initialized = false;
         this._savedData = null;
         this._isSubmitting = false;
-
-        document.querySelector('.ecourt-notification')?.remove();
     }
 
     /* ===================== REQUIRED NO-OP ===================== */
@@ -205,8 +193,8 @@ class Ecourt {
             e => {
                 e.preventDefault();
                 window.Router?.navigateTo
-                    ? Router.navigateTo('reference')
-                    : (location.href = '?page=reference');
+                    ? Router.navigateTo('social')
+                    : (location.href = '?page=social');
             }
         );
 
@@ -218,7 +206,13 @@ class Ecourt {
                 file.required = !e.target.checked;
                 if (e.target.checked) {
                     file.value = '';
-                    document.getElementById('evidenceDocumentPreview').innerHTML = '';
+                    const box = file.closest('.form-control')?.querySelector('[data-file-upload]');
+                    if (window.TabManager && typeof window.TabManager.prototype.clearUploadBox === 'function') {
+                        window.TabManager.prototype.clearUploadBox.call(window.TabManager.prototype, box);
+                    }
+                    if (window.CandidateNotify && typeof window.CandidateNotify.clearFieldError === 'function') {
+                        window.CandidateNotify.clearFieldError(box || file);
+                    }
                 }
             });
             notApplicable.dispatchEvent(new Event('change'));
@@ -233,9 +227,10 @@ class Ecourt {
 
         const box = fileInput.closest('.form-control')?.querySelector('[data-file-upload]');
 
-        document.addEventListener('click', (e) => {
+        this.addEventListener(document, 'click', (e) => {
             const trigger = e.target.closest('[data-file-choose]');
             if (!trigger) return;
+            if (!trigger.closest('#ecourtForm')) return;
             e.preventDefault();
             fileInput.click();
         });
@@ -254,15 +249,21 @@ class Ecourt {
                     const errEl = box.querySelector('[data-file-error]');
                     if (errEl) errEl.textContent = 'Invalid file type. Only PDF, JPG, JPEG, PNG allowed.';
                 }
+                if (window.CandidateNotify && typeof window.CandidateNotify.setFieldError === 'function') {
+                    window.CandidateNotify.setFieldError(box || fileInput, 'Invalid file type. Only PDF, JPG, JPEG, PNG allowed.');
+                }
                 return;
             }
 
-            if (file.size > 10 * 1024 * 1024) {
-                this.showNotification('File must be under 10MB', true);
+            if (file.size > 5 * 1024 * 1024) {
+                this.showNotification('File must be under 5MB', true);
                 e.target.value = '';
                 if (box) {
                     const errEl = box.querySelector('[data-file-error]');
-                    if (errEl) errEl.textContent = 'File too large. Maximum 10MB allowed.';
+                    if (errEl) errEl.textContent = 'File too large. Maximum 5MB allowed.';
+                }
+                if (window.CandidateNotify && typeof window.CandidateNotify.setFieldError === 'function') {
+                    window.CandidateNotify.setFieldError(box || fileInput, 'File too large. Maximum 5MB allowed.');
                 }
                 return;
             }
@@ -283,6 +284,10 @@ class Ecourt {
                         nameEl.setAttribute('data-type', file.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'image');
                     }
                 }
+            }
+
+            if (window.CandidateNotify && typeof window.CandidateNotify.clearFieldError === 'function') {
+                window.CandidateNotify.clearFieldError(box || fileInput);
             }
         });
     }
@@ -342,20 +347,44 @@ class Ecourt {
         const form = document.getElementById('ecourtForm');
         if (!form) return false;
 
-        const required = [
-            'current_address',
-            'permanent_address',
-            'period_from_date',
-            'period_to_date',
-            'period_duration_years',
-            'dob'
+        if (window.CandidateNotify && typeof window.CandidateNotify.clearValidation === 'function') {
+            window.CandidateNotify.clearValidation(form);
+        }
+
+        const errors = [];
+        const addError = (field, message) => {
+            if (window.CandidateNotify && typeof window.CandidateNotify.addFieldError === 'function') {
+                window.CandidateNotify.addFieldError(errors, field, message);
+            } else {
+                if (field && field.classList) field.classList.add('is-invalid');
+                errors.push({ field, message });
+            }
+        };
+
+        const requiredFields = [
+            { name: 'current_address', label: 'Current Address' },
+            { name: 'permanent_address', label: 'Permanent Address' },
+            { name: 'period_from_date', label: 'From Date' },
+            { name: 'period_to_date', label: 'To Date' },
+            { name: 'period_duration_years', label: 'Duration (Years)' },
+            { name: 'dob', label: 'Date of Birth' }
         ];
 
-        for (const name of required) {
+        requiredFields.forEach(({ name, label }) => {
             const el = form.querySelector(`[name="${name}"]`);
-            if (el && !el.disabled && !el.value) {
-                this.showNotification(`${name.replace(/_/g, ' ')} is required`, true);
-                return false;
+            const value = el && !el.disabled ? String(el.value || '').trim() : '';
+            if (el && !el.disabled && !value) {
+                addError(el, `${label} is required`);
+            }
+        });
+
+        const fromEl = form.querySelector('[name="period_from_date"]');
+        const toEl = form.querySelector('[name="period_to_date"]');
+        if (fromEl && toEl && fromEl.value && toEl.value) {
+            const fromDate = new Date(fromEl.value + 'T00:00:00');
+            const toDate = new Date(toEl.value + 'T00:00:00');
+            if (!Number.isNaN(fromDate.getTime()) && !Number.isNaN(toDate.getTime()) && fromDate > toDate) {
+                addError(toEl, 'To Date must be the same as or later than From Date');
             }
         }
 
@@ -364,16 +393,40 @@ class Ecourt {
         if (dobEl && dobEl.value) {
             const dob = new Date(dobEl.value + 'T00:00:00');
             if (Number.isNaN(dob.getTime())) {
-                this.showNotification('Please enter a valid date of birth', true);
-                return false;
+                addError(dobEl, 'Please enter a valid date of birth');
             }
             const cutoff = new Date();
             cutoff.setHours(0, 0, 0, 0);
             cutoff.setFullYear(cutoff.getFullYear() - 18);
             if (dob > cutoff) {
-                this.showNotification('Candidate must be at least 18 years old', true);
-                return false;
+                addError(dobEl, 'Candidate must be at least 18 years old');
             }
+        }
+
+        const notApplicable = form.querySelector('[name="not_applicable"]');
+        const fileInput = form.querySelector('[name="evidence_document"]');
+        const existingFile = this._savedData && this._savedData.evidence_document
+            ? String(this._savedData.evidence_document).trim()
+            : '';
+        const hasNewFile = !!(fileInput && fileInput.files && fileInput.files.length > 0);
+        const requiresFile = !(notApplicable && notApplicable.checked);
+        if (requiresFile && !hasNewFile && !existingFile) {
+            const box = fileInput ? fileInput.closest('.form-control')?.querySelector('[data-file-upload]') : null;
+            addError(box || fileInput || form, 'Evidence document is required unless Not Applicable is selected');
+        }
+
+        if (errors.length > 0) {
+            if (window.CandidateNotify && typeof window.CandidateNotify.validation === 'function') {
+                window.CandidateNotify.validation({
+                    form,
+                    title: 'E-court details need attention',
+                    message: `Please fix ${errors.length} issue${errors.length === 1 ? '' : 's'} before continuing.`,
+                    errors
+                });
+            } else {
+                this.showNotification(errors[0].message || 'Please fix highlighted fields', true);
+            }
+            return false;
         }
 
         return true;
@@ -405,7 +458,7 @@ class Ecourt {
             const data = await res.json();
 
             data.success
-                ? this.showNotification('✅ Draft saved')
+                ? this.showNotification('Draft saved')
                 : this.showNotification(data.message || 'Save failed', true);
         } catch (e) {
             this.showNotification(e.message, true);
@@ -433,7 +486,7 @@ class Ecourt {
 
             if (!data.success) throw new Error(data.message);
 
-            this.showNotification('✅ E-court details submitted');
+            this.showNotification('E-court details submitted successfully');
 
             if (window.Router?.markCompleted) {
                 Router.markCompleted('ecourt');

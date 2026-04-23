@@ -159,95 +159,122 @@ class BasicDetails {
 
     /* ================= VALIDATION ================= */
 
-    static validate(final = true) {
-        const form = this.form;
-        if (!form) return false;
+static validate(final = true) {
+    const form = this.form;
+    if (!form) return false;
 
-        if (final && !form.checkValidity()) {
-            form.reportValidity();
-            return false;
-        }
-        
-        // Additional validation for mobile
-        const mobileCountryCode = form.querySelector('select[name="mobile_country_code"]');
-        const mobileInput = form.querySelector('input[name="mobile"]');
+    // Clear previous errors
+    window.CandidateNotify.clearValidation(form);
 
-        if (final && mobileInput && !mobileInput.value.trim()) {
-            this.showNotification("Please enter mobile number", true);
-            mobileInput.focus();
-            return false;
-        }
+    const errors = [];
 
-        if (final && mobileCountryCode && mobileInput) {
-            const cc = (mobileCountryCode.value || '').trim();
-            const rawMobile = (mobileInput.value || '').trim();
-            const digitsOnly = rawMobile.replace(/\D/g, '');
+    const get = (name) => form.querySelector(`[name="${name}"]`);
 
-            if (rawMobile !== '' && digitsOnly.length !== rawMobile.length) {
-                this.showNotification("Mobile number must contain digits only", true);
-                mobileInput.focus();
-                return false;
-            }
+    const firstName = get("first_name");
+    const lastName = get("last_name");
+    const gender = get("gender");
+    const dob = get("dob");
+    const father = get("father_name");
+    const mobile = get("mobile");
+    const country = get("country");
+    const state = get("state");
+    const city = get("city_village");
+    const district = get("district");
+    const pincode = get("pincode");
+    const email = get("email");
 
-            const expectedLenMap = {
-                '+91': 10,
-                '+1': 10,
-                '+44': 10,
-                '+61': 9,
-                '+81': 10,
-                '+86': 11,
-            };
+    /* ================= REQUIRED ================= */
 
-            const expected = expectedLenMap[cc] || null;
-            if (expected && digitsOnly.length > 0 && digitsOnly.length !== expected) {
-                this.showNotification(`Mobile number must be ${expected} digits for ${cc}`, true);
-                mobileInput.focus();
-                return false;
-            }
-
-            if (!expected && digitsOnly.length > 0 && (digitsOnly.length < 6 || digitsOnly.length > 15)) {
-                this.showNotification("Mobile number must be between 6 and 15 digits", true);
-                mobileInput.focus();
-                return false;
-            }
-        }
-
-        // Pincode validation (6 digits)
-        const pincodeInput = form.querySelector('input[name="pincode"]');
-        if (final && pincodeInput) {
-            const pin = (pincodeInput.value || '').trim();
-            if (pin !== '' && !/^\d{6}$/.test(pin)) {
-                this.showNotification("Pincode must be exactly 6 digits", true);
-                pincodeInput.focus();
-                return false;
-            }
-        }
-
-        // DOB validation (candidate must be 18 or older)
-        const dobInput = form.querySelector('input[name="dob"]');
-        if (final && dobInput) {
-            const dobValue = (dobInput.value || '').trim();
-            if (dobValue) {
-                const dob = new Date(dobValue + 'T00:00:00');
-                if (Number.isNaN(dob.getTime())) {
-                    this.showNotification("Please enter a valid date of birth", true);
-                    dobInput.focus();
-                    return false;
-                }
-
-                const cutoff = new Date();
-                cutoff.setHours(0, 0, 0, 0);
-                cutoff.setFullYear(cutoff.getFullYear() - 18);
-                if (dob > cutoff) {
-                    this.showNotification("Candidate must be at least 18 years old", true);
-                    dobInput.focus();
-                    return false;
-                }
-            }
-        }
-
-        return true;
+    if (final && !firstName.value.trim()) {
+        window.CandidateNotify.addFieldError(errors, firstName, "First name is required");
     }
+
+    if (final && !lastName.value.trim()) {
+        window.CandidateNotify.addFieldError(errors, lastName, "Last name is required");
+    }
+
+    if (final && !gender.value) {
+        window.CandidateNotify.addFieldError(errors, gender, "Please select gender");
+    }
+
+    if (final && !father.value.trim()) {
+        window.CandidateNotify.addFieldError(errors, father, "Father name is required");
+    }
+
+    if (final && !email.value.trim()) {
+        window.CandidateNotify.addFieldError(errors, email, "Email is required");
+    }
+
+    if (final && !country.value) {
+        window.CandidateNotify.addFieldError(errors, country, "Select country");
+    }
+
+    if (final && !state.value) {
+        window.CandidateNotify.addFieldError(errors, state, "Select state");
+    }
+
+    if (final && !city.value.trim()) {
+        window.CandidateNotify.addFieldError(errors, city, "City is required");
+    }
+
+    if (final && !district.value.trim()) {
+        window.CandidateNotify.addFieldError(errors, district, "District is required");
+    }
+
+    /* ================= DOB ================= */
+
+    if (final && dob.value) {
+        const d = new Date(dob.value);
+        const cutoff = new Date();
+        cutoff.setFullYear(cutoff.getFullYear() - 18);
+
+        if (d > cutoff) {
+            window.CandidateNotify.addFieldError(errors, dob, "Must be at least 18 years old");
+        }
+    } else if (final) {
+        window.CandidateNotify.addFieldError(errors, dob, "Date of birth is required");
+    }
+
+    /* ================= MOBILE ================= */
+
+    if (final && !mobile.value.trim()) {
+        window.CandidateNotify.addFieldError(errors, mobile, "Mobile number required");
+    } else if (mobile.value && !/^\d+$/.test(mobile.value)) {
+        window.CandidateNotify.addFieldError(errors, mobile, "Only digits allowed");
+    }
+
+    /* ================= PINCODE ================= */
+
+    if (final && pincode.value && !/^\d{6}$/.test(pincode.value)) {
+        window.CandidateNotify.addFieldError(errors, pincode, "Pincode must be 6 digits");
+    }
+
+    /* ================= PHOTO ================= */
+
+    const photoInput = document.getElementById('photoInput');
+    const hasPhoto = photoInput?.files?.length > 0 ||
+        !!form.querySelector('input[name="existing_photo"]');
+
+    if (final && !hasPhoto) {
+        const trigger = document.getElementById('photoUploadTrigger');
+        window.CandidateNotify.addFieldError(errors, trigger, "Upload profile photo");
+    }
+
+    /* ================= FINAL ================= */
+
+    if (errors.length) {
+        window.CandidateNotify.validation({
+            form,
+            errors,
+            title: "Please fix the errors",
+            message: `You have ${errors.length} issue(s)`
+        });
+
+        return false;
+    }
+
+    return true;
+}
 
     static initInputConstraints() {
         const form = this.form;
@@ -345,13 +372,19 @@ class BasicDetails {
             });
 
             console.log("📥 Response status:", res.status);
-            
+
             if (!res.ok) {
-                const responseText = await res.text();
-                throw new Error(`HTTP ${res.status}: ${responseText}`);
+                const responseText = await res.text().catch(() => '');
+                let serverMessage = '';
+                try {
+                    const parsed = JSON.parse(responseText || '{}');
+                    serverMessage = String(parsed && (parsed.message || parsed.error || '') || '').trim();
+                } catch (_e) {
+                }
+                throw new Error(serverMessage || String(responseText || '').trim() || `Request failed (HTTP ${res.status})`);
             }
 
-            const data = await res.json();
+            const data = await res.json().catch(() => ({}));
 
             if (!data.success) {
                 throw new Error(data.message || "Save failed");
@@ -362,23 +395,24 @@ class BasicDetails {
 
         } catch (err) {
             console.error("❌ BasicDetails error", err);
-            this.showNotification('❌ ' + (err.message || "Save failed"), true);
+            this.showNotification(String((err && err.message) ? err.message : "Save failed"), true);
             return false;
         }
     }
 
     /* ================= NOTIFICATION ================= */
 
-    static showNotification(message, isError = false) {
-        if (window.CandidateNotify) {
-            window.CandidateNotify.show({
-                type: isError ? 'error' : 'success',
-                title: isError ? 'Basic details not saved' : 'Basic details saved',
-                message: String(message || '').replace(/^[^\w]+/, ''),
-                sticky: !!isError
-            });
-            return;
-        }
+static showNotification(message, isError = false) {
+    if (window.CandidateNotify) {
+        window.CandidateNotify.show({
+            type: isError ? 'error' : 'success',
+            title: isError ? 'Basic details not saved' : 'Basic details saved',
+            message: String(message || '').replace(/^[^\w]+/, ''),
+            sticky: false,              // ✅ FIX
+            timeout: isError ? 5000 : 2500             // optional
+        });
+        return;
+    }
 
         const existingNotif = document.querySelector('.basic-details-notification');
         if (existingNotif) {

@@ -663,41 +663,16 @@ class EmploymentManager extends TabManager {
             isValid = false;
         };
         
-        const isCardEmpty = (card) => {
-            if (!card) return true;
-            const inputs = card.querySelectorAll('input:not([type="hidden"]):not([type="file"]), select, textarea');
-            for (const input of inputs) {
-                if (input.value && input.value.trim() !== '' && !input.disabled) {
-                    return false;
-                }
-            }
+        const requiredEmploymentCount = Math.max(
+            this.cards.length,
+            this.configuredRequiredCount || 0,
+            this.requiredCount || 0,
+            1
+        );
 
-            const fileInput = card.querySelector('[name="employment_doc[]"]');
-            if (fileInput && fileInput.files && fileInput.files.length > 0) {
-                return false;
-            }
-
-            const oldEmploymentDoc = card.querySelector('[name^="old_employment_doc"]');
-            if (oldEmploymentDoc && oldEmploymentDoc.value && oldEmploymentDoc.value !== 'INSUFFICIENT_DOCUMENTS') {
-                return false;
-            }
-
-            const insufficientCheckbox = card.querySelector('input[name="insufficient_employment_docs[]"]');
-            if (insufficientCheckbox && insufficientCheckbox.checked) {
-                return false;
-            }
-
-            return true;
-        };
-
-        for (let i = 0; i < this.cards.length; i++) {
+        for (let i = 0; i < requiredEmploymentCount; i++) {
             const card = this.cards[i];
             if (!card) continue;
-
-            // Skip completely empty tabs
-            if (isCardEmpty(card)) {
-                continue;
-            }
             
             // Skip validation for extra cards if fresher
             if (this.isFresher && i > 0) {
@@ -715,11 +690,15 @@ class EmploymentManager extends TabManager {
                     { selector: '[name="employer_name[]"]', label: 'Employer Name' },
                     { selector: '[name="job_title[]"]', label: 'Job Title' },
                     { selector: '[name="employee_id[]"]', label: 'Employee ID' },
+                    { selector: '[name="joining_date[]"]', label: 'Start Date' },
                     { selector: '[name="reason_leaving[]"]', label: 'Reason for Leaving' }
                 ];
 
-                // Add relieving date if not currently employed
-                if (i === 0 && this.currentlyEmployed === 'no') {
+                const shouldRequireRelievingDate = i === 0
+                    ? this.currentlyEmployed === 'no'
+                    : true;
+
+                if (shouldRequireRelievingDate) {
                     requiredFields.push({ 
                         selector: '[name="relieving_date[]"]', 
                         label: 'Relieving Date' 
@@ -787,7 +766,7 @@ if (isFinalSubmit) {
                 const relievingInput = card.querySelector('[name="relieving_date[]"]');
                 
                 if (
-                    this.currentlyEmployed === 'no' &&
+                    shouldRequireRelievingDate &&
                     joiningInput &&
                     joiningInput.value &&
                     relievingInput &&
