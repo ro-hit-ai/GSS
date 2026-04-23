@@ -256,6 +256,12 @@ try {
         cli_log('MANUAL INSERT FAILED: ' . $e->getMessage());
     }
 
+    $mailLogInsert = $pdo->prepare(
+        'INSERT INTO GSS_Mail_Logs ('
+        . 'status, driver, mail_from, mail_to, subject, application_id, user_id, user_name, client_id, created_at, meta_json'
+        . ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)'
+    );
+
     foreach ($uids as $uid) {
         try {
             cli_log('Processing email...');
@@ -297,7 +303,9 @@ try {
             if (preg_match('/APP-\d+/i', $subject . ' ' . $message, $m) === 1) {
                 $applicationId = normalize_application_id($m[0]);
             }
-            $applicationId = 'TEST-APP';
+            if ($applicationId === '') {
+                $applicationId = 'UNKNOWN';
+            }
 
             cli_log('---- EMAIL DEBUG ----');
             cli_log('Subject: ' . $subject);
@@ -329,6 +337,35 @@ try {
 
             $inserted++;
             cli_log('Inserted successfully for APP: ' . $applicationId);
+            $subjectForLog = (string)($subject ?? '');
+            if (function_exists('mb_substr')) {
+                $subjectForLog = mb_substr($subjectForLog, 0, 255);
+            } else {
+                $subjectForLog = substr($subjectForLog, 0, 255);
+            }
+            $metaJson = json_encode([
+                'source' => 'imap',
+                'type' => 'reply'
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            if (!is_string($metaJson) || $metaJson === '') {
+                $metaJson = '{"source":"imap","type":"reply"}';
+            }
+            try {
+                $mailLogInsert->execute([
+                    'received',
+                    'imap',
+                    (string)$sender,
+                    null,
+                    (string)$subjectForLog,
+                    (string)$applicationId,
+                    0,
+                    'system',
+                    0,
+                    $metaJson
+                ]);
+            } catch (Throwable $mailLogEx) {
+                cli_log('MAIL LOG INSERT FAILED: ' . $mailLogEx->getMessage());
+            }
             if (!DEBUG_MODE) {
                 @imap_setflag_full($inbox, (string)$uid, '\\Seen', ST_UID);
             }
