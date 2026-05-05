@@ -70,6 +70,16 @@ function post_allowed_sections(): string {
     return implode(',', array_keys($out));
 }
 
+function resolve_client_id(): int {
+    $posted = post_int('client_id');
+    if ($posted > 0) return $posted;
+
+    $sessionClient = isset($_SESSION['auth_client_id']) ? (int)$_SESSION['auth_client_id'] : 0;
+    if ($sessionClient > 0) return $sessionClient;
+
+    return 1;
+}
+
 function friendlyDbError(PDOException $e): string {
     $info = $e->errorInfo ?? null;
     $driverCode = is_array($info) ? (int)($info[1] ?? 0) : 0;
@@ -89,7 +99,7 @@ try {
         exit;
     }
 
-    $clientId = post_int('client_id');
+    $clientId = resolve_client_id();
     $username = post_str('username');
     $firstName = post_str('first_name');
     $middleName = post_str('middle_name');
@@ -109,12 +119,6 @@ try {
 
     $locations = post_locations();
     $location = !empty($locations) ? (string)$locations[0] : post_str('location');
-
-    if ($clientId <= 0) {
-        http_response_code(400);
-        echo json_encode(['status' => 0, 'message' => 'client_id is required']);
-        exit;
-    }
 
     if ($username === '' || $firstName === '' || $lastName === '' || $phone === '' || $email === '' || $role === '') {
         http_response_code(400);

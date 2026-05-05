@@ -108,6 +108,18 @@ try {
                 'username' => integration_nullable_string($row['username'] ?? null),
                 'name' => integration_nullable_string($actorName),
             ],
+            // Backward-compatible keys expected by legacy candidate_report.js
+            'timeline_id' => isset($row['timeline_id']) ? (int)$row['timeline_id'] : null,
+            'application_id' => integration_normalize_application_id((string)($row['application_id'] ?? $applicationId)),
+            'actor_user_id' => isset($row['actor_user_id']) && (int)$row['actor_user_id'] > 0 ? (int)$row['actor_user_id'] : null,
+            'actor_role' => integration_nullable_string($row['actor_role'] ?? null),
+            'event_type' => integration_nullable_string($row['event_type'] ?? null),
+            'section_key' => integration_nullable_string($row['section_key'] ?? null),
+            'meta_json' => integration_nullable_string($row['meta_json'] ?? null),
+            'created_at' => integration_nullable_string($row['created_at'] ?? null),
+            'username' => integration_nullable_string($row['username'] ?? null),
+            'first_name' => integration_nullable_string($row['first_name'] ?? null),
+            'last_name' => integration_nullable_string($row['last_name'] ?? null),
         ];
     }
 

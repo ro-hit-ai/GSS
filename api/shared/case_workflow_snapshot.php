@@ -1,21 +1,65 @@
 <?php
 require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../../config/env.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/integration.php';
+require_once __DIR__ . '/workflow_snapshot_service.php';
 
 integration_bootstrap_json_api();
 auth_session_start();
 
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, X-API-Key');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit;
 }
 
-integration_resolve_actor(true);
+function shared_endpoint_log(string $msg): void {
+    error_log('[case_workflow_snapshot] ' . $msg);
+}
+
+function get_header_value(string $name): string {
+    $key = 'HTTP_' . strtoupper(str_replace('-', '_', $name));
+    if (!empty($_SERVER[$key])) return trim((string)$_SERVER[$key]);
+    if (function_exists('getallheaders')) {
+        $headers = getallheaders();
+        if (is_array($headers)) {
+            foreach ($headers as $k => $v) {
+                if (strcasecmp((string)$k, $name) === 0) return trim((string)$v);
+            }
+        }
+    }
+    return '';
+}
+
+function shared_api_key_valid(): bool {
+    $incoming = get_header_value('X-API-Key');
+    if ($incoming === '') return false;
+    $expected = (string)(env_get('PHP_API_KEY', env_get('SHARED_API_KEY', '')) ?? '');
+    if ($expected === '') return false;
+    return hash_equals($expected, $incoming);
+}
+
+$incomingApiKey = get_header_value('X-API-Key');
+$hasApiKey = $incomingApiKey !== '';
+$apiKeyOk = shared_api_key_valid();
+if ($hasApiKey && !$apiKeyOk) {
+    shared_endpoint_log('auth failure method=api-key');
+    http_response_code(401);
+    echo json_encode(['status' => 0, 'message' => 'Unauthorized']);
+    exit;
+}
+$authViaApiKey = $apiKeyOk;
+shared_endpoint_log('hit auth_method=' . ($authViaApiKey ? 'api-key' : 'session') . ' auth=' . ($authViaApiKey ? 'success' : 'pending'));
+
+if (!$authViaApiKey) {
+    integration_resolve_actor(true);
+} else {
+    shared_endpoint_log('auth success method=api-key');
+}
 
 function get_str(string $key, string $default = ''): string {
     return trim((string)($_GET[$key] ?? $default));
@@ -52,41 +96,6 @@ function enforce_client_admin_application_scope(PDO $pdo, string $applicationId)
         echo json_encode(['status' => 0, 'message' => 'Forbidden']);
         exit;
     }
-}
-
-function workflow_table_available(PDO $pdo): bool {
-    try {
-        $pdo->query('SELECT 1 FROM Vati_Payfiller_Case_Component_Workflow LIMIT 1');
-        return true;
-    } catch (Throwable $e) {
-        return false;
-    }
-}
-
-function norm_component_key(string $k): string {
-    $k = strtolower(trim($k));
-    if ($k === 'identification') return 'id';
-    if ($k === 'social_media' || $k === 'social-media') return 'socialmedia';
-    if ($k === 'driving' || $k === 'driving_license') return 'driving_licence';
-    return $k;
-}
-
-function compute_component_stage_label(array $stages): string {
-    $cand = strtolower(trim((string)($stages['candidate'] ?? '')));
-    $val = strtolower(trim((string)($stages['validator'] ?? '')));
-    $ver = strtolower(trim((string)($stages['verifier'] ?? '')));
-    $qa = strtolower(trim((string)($stages['qa'] ?? '')));
-
-    if ($qa === 'rejected') return 'QA Rejected';
-    if ($qa === 'approved') return 'Completed';
-    if ($ver === 'rejected') return 'Verifier Rejected';
-    if ($val === 'rejected') return 'Validator Rejected';
-    if ($cand === 'rejected') return 'Candidate Rejected';
-
-    if ($ver === 'approved') return 'Pending QA';
-    if ($val === 'approved') return 'Pending Verifier';
-    if ($cand === 'approved') return 'Pending Validator';
-    return 'Pending Candidate';
 }
 
 function fetch_latest_user_name(PDO $pdo, ?int $userId): ?string {
@@ -234,70 +243,43 @@ try {
         'rejectedCount' => 0,
         'items' => [],
     ];
+    $contract = ws_build_snapshot_contract($pdo, $applicationId);
+    $visibleSections = $contract['visible_sections'];
+    $assignedComponents = $contract['assigned_components'];
+    $componentWorkflow = $contract['component_workflow'];
 
-    try {
-        $componentsStmt = $pdo->prepare(
-            'SELECT component_key, is_required, assigned_role, assigned_user_id, status, completed_at
-               FROM Vati_Payfiller_Case_Components
-              WHERE application_id = ?'
-        );
-        $componentsStmt->execute([$applicationId]);
-        $components = $componentsStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    foreach ($assignedComponents as $component) {
+        $componentKey = ws_norm_component_key((string)($component['component_key'] ?? ''));
+        $isRequired = isset($component['is_required']) ? (int)$component['is_required'] : 1;
+        if ($componentKey === '' || $isRequired !== 1) continue;
 
-        $workflowByComponent = [];
-        if (workflow_table_available($pdo)) {
-            $workflowStmt = $pdo->prepare(
-                'SELECT component_key, stage, status
-                   FROM Vati_Payfiller_Case_Component_Workflow
-                  WHERE application_id = ?'
-            );
-            $workflowStmt->execute([$applicationId]);
-            $workflowRows = $workflowStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-            foreach ($workflowRows as $row) {
-                $ck = norm_component_key((string)($row['component_key'] ?? ''));
-                $stage = strtolower(trim((string)($row['stage'] ?? '')));
-                if ($ck === '' || $stage === '') continue;
-                if (!isset($workflowByComponent[$ck])) $workflowByComponent[$ck] = [];
-                $workflowByComponent[$ck][$stage] = strtolower(trim((string)($row['status'] ?? '')));
-            }
+        $pendingItemsSummary['totalRequired']++;
+        $stageSimple = is_array($component['workflow'] ?? null) ? $component['workflow'] : [];
+        $stageLabel = ws_compute_component_stage_label([
+            'candidate' => $stageSimple['candidate'] ?? '',
+            'validator' => $stageSimple['validator'] ?? '',
+            'verifier' => $stageSimple['verifier'] ?? '',
+            'qa' => $stageSimple['qa'] ?? '',
+        ]);
+
+        $componentStatus = strtolower(trim((string)($component['status'] ?? 'pending')));
+        $isDone = in_array($stageLabel, ['Completed', 'QA Rejected'], true);
+        $isRejected = str_contains(strtolower($stageLabel), 'rejected') || $componentStatus === 'rejected';
+        $isHold = $componentStatus === 'hold';
+
+        if ($isRejected) $pendingItemsSummary['rejectedCount']++;
+        if ($isHold) $pendingItemsSummary['holdCount']++;
+        if (!$isDone && !$isRejected) {
+            $pendingItemsSummary['pendingCount']++;
+            $pendingItemsSummary['items'][] = [
+                'componentKey' => $componentKey,
+                'stageLabel' => $stageLabel,
+                'assignedRole' => ($component['assigned_role'] ?? null) !== '' ? (string)$component['assigned_role'] : null,
+                'assignedUserId' => isset($component['assigned_user_id']) && (int)$component['assigned_user_id'] > 0
+                    ? (int)$component['assigned_user_id']
+                    : null,
+            ];
         }
-
-        foreach ($components as $component) {
-            $componentKey = norm_component_key((string)($component['component_key'] ?? ''));
-            $isRequired = isset($component['is_required']) ? (int)$component['is_required'] : 1;
-            if ($componentKey === '' || $isRequired !== 1) continue;
-
-            $pendingItemsSummary['totalRequired']++;
-
-            $workflow = $workflowByComponent[$componentKey] ?? [];
-            $stageLabel = compute_component_stage_label([
-                'candidate' => $workflow['candidate'] ?? '',
-                'validator' => $workflow['validator'] ?? '',
-                'verifier' => $workflow['verifier'] ?? '',
-                'qa' => $workflow['qa'] ?? '',
-            ]);
-
-            $componentStatus = strtolower(trim((string)($component['status'] ?? 'pending')));
-            $isDone = in_array($stageLabel, ['Completed', 'QA Rejected'], true);
-            $isRejected = str_contains(strtolower($stageLabel), 'rejected') || $componentStatus === 'rejected';
-            $isHold = $componentStatus === 'hold';
-
-            if ($isRejected) $pendingItemsSummary['rejectedCount']++;
-            if ($isHold) $pendingItemsSummary['holdCount']++;
-            if (!$isDone && !$isRejected) {
-                $pendingItemsSummary['pendingCount']++;
-                $pendingItemsSummary['items'][] = [
-                    'componentKey' => $componentKey,
-                    'stageLabel' => $stageLabel,
-                    'assignedRole' => ($component['assigned_role'] ?? null) !== '' ? (string)$component['assigned_role'] : null,
-                    'assignedUserId' => isset($component['assigned_user_id']) && (int)$component['assigned_user_id'] > 0
-                        ? (int)$component['assigned_user_id']
-                        : null,
-                ];
-            }
-        }
-    } catch (Throwable $e) {
-        // Leave pendingItemsSummary as a safe empty summary if component tables are unavailable.
     }
 
     $lastTimelineEvent = null;
@@ -350,6 +332,12 @@ try {
             'candidateEmail' => integration_normalize_email((string)($case['candidate_email'] ?? '')),
             'currentStage' => (string)($case['current_stage'] ?? ''),
             'rawCaseStatus' => (string)($case['case_status'] ?? ''),
+            'visibleSections' => $visibleSections,
+            'visible_sections' => $visibleSections,
+            'assignedComponents' => $assignedComponents,
+            'assigned_components' => $assignedComponents,
+            'componentWorkflow' => $componentWorkflow,
+            'component_workflow' => $componentWorkflow,
             'ownerSummary' => $ownerSummary,
             'pendingItemsSummary' => $pendingItemsSummary,
             'lastTimelineEvent' => $lastTimelineEvent,
@@ -370,3 +358,4 @@ try {
     http_response_code(400);
     echo json_encode(['status' => 0, 'message' => $e->getMessage()]);
 }
+ 

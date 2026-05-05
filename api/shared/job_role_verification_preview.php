@@ -11,6 +11,10 @@ function get_int_qs(string $key, int $default = 0): int {
     return isset($_GET[$key]) && $_GET[$key] !== '' ? (int)$_GET[$key] : $default;
 }
 
+function get_str_qs(string $key, string $default = ''): string {
+    return trim((string)($_GET[$key] ?? $default));
+}
+
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
         http_response_code(405);
@@ -19,6 +23,8 @@ try {
     }
 
     $jobRoleId = get_int_qs('job_role_id', 0);
+    $levelKey = strtolower(get_str_qs('level_key', ''));
+    $stageKey = strtolower(get_str_qs('stage_key', ''));
     if ($jobRoleId <= 0) {
         http_response_code(400);
         echo json_encode(['status' => 0, 'message' => 'job_role_id is required']);
@@ -53,6 +59,8 @@ try {
     }
 
     $steps = [];
+    $availableLevels = [];
+    $availableStages = [];
 
     // Prefer SP if available
     try {
@@ -89,23 +97,106 @@ try {
         $steps = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
+    try {
+        $lvl = $pdo->prepare(
+            'SELECT DISTINCT LOWER(TRIM(COALESCE(level_key, ""))) AS level_key
+               FROM Vati_Payfiller_Job_Role_Verification_Types
+              WHERE job_role_id = ?
+                AND TRIM(COALESCE(level_key, "")) <> ""
+              ORDER BY level_key ASC'
+        );
+        $lvl->execute([$jobRoleId]);
+        $lvlRows = $lvl->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        foreach ($lvlRows as $lr) {
+            $lk = strtolower(trim((string)($lr['level_key'] ?? '')));
+            if ($lk !== '') {
+                $availableLevels[$lk] = true;
+            }
+        }
+    } catch (Throwable $e) {
+        $availableLevels = [];
+    }
+
+    try {
+        $stgSql = 'SELECT DISTINCT LOWER(TRIM(COALESCE(s.stage_key, ""))) AS stage_key
+                     FROM Vati_Payfiller_Job_Role_Stage_Steps s
+                    WHERE s.job_role_id = ?
+                      AND s.is_active = 1';
+        $stgParams = [$jobRoleId];
+        if ($levelKey !== '') {
+            $stgSql .= ' AND EXISTS (
+                            SELECT 1
+                              FROM Vati_Payfiller_Job_Role_Verification_Types j
+                             WHERE j.job_role_id = s.job_role_id
+                               AND j.verification_type_id = s.verification_type_id
+                               AND LOWER(TRIM(COALESCE(j.level_key, ""))) = ?
+                         )';
+            $stgParams[] = $levelKey;
+        }
+        $stgSql .= ' ORDER BY stage_key ASC';
+        $stg = $pdo->prepare($stgSql);
+        $stg->execute($stgParams);
+        $stgRows = $stg->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        foreach ($stgRows as $sr) {
+            $sk = strtolower(trim((string)($sr['stage_key'] ?? '')));
+            if ($sk !== '') {
+                $availableStages[$sk] = true;
+            }
+        }
+    } catch (Throwable $e) {
+        $availableStages = [];
+    }
+
+    $typeMetaById = [];
+    try {
+        $typesSql = 'SELECT j.verification_type_id, j.is_enabled, j.level_key, t.type_name, t.type_category
+                       FROM Vati_Payfiller_Job_Role_Verification_Types j
+                       LEFT JOIN Vati_Payfiller_Verification_Types t ON t.verification_type_id = j.verification_type_id
+                      WHERE j.job_role_id = ?';
+        $typeParams = [$jobRoleId];
+        if ($levelKey !== '') {
+            $typesSql .= ' AND LOWER(TRIM(COALESCE(j.level_key, ""))) = ?';
+            $typeParams[] = $levelKey;
+        }
+        $typesSql .= ' ORDER BY COALESCE(j.sort_order, 0) ASC, COALESCE(t.type_name, "") ASC';
+        $typesStmt = $pdo->prepare($typesSql);
+        $typesStmt->execute($typeParams);
+        $typeRows = $typesStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        foreach ($typeRows as $tr) {
+            $enabled = isset($tr['is_enabled']) ? (int)$tr['is_enabled'] : 1;
+            if ($enabled !== 1) continue;
+            $vtId = isset($tr['verification_type_id']) ? (int)$tr['verification_type_id'] : 0;
+            if ($vtId <= 0) continue;
+            $typeMetaById[$vtId] = [
+                'type_name' => (string)($tr['type_name'] ?? ''),
+                'type_category' => (string)($tr['type_category'] ?? ''),
+            ];
+        }
+    } catch (Throwable $e) {
+        $typeMetaById = [];
+    }
+
     // Group by stage_key
     $byStage = [];
     foreach ($steps as $s) {
         $active = isset($s['is_active']) ? (int)$s['is_active'] : 1;
         if ($active !== 1) continue;
+        $vtId = isset($s['verification_type_id']) ? (int)$s['verification_type_id'] : 0;
+        if ($vtId <= 0) continue;
+        if (!empty($typeMetaById) && !isset($typeMetaById[$vtId])) continue;
 
         $stage = (string)($s['stage_key'] ?? '');
         if ($stage === '') $stage = 'unknown';
+        if ($stageKey !== '' && strtolower($stage) !== $stageKey) continue;
 
         if (!isset($byStage[$stage])) {
             $byStage[$stage] = [];
         }
 
         $byStage[$stage][] = [
-            'verification_type_id' => isset($s['verification_type_id']) ? (int)$s['verification_type_id'] : 0,
-            'type_name' => (string)($s['type_name'] ?? ''),
-            'type_category' => (string)($s['type_category'] ?? ''),
+            'verification_type_id' => $vtId,
+            'type_name' => !empty($typeMetaById) ? (string)($typeMetaById[$vtId]['type_name'] ?? '') : (string)($s['type_name'] ?? ''),
+            'type_category' => !empty($typeMetaById) ? (string)($typeMetaById[$vtId]['type_category'] ?? '') : (string)($s['type_category'] ?? ''),
             'execution_group' => isset($s['execution_group']) ? (int)$s['execution_group'] : 1,
             'assigned_role' => (string)($s['assigned_role'] ?? ''),
         ];
@@ -118,6 +209,10 @@ try {
             'client_id' => $clientId,
             'job_role_id' => $jobRoleId,
             'job_role' => (string)($role['role_name'] ?? ''),
+            'selected_level' => $levelKey,
+            'selected_stage' => $stageKey,
+            'available_levels' => array_values(array_keys($availableLevels)),
+            'available_stages' => array_values(array_keys($availableStages)),
             'stages' => $byStage
         ]
     ]);

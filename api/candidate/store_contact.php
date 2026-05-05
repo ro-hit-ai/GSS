@@ -131,12 +131,12 @@ try {
 
     if ($hasCurrentAddress && !$hasPermanentAddress) {
         $same_as_current = 1;
-        $p_address1    = $address1;
-        $p_address2    = $address2;
-        $p_city        = $city;
-        $p_state       = $state;
-        $p_country     = $country;
-        $p_postal_code = $postal_code;
+        $p_address1    = '';
+        $p_address2    = '';
+        $p_city        = '';
+        $p_state       = '';
+        $p_country     = '';
+        $p_postal_code = '';
     } elseif (!$hasCurrentAddress && $hasPermanentAddress) {
         $same_as_current = 0;
         $p_address1    = $post['permanent_address1'] ?? '';
@@ -154,12 +154,12 @@ try {
             validateRequired($p_postal_code, 'Permanent Postal Code');
         }
     } elseif ($same_as_current) {
-        $p_address1    = $address1;
-        $p_address2    = $address2;
-        $p_city        = $city;
-        $p_state       = $state;
-        $p_country     = $country;
-        $p_postal_code = $postal_code;
+        $p_address1    = '';
+        $p_address2    = '';
+        $p_city        = '';
+        $p_state       = '';
+        $p_country     = '';
+        $p_postal_code = '';
     } else {
         $p_address1    = $post['permanent_address1'] ?? '';
         $p_address2    = $post['permanent_address2'] ?? '';
@@ -175,6 +175,11 @@ try {
             validateRequired($p_country, 'Permanent Country');
             validateRequired($p_postal_code, 'Permanent Postal Code');
         }
+    }
+
+    // Safety: backend is source of truth; do not persist permanent address when same_as_current is set.
+    if ($same_as_current) {
+        $hasPermanentAddress = false;
     }
 
     /* ================= PROOF ================= */

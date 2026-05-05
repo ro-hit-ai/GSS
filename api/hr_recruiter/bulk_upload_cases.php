@@ -5,6 +5,7 @@ require_once __DIR__ . '/../../config/env.php';
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/mail.php';
+require_once __DIR__ . '/../shared/case_component_binding.php';
 
 auth_require_login('company_recruiter');
 auth_session_start();
@@ -356,6 +357,10 @@ try {
                 throw new Exception('case_id missing after create');
             }
 
+            // Ensure workflow snapshot rows exist for every required case component.
+            case_component_binding_sync_case_components($pdo, $caseId, $applicationId);
+            case_component_binding_seed_stage_workflow_rows($pdo, $caseId, $applicationId, ['candidate', 'validator']);
+
             // Create candidate login credentials (always reset temp password and force password change)
             $candidateUserId = 0;
             $tempPassword = '';
@@ -478,6 +483,9 @@ try {
                 . '<p>Thanks,<br>VATI GSS</p>'
                 . '</div>';
             $sent = send_app_mail($email, $subject, $body, 'VATI GSS');
+
+            // Re-run seeding at end of row flow in case any late component rows were inserted.
+            case_component_binding_seed_stage_workflow_rows_until_stable($pdo, $caseId, $applicationId, ['candidate', 'validator']);
 
             $results[] = [
                 'row' => $rowNum,

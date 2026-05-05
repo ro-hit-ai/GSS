@@ -1,4 +1,45 @@
 (function () {
+    var __crToastHost = null;
+    function ensureCrToastHost() {
+        if (__crToastHost && document.body.contains(__crToastHost)) return __crToastHost;
+        if (!document.getElementById('cr-toast-style')) {
+            var st = document.createElement('style');
+            st.id = 'cr-toast-style';
+            st.textContent =
+                '.cr-toast-host{position:fixed;top:16px;right:16px;z-index:1200;display:flex;flex-direction:column;gap:8px;max-width:min(420px,calc(100vw - 20px));}' +
+                '.cr-toast{border-radius:10px;padding:11px 14px;font-size:13px;font-weight:700;border:1px solid transparent;box-shadow:0 10px 25px rgba(2,6,23,.15);opacity:0;transform:translateY(-8px);transition:all .18s ease;}' +
+                '.cr-toast.show{opacity:1;transform:translateY(0);}' +
+                '.cr-toast.success{background:#ecfdf3;color:#065f46;border-color:#a7f3d0;}' +
+                '.cr-toast.danger,.cr-toast.error{background:#fef2f2;color:#991b1b;border-color:#fecaca;}' +
+                '.cr-toast.warning{background:#fffbeb;color:#92400e;border-color:#fde68a;}' +
+                '.cr-toast.info{background:#eff6ff;color:#1e3a8a;border-color:#bfdbfe;}';
+            document.head.appendChild(st);
+        }
+        __crToastHost = document.createElement('div');
+        __crToastHost.className = 'cr-toast-host';
+        document.body.appendChild(__crToastHost);
+        return __crToastHost;
+    }
+
+    function showCrToast(text, type) {
+        var msg = String(text || '').trim();
+        if (!msg) return;
+        var host = ensureCrToastHost();
+        var t = String(type || 'info').toLowerCase().trim();
+        if (t === 'warn') t = 'warning';
+        var item = document.createElement('div');
+        item.className = 'cr-toast ' + t;
+        item.textContent = msg;
+        host.appendChild(item);
+        requestAnimationFrame(function () { item.classList.add('show'); });
+        setTimeout(function () {
+            item.classList.remove('show');
+            setTimeout(function () {
+                if (item.parentNode) item.parentNode.removeChild(item);
+            }, 220);
+        }, 3000);
+    }
+    var ACTIONABLE_COMPONENTS = ['basic', 'id', 'contact', 'education', 'employment', 'reference', 'socialmedia', 'ecourt', 'reports'];
     var REPORT_PAYLOAD = null;
     var CURRENT_APP_ID = '';
     var CURRENT_SECTION_KEY = '';
@@ -7,6 +48,8 @@
     var TL_CACHE = [];
     var EMAIL_REPLIES_CACHE = [];
     var TL_ACTIVE_FILTER = 'all';
+    var COMPONENT_TABLE_ROWS = { id: [], education: [], employment: [] };
+    var COMPONENT_TABLE_RENDERED = { id: false, education: false, employment: false };
 
     var SELECTED_UPLOAD_FILES = [];
     var ACTIVE_ITEM_BY_SECTION = {};
@@ -181,6 +224,11 @@ function closeBsModal(id) {
         return s === 'id' || s === 'education' || s === 'employment';
     }
 
+    function isActionableComponent(section) {
+        var s = normSection(section);
+        return ACTIONABLE_COMPONENTS.indexOf(s) !== -1;
+    }
+
     function activeComponentSectionKey() {
         var sec = normSection(CURRENT_SECTION_KEY || '');
         if (sec && sec !== 'timeline') return sec;
@@ -341,8 +389,8 @@ function closeBsModal(id) {
             setSplitPaneMessage('Please open a document from Identification, Education, or Employment.', 'error');
             return;
         }
-        if (!isRecordComponent(componentKey)) {
-            setSplitPaneMessage('Actions are available for Identification, Education, and Employment items only.', 'error');
+        if (!isActionableComponent(componentKey)) {
+            setSplitPaneMessage('Please select a valid section before taking action.', 'error');
             return;
         }
         if (mode === 'reject' || mode === 'hold') {
@@ -837,8 +885,8 @@ if (uploadInput) {
             setPdfViewerMessage('Missing context. Re-open the document from a tab item.', 'error');
             return;
         }
-        if (!isRecordComponent(componentKey)) {
-            setPdfViewerMessage('Actions are available for Identification, Education, and Employment items only.', 'error');
+        if (!isActionableComponent(componentKey)) {
+            setPdfViewerMessage('Please select a valid section before taking action.', 'error');
             return;
         }
         if ((mode === 'reject' || mode === 'hold') && !reason) {
@@ -1145,21 +1193,39 @@ if (uploadInput) {
     }
 
     function getVerifierGroup() {
-        var g = (window.VR_GROUP || qs('group') || '').toString().toUpperCase().trim();
+        var g = (window.VR_GROUP || '').toString().toUpperCase().trim();
         // Verifier queue groups
         if (g === 'BASIC' || g === 'EDUCATION') return g;
         return '';
     }
 
     function getRole() {
-        var q = String(qs('role') || '').toLowerCase().trim();
-        if (q) return q;
-        return String(window.CURRENT_ROLE || '').toLowerCase().trim();
+        function normRole(v) {
+            var r = String(v || '').toLowerCase().trim();
+            if (r === 'customer_admin') return 'client_admin';
+            if (r === 'component verifier' || r === 'component_verifier') return 'verifier';
+            if (r === 'component validator' || r === 'component_validator') return 'validator';
+            if (r === 'db verifier' || r === 'db-verifier') return 'db_verifier';
+            if (r === 'gss admin') return 'gss_admin';
+            if (r === 'team lead' || r === 'team_lead') return 'team_lead';
+            return r;
+        }
+        var s = normRole(window.CURRENT_ROLE || '');
+        if (s) return s;
+        return normRole(qs('role') || '');
     }
 
     function setBoxMessage(id, text, type) {
         var el = document.getElementById(id);
         if (!el) return;
+        if (id === 'cvTopMessage') {
+            var msgTop = String(text || '').trim();
+            if (msgTop) showCrToast(msgTop, type || 'info');
+            el.style.display = 'none';
+            el.textContent = '';
+            el.className = '';
+            return;
+        }
         if (!text) {
             el.style.display = 'none';
             el.textContent = '';
@@ -1206,14 +1272,14 @@ if (uploadInput) {
         if (role === 'validator' || role === 'db_verifier') {
             if (cu === 'PENDING_VERIFIER') return 'Pending Verifier';
             if (cu === 'PENDING_QA') return 'Pending QA';
-            if (cu === 'PENDING_VALIDATOR' || cu === 'IN_PROGRESS') return 'Pending Validator';
+            if (cu === 'PENDING_VALIDATOR' || cu === 'IN_PROGRESS') return 'VA Pending';
             if (cu === 'PENDING_CANDIDATE' || cu === 'CANDIDATE_PENDING' || cu === 'INVITED') {
-                if (au === 'SUBMITTED' || au === 'PENDING_VALIDATOR') return 'Pending Validator';
+                if (au === 'SUBMITTED' || au === 'PENDING_VALIDATOR') return 'VA Pending';
             }
-            if (au === 'SUBMITTED') return 'Pending Validator';
+            if (au === 'SUBMITTED') return 'VA Pending';
         }
         if (role === 'verifier') {
-            if (cu === 'PENDING_VERIFIER' || au === 'PENDING_VERIFIER') return 'Pending Verifier';
+            if (cu === 'PENDING_VERIFIER' || au === 'PENDING_VERIFIER') return 'V Pending';
             if (cu === 'PENDING_QA' || au === 'PENDING_QA') return 'Pending QA';
         }
         if (role === 'qa' || role === 'team_lead') {
@@ -1491,17 +1557,16 @@ if (uploadInput) {
     function getAssignedComponentKeys(payload) {
         payload = payload || {};
         var d = payload.data || payload;
-        var role = getRole();
-        var isStaffRole = (role === 'verifier' || role === 'validator' || role === 'db_verifier');
         var visible = Array.isArray(d.visible_sections) ? d.visible_sections : (Array.isArray(d.visibleSections) ? d.visibleSections : []);
-        if (isStaffRole && visible.length) {
-            var strict = {};
+        if (visible.length) {
+            var snapshotStrict = {};
             visible.forEach(function (k) {
                 var nk = normSection(k);
-                if (nk) strict[nk] = true;
+                if (nk) snapshotStrict[nk] = true;
             });
-            return Object.keys(strict);
+            return Object.keys(snapshotStrict);
         }
+
         var list = Array.isArray(d.assigned_components) ? d.assigned_components : [];
         var out = {};
         list.forEach(function (r) {
@@ -1509,40 +1574,6 @@ if (uploadInput) {
             k = normSection(k);
             if (k) out[k] = true;
         });
-
-        if (isStaffRole) {
-            return Object.keys(out);
-        }
-
-        // Defensive union for non-staff views: if payload has section data but
-        // assigned_components is stale/partial, keep valid sections visible.
-        if (d && typeof d === 'object') {
-            if (Array.isArray(d.identification) && d.identification.length) out.id = true;
-            if (Array.isArray(d.education) && d.education.length) out.education = true;
-            if (Array.isArray(d.employment) && d.employment.length) out.employment = true;
-
-            if (d.basic && typeof d.basic === 'object' && Object.keys(d.basic).length) out.basic = true;
-            if (d.contact && typeof d.contact === 'object' && Object.keys(d.contact).length) out.contact = true;
-            if (d.reference && typeof d.reference === 'object' && Object.keys(d.reference).length) out.reference = true;
-            if (d.social_media && typeof d.social_media === 'object' && Object.keys(d.social_media).length) out.socialmedia = true;
-            if (d.ecourt && typeof d.ecourt === 'object' && Object.keys(d.ecourt).length) out.ecourt = true;
-            if (d.authorization && typeof d.authorization === 'object' && Object.keys(d.authorization).length) out.reports = true;
-        }
-
-        // Keep validator-rejected components visible for verifier sidebar even when
-        // assigned_components is filtered by queue group.
-        if (role === 'verifier' && d && d.component_workflow && typeof d.component_workflow === 'object') {
-            Object.keys(d.component_workflow).forEach(function (wk) {
-                var k = normSection(wk);
-                if (!k) return;
-                var row = d.component_workflow[wk] || {};
-                var validator = row && row.validator ? row.validator : null;
-                var vStatus = validator && validator.status ? String(validator.status).toLowerCase().trim() : '';
-                if (vStatus === 'rejected') {
-                    out[k] = true;
-                }
-            });
-        }
 
         return Object.keys(out);
     }
@@ -1714,9 +1745,75 @@ if (uploadInput) {
             return '<div style="color:#6b7280; font-size:13px;">No email replies yet.</div>';
         }
 
+        function isReplyNoiseLine(line) {
+            var l = String(line || '').trim();
+            if (!l) return false;
+            var lower = l.toLowerCase();
+            if (/^>+$/.test(l)) return true;
+            if (l.indexOf('<http://') === 0 || l.indexOf('<https://') === 0) return true;
+            if (lower.indexOf('avg.com/email-signature') !== -1) return true;
+            if (lower.indexOf('virus-free.www.avg.com') !== -1) return true;
+            if (lower.indexOf('utm_medium=email') !== -1) return true;
+            if (lower.indexOf('utm_source=link') !== -1) return true;
+            if (lower.indexOf('utm_campaign=') !== -1) return true;
+            if (lower.indexOf('utm_content=') !== -1) return true;
+            if (lower.indexOf('cid:') === 0) return true;
+            if (lower.indexOf('mailto:') === 0) return true;
+            if (/^https?:\/\/\S+$/i.test(l)) return true;
+            return false;
+        }
+
+        function isReplyThreadBoundary(line) {
+            var l = String(line || '').trim();
+            if (!l) return false;
+            var lower = l.toLowerCase();
+            if (/^on\s.+wrote:$/i.test(l)) return true;
+            if (/^from:\s/i.test(l)) return true;
+            if (/^sent:\s/i.test(l)) return true;
+            if (/^to:\s/i.test(l)) return true;
+            if (/^subject:\s/i.test(l)) return true;
+            if (/^-----original message-----$/i.test(l)) return true;
+            if (/^_{5,}$/.test(l)) return true;
+            if (lower.indexOf('begin forwarded message') !== -1) return true;
+            return false;
+        }
+
+        function smartReplyText(raw) {
+            var text = String(raw || '')
+                .replace(/\r\n?/g, '\n')
+                .replace(/\u00a0/g, ' ')
+                .replace(/[ \t]+\n/g, '\n');
+
+            var out = [];
+            var lines = text.split('\n');
+            for (var i = 0; i < lines.length; i++) {
+                var line = String(lines[i] || '');
+                var trimmed = line.trim();
+                if (isReplyThreadBoundary(trimmed)) break;
+                if (!trimmed) {
+                    if (out.length && out[out.length - 1] !== '') out.push('');
+                    continue;
+                }
+                if (trimmed.charAt(0) === '>' || isReplyNoiseLine(trimmed)) continue;
+                out.push(trimmed);
+                if (out.length >= 24) break;
+            }
+
+            var clean = out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+            if (!clean) {
+                clean = String(raw || '').replace(/\r\n?/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+            }
+
+            var isLong = clean.length > 900;
+            if (isLong) {
+                clean = clean.slice(0, 900).trim() + '\n\n[truncated]';
+            }
+            return clean;
+        }
+
         return items.map(function (it) {
             var sender = it && it.sender ? String(it.sender) : 'Unknown';
-            var msg = it && it.message ? String(it.message) : '';
+            var msg = smartReplyText(it && it.message ? String(it.message) : '');
             var when = it && it.created_at ? String(it.created_at) : '';
             var ts = '';
             try {
@@ -1739,28 +1836,25 @@ if (uploadInput) {
     }
 
     async function loadEmailReplies(applicationId) {
-        var hosts = [];
         var hostModal = document.getElementById('cvEmailReplies');
         var hostSidebar = document.getElementById('emailReplies');
-        if (hostModal) hosts.push(hostModal);
-        if (hostSidebar) hosts.push(hostSidebar);
         var countEl = document.getElementById('cvEmailRepliesCount');
-        if (!hosts.length) return;
+        if (!hostModal && !hostSidebar) return;
 
-        function renderAll(html) {
-            hosts.forEach(function (el) {
-                el.innerHTML = html;
-            });
+        function renderTarget(el, html) {
+            if (el) el.innerHTML = html;
         }
 
         if (!applicationId) {
             EMAIL_REPLIES_CACHE = [];
-            renderAll('<div style="color:#6b7280; font-size:13px;">application_id not found.</div>');
+            renderTarget(hostModal, '<div style="color:#6b7280; font-size:13px;">application_id not found.</div>');
+            renderTarget(hostSidebar, '<div style="color:#6b7280; font-size:13px;">application_id not found.</div>');
             if (countEl) countEl.textContent = '0';
             return;
         }
 
-        renderAll('<div style="color:#6b7280; font-size:13px;">Loading email replies...</div>');
+        renderTarget(hostModal, '<div style="color:#6b7280; font-size:13px;">Loading email replies...</div>');
+        renderTarget(hostSidebar, '<div style="color:#6b7280; font-size:13px;">Loading email replies...</div>');
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
         var url = base + '/api/get_replies.php?application_id=' + encodeURIComponent(applicationId);
 
@@ -1773,23 +1867,29 @@ if (uploadInput) {
             } else if (data && data.status === 1 && Array.isArray(data.data)) {
                 rows = data.data;
             } else {
-                renderAll('<div style="color:#b91c1c; font-size:13px;">Failed to load email replies.</div>');
+                renderTarget(hostModal, '<div style="color:#b91c1c; font-size:13px;">Failed to load email replies.</div>');
+                renderTarget(hostSidebar, '<div style="color:#b91c1c; font-size:13px;">Failed to load email replies.</div>');
                 if (countEl) countEl.textContent = '0';
                 return;
             }
 
             EMAIL_REPLIES_CACHE = rows;
-            renderAll(emailRepliesHtml(EMAIL_REPLIES_CACHE));
+            renderTarget(hostModal, emailRepliesHtml(EMAIL_REPLIES_CACHE));
+            renderTarget(hostSidebar, emailRepliesHtml(EMAIL_REPLIES_CACHE.slice(0, 8)));
             if (countEl) countEl.textContent = String(EMAIL_REPLIES_CACHE.length);
         } catch (_e) {
-            renderAll('<div style="color:#b91c1c; font-size:13px;">Network error loading email replies.</div>');
+            renderTarget(hostModal, '<div style="color:#b91c1c; font-size:13px;">Network error loading email replies.</div>');
+            renderTarget(hostSidebar, '<div style="color:#b91c1c; font-size:13px;">Network error loading email replies.</div>');
             if (countEl) countEl.textContent = '0';
         }
     }
 
     async function loadTimeline(applicationId) {
         loadEmailReplies(applicationId);
-        var host = document.getElementById('cvTimeline');
+        var inWorkspace = !!document.querySelector('.cr-report-root.cr-validator-workspace');
+        var host = inWorkspace
+            ? (document.getElementById('cvValidatorTimeline') || document.getElementById('cvTimeline'))
+            : (document.getElementById('cvTimeline') || document.getElementById('cvValidatorTimeline'));
         if (!host) return;
 
         initMiniTimelineFilters();
@@ -1821,7 +1921,23 @@ if (uploadInput) {
                 return;
             }
 
-            var items = Array.isArray(data.data) ? data.data : [];
+            var itemsRaw = Array.isArray(data.data) ? data.data : [];
+            var items = itemsRaw.map(function (it) {
+                var row = (it && typeof it === 'object') ? it : {};
+                var actor = (row.actor && typeof row.actor === 'object') ? row.actor : {};
+                return Object.assign({}, row, {
+                    timeline_id: row.timeline_id || row.timelineId || null,
+                    application_id: row.application_id || row.applicationId || '',
+                    event_type: row.event_type || row.eventType || '',
+                    section_key: row.section_key || row.sectionKey || row.componentKey || row.section || '',
+                    created_at: row.created_at || row.eventTimestamp || '',
+                    actor_user_id: row.actor_user_id || actor.userId || null,
+                    actor_role: row.actor_role || actor.role || '',
+                    username: row.username || actor.username || '',
+                    first_name: row.first_name || '',
+                    last_name: row.last_name || ''
+                });
+            });
             TL_CACHE = items.filter(function (it) { return !isWholeCaseCompletionItem(it); });
             host.innerHTML = timelineHtml(TL_CACHE);
             renderMiniTimeline();
@@ -1942,7 +2058,7 @@ if (uploadInput) {
     function renderValidatorTimelinePanel(section) {
         var host = document.getElementById('cvValidatorTimeline');
         if (!host) return;
-        host.innerHTML = timelineHtml(filterTimeline(TL_CACHE, section).slice(-8).reverse());
+        host.innerHTML = timelineHtml((Array.isArray(TL_CACHE) ? TL_CACHE : []).slice(-12).reverse());
     }
 
     function reviewedSectionCount(payload) {
@@ -1977,7 +2093,7 @@ if (uploadInput) {
 
     function updateValidatorWorkspace(section) {
         var role = getRole();
-        if (!(role === 'validator' || role === 'verifier')) return;
+        if (!(role === 'validator' || role === 'verifier' || role === 'qa' || role === 'team_lead')) return;
 
         section = normSection(section || CURRENT_SECTION_KEY);
         renderValidatorRemarksPanel(section);
@@ -1987,7 +2103,7 @@ if (uploadInput) {
 
     function initValidatorWorkspace() {
         var role = getRole();
-        if (!(role === 'validator' || role === 'verifier')) return;
+        if (!(role === 'validator' || role === 'verifier' || role === 'qa' || role === 'team_lead')) return;
 
         var saveBtn = document.getElementById('cvValidatorRemarkSave');
         if (saveBtn && !saveBtn.dataset.bound) {
@@ -2628,7 +2744,9 @@ if (uploadInput) {
             '</div>';
         }).join('');
 
-        function setActive(idx) {
+        function setActive(idx, opts) {
+            opts = opts || {};
+            var loadPreview = opts.loadPreview !== false;
             idx = parseInt(String(idx), 10);
             if (isNaN(idx) || idx < 0 || idx >= list.length) return;
 
@@ -2642,11 +2760,19 @@ if (uploadInput) {
 
             var mt = r && r.mime_type ? String(r.mime_type) : '';
             if (isImageMime(mt)) {
+                if (!loadPreview) {
+                    frameHost.innerHTML = '<div style="padding:10px; color:#64748b; font-size:12px;">Select a document to load preview.</div>';
+                    return;
+                }
                 frameHost.innerHTML = '<img src="' + esc(href) + '" alt="document" />';
                 return;
             }
 
             if (isPdfMime(mt) || href.toLowerCase().indexOf('.pdf') !== -1) {
+                if (!loadPreview) {
+                    frameHost.innerHTML = '<div style="padding:10px; color:#64748b; font-size:12px;">Select a document to load preview.</div>';
+                    return;
+                }
                 frameHost.innerHTML = '<iframe src="' + esc(buildPdfViewerUrl(href)) + '"></iframe>';
                 return;
             }
@@ -2693,7 +2819,7 @@ if (uploadInput) {
             });
         }
 
-        setActive(0);
+        frameHost.innerHTML = '<div style="padding:10px; color:#64748b; font-size:12px;">Select a document to load preview.</div>';
     }
 
     function fileUrlForField(fieldKey, value) {
@@ -2778,12 +2904,12 @@ if (uploadInput) {
         var qa = String(stages && stages.qa ? stages.qa : '').toLowerCase().trim();
         if (qa === 'rejected') return 'QA Rejected';
         if (qa === 'approved') return 'Completed';
-        if (ver === 'rejected') return 'Verifier Rejected';
-        if (ver === 'approved') return 'Pending QA';
-        if (val === 'rejected') return 'Validator Rejected';
+        if (ver === 'rejected') return 'VE Rejected';
+        if (ver === 'approved') return 'QA Pending';
+        if (val === 'rejected') return 'VA Rejected';
         if (cand === 'rejected') return 'Candidate Rejected';
-        if (val === 'approved') return 'Pending Verifier';
-        if (cand === 'approved') return 'Pending Validator';
+        if (val === 'approved') return 'VE Pending';
+        if (cand === 'approved') return 'VA Pending';
         return '';
     }
 
@@ -2791,9 +2917,9 @@ if (uploadInput) {
         var raw = String(stageLabel || '').trim();
         var low = raw.toLowerCase();
         var role = getRole();
-        if (role === 'validator' && low === 'pending candidate') return 'Pending Validator';
-        if (low === 'pendingverifier') return 'Pending Verifier';
-        if (low === 'pendingvalidator') return 'Pending Validator';
+        if (role === 'validator' && low === 'pending candidate') return 'VA Pending';
+        if (low === 'pendingverifier') return 'VE Pending'
+        if (low === 'pendingvalidator') return 'VA Pending';
         if (low === 'pendingqa') return 'Pending QA';
         return raw;
     }
@@ -2828,14 +2954,29 @@ if (uploadInput) {
             // Prefer workflow table status (freshest source) when available.
             var byComp = getWorkflowComponentRow(d, componentKey);
             if (byComp && typeof byComp === 'object') {
-                var stSimple = {
-                    candidate: byComp.candidate && byComp.candidate.status ? String(byComp.candidate.status) : '',
-                    validator: byComp.validator && byComp.validator.status ? String(byComp.validator.status) : '',
-                    verifier: byComp.verifier && byComp.verifier.status ? String(byComp.verifier.status) : '',
-                    qa: byComp.qa && byComp.qa.status ? String(byComp.qa.status) : ''
-                };
-                var fromWorkflow = normalizeStageLabelForRole(computeComponentStageLabel(stSimple));
-                if (fromWorkflow) return fromWorkflow;
+                var role = String(getRole() || '').toLowerCase().trim();
+                var stageStatus = '';
+                if (role === 'validator') {
+                    stageStatus = byComp.validator && byComp.validator.status ? String(byComp.validator.status) : '';
+                } else if (role === 'verifier') {
+                    stageStatus = byComp.verifier && byComp.verifier.status ? String(byComp.verifier.status) : '';
+                } else if (role === 'qa') {
+                    stageStatus = byComp.qa && byComp.qa.status ? String(byComp.qa.status) : '';
+                } else {
+                    stageStatus = byComp.candidate && byComp.candidate.status ? String(byComp.candidate.status) : '';
+                }
+
+                var low = String(stageStatus || '').toLowerCase().trim();
+                if (!low || low === 'pending') {
+                    if (role === 'validator') return 'VA Pending';
+                    if (role === 'verifier') return 'Verifier Pending';
+                    if (role === 'qa') return 'QA Pending';
+                    return 'Candidate Pending';
+                }
+                if (low === 'approved') return 'Approved';
+                if (low === 'rejected') return 'Rejected';
+                if (low === 'hold') return 'On Hold';
+                return normalizeStageLabelForRole(stageStatus);
             }
 
             var list = Array.isArray(d && d.assigned_components) ? d.assigned_components : [];
@@ -2843,6 +2984,26 @@ if (uploadInput) {
                 var r = list[i] || {};
                 var k = r.component_key ? normSection(r.component_key) : '';
                 if (k === componentKey) {
+                    var wf = r.workflow && typeof r.workflow === 'object' ? r.workflow : null;
+                    if (wf) {
+                        var rr = String(getRole() || '').toLowerCase().trim();
+                        var st = '';
+                        if (rr === 'validator') st = String(wf.validator || '');
+                        else if (rr === 'verifier') st = String(wf.verifier || '');
+                        else if (rr === 'qa') st = String(wf.qa || '');
+                        else st = String(wf.candidate || '');
+                        var low2 = st.toLowerCase().trim();
+                        if (!low2 || low2 === 'pending') {
+                            if (rr === 'validator') return 'VA Pending';
+                            if (rr === 'verifier') return 'Verifier Pending';
+                            if (rr === 'qa') return 'QA Pending';
+                            return 'Candidate Pending';
+                        }
+                        if (low2 === 'approved') return 'Approved';
+                        if (low2 === 'rejected') return 'Rejected';
+                        if (low2 === 'hold') return 'On Hold';
+                        return normalizeStageLabelForRole(st);
+                    }
                     return normalizeStageLabelForRole(r.current_stage ? String(r.current_stage) : '');
                 }
             }
@@ -2954,14 +3115,14 @@ if (uploadInput) {
             socialmedia: isValidatorRejectedOpenState(d, 'socialmedia'),
             ecourt: isValidatorRejectedOpenState(d, 'ecourt')
         };
-        if (forcedRejected.basic) setBadge('cvNavBadgeBasic', 'rejected', 'Validator Rejected');
-        if (forcedRejected.id) setBadge('cvNavBadgeId', 'rejected', 'Validator Rejected');
-        if (forcedRejected.contact) setBadge('cvNavBadgeContact', 'rejected', 'Validator Rejected');
-        if (forcedRejected.education) setBadge('cvNavBadgeEducation', 'rejected', 'Validator Rejected');
-        if (forcedRejected.employment) setBadge('cvNavBadgeEmployment', 'rejected', 'Validator Rejected');
-        if (forcedRejected.reference) setBadge('cvNavBadgeReference', 'rejected', 'Validator Rejected');
-        if (forcedRejected.socialmedia) setBadge('cvNavBadgeSocialmedia', 'rejected', 'Validator Rejected');
-        if (forcedRejected.ecourt) setBadge('cvNavBadgeEcourt', 'rejected', 'Validator Rejected');
+        if (forcedRejected.basic) setBadge('cvNavBadgeBasic', 'rejected', 'VA Rejected');
+        if (forcedRejected.id) setBadge('cvNavBadgeId', 'rejected', 'VA Rejected');
+        if (forcedRejected.contact) setBadge('cvNavBadgeContact', 'rejected', 'VA Rejected');
+        if (forcedRejected.education) setBadge('cvNavBadgeEducation', 'rejected', 'VA Rejected');
+        if (forcedRejected.employment) setBadge('cvNavBadgeEmployment', 'rejected', 'VA Rejected');
+        if (forcedRejected.reference) setBadge('cvNavBadgeReference', 'rejected', 'VA Rejected');
+        if (forcedRejected.socialmedia) setBadge('cvNavBadgeSocialmedia', 'rejected', 'VA Rejected');
+        if (forcedRejected.ecourt) setBadge('cvNavBadgeEcourt', 'rejected', 'VA Rejected');
 
         // Prefer workflow stage when available
         var usedWorkflow = false;
@@ -2975,7 +3136,7 @@ if (uploadInput) {
         if (!forcedRejected.ecourt) usedWorkflow = setStageBadge('cvNavBadgeEcourt', getWorkflowStageLabel(d, 'ecourt')) || usedWorkflow;
 
         if (!usedWorkflow) {
-            var pendingLabel = (role === 'validator') ? 'Pending Validator' : 'Pending Candidate';
+            var pendingLabel = (role === 'validator') ? 'VA Pending' : 'Candidate Pending';
             setBadge('cvNavBadgeBasic', basicDone ? 'wip' : 'pending', basicDone ? pendingLabel : 'Pending');
             setBadge('cvNavBadgeId', idDone ? 'wip' : 'pending', idDone ? pendingLabel : 'Pending');
             setBadge('cvNavBadgeContact', contactDone ? 'wip' : 'pending', contactDone ? pendingLabel : 'Pending');
@@ -2987,7 +3148,7 @@ if (uploadInput) {
         }
 
         if (reportsDone) {
-            setBadge('cvNavBadgeReports', role === 'validator' ? 'wip' : 'done', role === 'validator' ? 'Pending Validator' : 'Completed');
+            setBadge('cvNavBadgeReports', role === 'validator' ? 'wip' : 'done', role === 'validator' ? 'VA Pending' : 'Completed');
         } else {
             setBadge('cvNavBadgeReports', 'pending', 'Pending');
         }
@@ -3129,6 +3290,14 @@ if (uploadInput) {
     function setText(id, value) {
         var el = document.getElementById(id);
         if (!el) return;
+        if (id === 'cvTopMessage') {
+            var msg = (value === null || typeof value === 'undefined') ? '' : String(value);
+            if (msg.trim()) showCrToast(msg, 'info');
+            el.style.display = 'none';
+            el.textContent = '';
+            el.className = '';
+            return;
+        }
         el.textContent = (value === null || typeof value === 'undefined') ? '' : String(value);
     }
 
@@ -3363,6 +3532,57 @@ if (uploadInput) {
         }
     }
 
+    function resetComponentTableRenderState(d) {
+        COMPONENT_TABLE_ROWS = {
+            id: Array.isArray(d && d.identification) ? d.identification : [],
+            education: Array.isArray(d && d.education) ? d.education : [],
+            employment: Array.isArray(d && d.employment) ? d.employment : []
+        };
+        COMPONENT_TABLE_RENDERED = { id: false, education: false, employment: false };
+    }
+
+    function ensureComponentTableRendered(section) {
+        var s = normSection(section);
+        if (s !== 'id' && s !== 'education' && s !== 'employment') return;
+        if (COMPONENT_TABLE_RENDERED[s]) return;
+
+        if (s === 'id') {
+            renderTabbedTable('cv_identification_table', COMPONENT_TABLE_ROWS.id || [], [
+                // { key: 'document_index', label: '#' },
+                { key: 'documentId_type', label: 'Document Type' },
+                { key: 'id_number', label: 'ID Number' },
+                { key: 'name', label: 'Name on ID' },
+                { key: 'upload_document', label: 'Uploaded File' }
+            ], 'ID');
+        } else if (s === 'education') {
+            renderTabbedTable('cv_education_table', COMPONENT_TABLE_ROWS.education || [], [
+                // { key: 'education_index', label: '#' },
+                { key: 'qualification', label: 'Qualification' },
+                { key: 'college_name', label: 'College' },
+                { key: 'university_board', label: 'University/Board' },
+                { key: 'year_from', label: 'From' },
+                { key: 'year_to', label: 'To' },
+                { key: 'roll_number', label: 'Roll No' },
+                { key: 'marksheet_file', label: 'Marksheet' },
+                { key: 'degree_file', label: 'Degree' }
+            ], 'Education');
+        } else if (s === 'employment') {
+            renderTabbedTable('cv_employment_table', COMPONENT_TABLE_ROWS.employment || [], [
+                // { key: 'employment_index', label: '#' },
+                { key: 'employer_name', label: 'Employer' },
+                { key: 'job_title', label: 'Job Title' },
+                { key: 'employee_id', label: 'Employee ID' },
+                { key: 'joining_date', label: 'Joining' },
+                { key: 'relieving_date', label: 'Relieving' },
+                { key: 'currently_employed', label: 'Currently Employed' },
+                { key: 'contact_employer', label: 'Contact Employer' },
+                { key: 'employment_doc', label: 'Document' }
+            ], 'Employment');
+        }
+
+        COMPONENT_TABLE_RENDERED[s] = true;
+    }
+
     function toTitle(key) {
         var s = String(key || '');
         if (!s) return '';
@@ -3581,6 +3801,14 @@ if (uploadInput) {
     function setBoxMessage(id, text, type) {
         var el = document.getElementById(id);
         if (!el) return;
+        if (id === 'cvTopMessage') {
+            var msg = String(text || '').trim();
+            if (msg) showCrToast(msg, type || 'info');
+            el.style.display = 'none';
+            el.textContent = '';
+            el.className = '';
+            return;
+        }
         el.textContent = text || '';
         el.className = type ? ('alert alert-' + type) : '';
         el.style.display = text ? 'block' : 'none';
@@ -3727,6 +3955,61 @@ if (uploadInput) {
             });
         }
 
+        function normalizeStageStatus(status) {
+            var s = String(status || '').toLowerCase().trim();
+            if (!s || s === 'in_progress' || s === 'in-progress' || s === 'submitted') return 'pending';
+            return s;
+        }
+
+        function allowedActionsForStageStatus(status) {
+            var s = normalizeStageStatus(status);
+            if (s === 'pending') return ['hold', 'insufficient_documents', 'reject', 'approve'];
+            if (s === 'hold') return ['approve', 'reject', 'insufficient_documents'];
+            if (s === 'insufficient_documents') return ['approve', 'hold', 'reject'];
+            if (s === 'approved') return ['hold', 'insufficient_documents', 'reject'];
+            if (s === 'rejected') return ['hold', 'insufficient_documents', 'approve'];
+            return ['hold', 'insufficient_documents', 'reject', 'approve'];
+        }
+
+        function setComponentActionAvailabilityForStatus(status) {
+            var allowed = allowedActionsForStageStatus(status);
+            var map = [
+                { id: 'cvActionInsufficient', action: 'insufficient_documents' },
+                { id: 'cvActionHold', action: 'hold' },
+                { id: 'cvActionReject', action: 'reject' },
+                { id: 'cvActionApprove', action: 'approve' },
+                { id: 'cvValidatorActionInsufficient', action: 'insufficient_documents' },
+                { id: 'cvValidatorActionHold', action: 'hold' },
+                { id: 'cvValidatorActionReject', action: 'reject' },
+                { id: 'cvValidatorActionApprove', action: 'approve' }
+            ];
+            map.forEach(function (it) {
+                var b = document.getElementById(it.id);
+                if (!b) return;
+                b.disabled = allowed.indexOf(it.action) === -1;
+            });
+        }
+
+        function syncSectionActionVisibility() {
+            try {
+                var sections = document.querySelectorAll('.candidate-section[id^="section-"]');
+                if (!sections || !sections.length) return;
+                sections.forEach(function (sectionEl) {
+                    var sid = String(sectionEl.id || '').replace(/^section-/, '');
+                    var key = normSection(sid);
+                    var showActions = isActionableComponent(key);
+                    sectionEl.querySelectorAll('.cr-secbar-actions').forEach(function (actionsEl) {
+                        if (showActions) {
+                            actionsEl.style.setProperty('display', 'flex', 'important');
+                        } else {
+                            actionsEl.style.setProperty('display', 'none', 'important');
+                        }
+                    });
+                });
+            } catch (_e) {
+            }
+        }
+
         function applyComponentActionLock() {
             try {
                 var role = getRole();
@@ -3740,40 +4023,13 @@ if (uploadInput) {
                     setComponentActionButtonsEnabled(false);
                     return;
                 }
-                if (!isRecordComponent(componentKey)) {
+                if (!isActionableComponent(componentKey)) {
                     setComponentActionButtonsEnabled(false);
                     return;
                 }
                 var itemKey = getActiveItemKeyForSection(componentKey);
-
                 var st = getStageStatusFor(componentKey, stage, itemKey);
-                if (role === 'verifier') {
-                    if (st === 'approved' || st === 'rejected') {
-                        setComponentActionButtonsEnabled(false);
-                        setText('cvTopMessage', 'This item is already ' + st + ' for ' + stage + '.');
-                        return;
-                    }
-                    var validatorSt = getStageStatusFor(componentKey, 'validator', itemKey);
-                    if (validatorSt === 'rejected') {
-                        setComponentActionButtonsEnabled(true);
-                        setText('cvTopMessage', 'Validator rejected this item. Approval requires reason.');
-                    } else {
-                        setComponentActionButtonsEnabled(true);
-                    }
-                    return;
-                }
-                if (role === 'qa' || role === 'team_lead') {
-                    var verifierSt = getStageStatusFor(componentKey, 'verifier', itemKey);
-                    if (verifierSt === 'rejected' && !(st === 'approved' || st === 'rejected')) {
-                        setText('cvTopMessage', 'Verifier rejected this item. QA action requires reason.');
-                    }
-                }
-                if (st === 'approved' || st === 'rejected') {
-                    setComponentActionButtonsEnabled(false);
-                    setText('cvTopMessage', 'This item is already ' + st + ' for ' + stage + '.');
-                } else {
-                    setComponentActionButtonsEnabled(true);
-                }
+                setComponentActionAvailabilityForStatus(st);
             } catch (_e) {
             }
         }
@@ -3971,10 +4227,28 @@ function askActionConfirm(label) {
             if (document.body && document.body.dataset.cvSectionLockBound === '1') return;
             if (document.body) document.body.dataset.cvSectionLockBound = '1';
             document.addEventListener('cv:section-changed', function () {
+                try {
+                    var active = currentSectionKey();
+                    console.debug('[CR actions] section-changed:', active, 'actionable=', isActionableComponent(active));
+                } catch (_e0) {}
+                syncSectionActionVisibility();
                 applyComponentActionLock();
             });
             document.addEventListener('cv:record-tab-changed', function () {
+                syncSectionActionVisibility();
                 applyComponentActionLock();
+            });
+            document.addEventListener('click', function (e) {
+                var btn = e.target && e.target.closest ? e.target.closest('.list-group-item[data-section]') : null;
+                if (!btn) return;
+                setTimeout(function () {
+                    try {
+                        var active = currentSectionKey();
+                        console.debug('[CR actions] sidebar-click:', active, 'actionable=', isActionableComponent(active));
+                    } catch (_e1) {}
+                    syncSectionActionVisibility();
+                    applyComponentActionLock();
+                }, 0);
             });
         }
 
@@ -4027,8 +4301,7 @@ function askActionConfirm(label) {
                         setBoxMessage('cvTopMessage', 'Please select a component first.', 'warning');
                         return;
                     }
-                    if (!isRecordComponent(componentKey)) {
-                        setBoxMessage('cvTopMessage', 'Actions are available for Identification, Education, and Employment only.', 'warning');
+                    if (!isActionableComponent(componentKey)) {
                         return;
                     }
                     itemKey = getActiveItemKeyForSection(componentKey);
@@ -4040,6 +4313,16 @@ function askActionConfirm(label) {
                 if (action === 'reject') reasonType = 'reject';
                 if (action === 'hold') reasonType = 'hold';
                 if (action === 'insufficient_documents') reasonType = 'insufficient_documents';
+
+                if (action === 'approve' && componentKey) {
+                    var currentStageStatus = normalizeStageStatus(getStageStatusFor(componentKey, roleToStage(role), itemKey));
+                    if (currentStageStatus === 'rejected') {
+                        requiresReason = true;
+                        reasonTitle = 'Reopen Reason Required';
+                        reasonPrompt = 'This item was rejected. Enter reason to approve';
+                        reasonType = 'reprocess_action';
+                    }
+                }
 
                 if (action === 'approve' && componentKey) {
                     var validatorStatus = getStageStatusFor(componentKey, 'validator', itemKey);
@@ -4257,6 +4540,7 @@ function askActionConfirm(label) {
 
         // Initial lock based on current component + stage status
         bindSectionChangeLock();
+        syncSectionActionVisibility();
         applyComponentActionLock();
     }
 
@@ -4267,7 +4551,6 @@ function askActionConfirm(label) {
         var reviewTabButtons = reviewTabHost ? Array.prototype.slice.call(reviewTabHost.querySelectorAll('[data-review-section]')) : [];
 
         var role = getRole();
-        var isStaffRole = (role === 'verifier' || role === 'db_verifier' || role === 'validator');
         var isAssignmentScopedRole = (role === 'verifier' || role === 'db_verifier');
         var hasBackendVisibleSections = false;
         if ((role === 'verifier' || role === 'db_verifier' || role === 'validator') && !REPORT_PAYLOAD) {
@@ -4275,7 +4558,7 @@ function askActionConfirm(label) {
             return;
         }
         var assignedKeys = [];
-        if (isAssignmentScopedRole && REPORT_PAYLOAD) {
+        if (REPORT_PAYLOAD) {
             hasBackendVisibleSections = Array.isArray(REPORT_PAYLOAD.visible_sections) || Array.isArray(REPORT_PAYLOAD.visibleSections);
             assignedKeys = getAssignedComponentKeys(REPORT_PAYLOAD);
 
@@ -4354,6 +4637,7 @@ function askActionConfirm(label) {
             });
 
             setCompNavActive(section);
+            ensureComponentTableRendered(section);
             ensureComponentToolbar(section);
 
             try {
@@ -4403,9 +4687,9 @@ function askActionConfirm(label) {
         }
 
         // Hide sidebar items for disallowed sections.
-        // For staff roles with payload-assigned components, assignedKeys is authoritative.
+        // Snapshot visible_sections is authoritative whenever present.
         var allowSet = allowedSectionsSet();
-        if (!(isAssignmentScopedRole && (assignedKeys.length || hasBackendVisibleSections))) {
+        if (!(assignedKeys.length || hasBackendVisibleSections)) {
             items.forEach(function (btn) {
                 var s = String(btn.getAttribute('data-section') || '').toLowerCase();
                 if (s && s !== 'timeline' && !canSeeSection(s, allowSet)) {
@@ -4429,11 +4713,11 @@ function askActionConfirm(label) {
 
         var active = items.find(function (b) { return b.classList.contains('active') && b.style.display !== 'none'; });
         var initial = active ? active.getAttribute('data-section') : 'basic';
-        if (!(isAssignmentScopedRole && (assignedKeys.length || hasBackendVisibleSections)) && !canSeeSection(initial, allowSet)) {
+        if (!(assignedKeys.length || hasBackendVisibleSections) && !canSeeSection(initial, allowSet)) {
             var firstVisible = items.find(function (b) { return b.style.display !== 'none'; });
             initial = firstVisible ? firstVisible.getAttribute('data-section') : '';
         }
-        if (isAssignmentScopedRole && assignedKeys && assignedKeys.length) {
+        if (assignedKeys && assignedKeys.length) {
             initial = assignedKeys[0] || initial;
         }
 
@@ -4867,7 +5151,28 @@ function askActionConfirm(label) {
 
         // Note: role/client_id already appended above; do not duplicate query params.
 
-        await loadHolidaysOnce();
+        var holidaysPromise = loadHolidaysOnce();
+        function hasSnapshotContract(data) {
+            if (!data || typeof data !== 'object') return false;
+            var vis = Array.isArray(data.visible_sections) || Array.isArray(data.visibleSections);
+            var asg = Array.isArray(data.assigned_components) || Array.isArray(data.assignedComponents);
+            var wf = data.component_workflow && typeof data.component_workflow === 'object';
+            return vis && asg && wf;
+        }
+
+        async function fetchWorkflowFallback(appId) {
+            if (!appId) return null;
+            try {
+                var fbUrl = base + '/api/shared/case_workflow_snapshot.php?application_id=' + encodeURIComponent(appId);
+                var fbRes = await fetch(fbUrl, { credentials: 'same-origin' });
+                var fbPayload = await fbRes.json().catch(function () { return null; });
+                if (!fbRes.ok || !fbPayload || fbPayload.status !== 1 || !fbPayload.data) return null;
+                return fbPayload.data;
+            } catch (_e) {
+                return null;
+            }
+        }
+
         var res = await fetch(url, { credentials: 'same-origin' });
         var payload = await res.json().catch(function () { return null; });
 
@@ -4886,7 +5191,25 @@ function askActionConfirm(label) {
         setText('cvTopMessage', '');
 
         var d = payload.data || {};
+        if (!hasSnapshotContract(d)) {
+            var fallbackData = await fetchWorkflowFallback(applicationId || (d.case && d.case.application_id) || '');
+            if (fallbackData) {
+                if (!Array.isArray(d.visible_sections) && Array.isArray(fallbackData.visible_sections || fallbackData.visibleSections)) {
+                    d.visible_sections = fallbackData.visible_sections || fallbackData.visibleSections;
+                }
+                if (!Array.isArray(d.assigned_components) && Array.isArray(fallbackData.assigned_components || fallbackData.assignedComponents)) {
+                    d.assigned_components = fallbackData.assigned_components || fallbackData.assignedComponents;
+                }
+                if ((!d.component_workflow || typeof d.component_workflow !== 'object') && (fallbackData.component_workflow || fallbackData.componentWorkflow)) {
+                    d.component_workflow = fallbackData.component_workflow || fallbackData.componentWorkflow;
+                }
+                try {
+                    console.warn('[candidate_report] snapshot fallback used via case_workflow_snapshot');
+                } catch (_e2) {}
+            }
+        }
         REPORT_PAYLOAD = d;
+        resetComponentTableRenderState(d);
         applyCaseActionCardVisibility();
 
         // Re-apply section filtering once assigned components are known
@@ -4909,7 +5232,6 @@ function askActionConfirm(label) {
 
         initHeaderModals(applicationId);
         initValidatorWorkspace();
-        loadTimeline(applicationId);
 
         renderDocPreviewPanel(d.uploaded_docs || []);
 
@@ -4992,16 +5314,25 @@ function askActionConfirm(label) {
         setText('cvHeaderTat', tatLabelFromCreated(cs.created_at || '', { internal_tat: tatDays, weekend_rules: rules }));
         setValidatorWorkspaceSummary(d);
 
-        var tatLabel = tatLabelFromCreated(cs.created_at || '', { internal_tat: tatDays, weekend_rules: rules });
-        setText('cvSectionTatBasic', tatLabel ? ('Component TAT: ' + tatLabel) : '');
-        setText('cvSectionTatId', tatLabel ? ('Component TAT: ' + tatLabel) : '');
-        setText('cvSectionTatContact', tatLabel ? ('Component TAT: ' + tatLabel) : '');
-        setText('cvSectionTatEducation', tatLabel ? ('Component TAT: ' + tatLabel) : '');
-        setText('cvSectionTatEmployment', tatLabel ? ('Component TAT: ' + tatLabel) : '');
-        setText('cvSectionTatReference', tatLabel ? ('Component TAT: ' + tatLabel) : '');
-        setText('cvSectionTatSocialmedia', tatLabel ? ('Component TAT: ' + tatLabel) : '');
-        setText('cvSectionTatEcourt', tatLabel ? ('Component TAT: ' + tatLabel) : '');
-        setText('cvSectionTatReports', tatLabel ? ('Component TAT: ' + tatLabel) : '');
+        function applyTatSectionLabels() {
+            var tatLabel = tatLabelFromCreated(cs.created_at || '', { internal_tat: tatDays, weekend_rules: rules });
+            setText('cvSectionTatBasic', tatLabel ? ('Component TAT: ' + tatLabel) : '');
+            setText('cvSectionTatId', tatLabel ? ('Component TAT: ' + tatLabel) : '');
+            setText('cvSectionTatContact', tatLabel ? ('Component TAT: ' + tatLabel) : '');
+            setText('cvSectionTatEducation', tatLabel ? ('Component TAT: ' + tatLabel) : '');
+            setText('cvSectionTatEmployment', tatLabel ? ('Component TAT: ' + tatLabel) : '');
+            setText('cvSectionTatReference', tatLabel ? ('Component TAT: ' + tatLabel) : '');
+            setText('cvSectionTatSocialmedia', tatLabel ? ('Component TAT: ' + tatLabel) : '');
+            setText('cvSectionTatEcourt', tatLabel ? ('Component TAT: ' + tatLabel) : '');
+            setText('cvSectionTatReports', tatLabel ? ('Component TAT: ' + tatLabel) : '');
+        }
+
+        applyTatSectionLabels();
+        holidaysPromise.then(function () {
+            applyTatSectionLabels();
+            setText('cvHeaderTat', tatLabelFromCreated(cs.created_at || '', { internal_tat: tatDays, weekend_rules: rules }));
+        }).catch(function () {
+        });
 
         // If case is already approved, prevent further action changes from this view
         var statusStr = String(displayCaseStatus(app.status, cs.case_status) || '').toUpperCase();
@@ -5106,43 +5437,19 @@ function askActionConfirm(label) {
         setVal('cv_auth_uploaded_at', window.GSS_DATE.formatDbDateTime(authUploadedAt || ''));
         setVal('cv_app_submitted_at', window.GSS_DATE.formatDbDateTime(app.submitted_at || ''));
 
-        simplifyAllReadonlyFields();
+        setTimeout(function () {
+            simplifyAllReadonlyFields();
+        }, 0);
 
-        renderTabbedTable('cv_identification_table', d.identification || [], [
-            { key: 'document_index', label: '#' },
-            { key: 'documentId_type', label: 'Document Type' },
-            { key: 'id_number', label: 'ID Number' },
-            { key: 'name', label: 'Name on ID' },
-            { key: 'upload_document', label: 'Uploaded File' }
-        ], 'ID');
-
-        renderTabbedTable('cv_education_table', d.education || [], [
-            { key: 'education_index', label: '#' },
-            { key: 'qualification', label: 'Qualification' },
-            { key: 'college_name', label: 'College' },
-            { key: 'university_board', label: 'University/Board' },
-            { key: 'year_from', label: 'From' },
-            { key: 'year_to', label: 'To' },
-            { key: 'roll_number', label: 'Roll No' },
-            { key: 'marksheet_file', label: 'Marksheet' },
-            { key: 'degree_file', label: 'Degree' }
-        ], 'Education');
-
-        renderTabbedTable('cv_employment_table', d.employment || [], [
-            { key: 'employment_index', label: '#' },
-            { key: 'employer_name', label: 'Employer' },
-            { key: 'job_title', label: 'Job Title' },
-            { key: 'employee_id', label: 'Employee ID' },
-            { key: 'joining_date', label: 'Joining' },
-            { key: 'relieving_date', label: 'Relieving' },
-            { key: 'currently_employed', label: 'Currently Employed' },
-            { key: 'contact_employer', label: 'Contact Employer' },
-            { key: 'employment_doc', label: 'Document' }
-        ], 'Employment');
+        ensureComponentTableRendered(CURRENT_SECTION_KEY || 'basic');
+        setTimeout(function () { ensureComponentTableRendered('id'); }, 40);
+        setTimeout(function () { ensureComponentTableRendered('education'); }, 90);
+        setTimeout(function () { ensureComponentTableRendered('employment'); }, 140);
 
         var uploadTypeEl = document.getElementById('cvUploadDocType');
         var currentType = uploadTypeEl ? String(uploadTypeEl.value || '') : '';
-        await loadUploadedDocs(applicationId, currentType);
+        loadUploadedDocs(applicationId, currentType).catch(function () {
+        });
 
         if (uploadTypeEl && !uploadTypeEl.dataset.bound) {
             uploadTypeEl.dataset.bound = '1';
@@ -5172,6 +5479,10 @@ function askActionConfirm(label) {
             }
         } catch (_e) {
         }
+
+        setTimeout(function () {
+            loadTimeline(applicationId);
+        }, 120);
 
         if (root) root.setAttribute('data-ui-ready', '1');
 

@@ -42,13 +42,13 @@
             var lowCase = caseStatus.toLowerCase();
 
             if (lowRaw === 'pending_candidate' || lowRaw === 'candidate_pending' || lowRaw === 'pending candidate') {
-                if (appStatus === 'submitted') return 'Pending Validator';
+                if (appStatus === 'submitted') return 'VA Pending';
             }
             if (lowCase === 'pending_candidate' || lowCase === 'candidate_pending' || lowCase === 'pending candidate') {
-                if (appStatus === 'submitted') return 'Pending Validator';
+                if (appStatus === 'submitted') return 'VA Pending';
             }
             if ((lowRaw === 'pending' || lowRaw === '') && (lowCase === 'pending_candidate' || lowCase === 'candidate_pending') && appStatus === 'submitted') {
-                return 'Pending Validator';
+                return 'VA Pending';
             }
 
             if (lowRaw === 'in_progress') return 'In Progress';

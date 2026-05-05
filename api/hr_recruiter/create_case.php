@@ -7,6 +7,7 @@ require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/mail.php';
 require_once __DIR__ . '/../../includes/integration.php';
 require_once __DIR__ . '/../shared/candidate_account_notify.php';
+require_once __DIR__ . '/../shared/case_component_binding.php';
 
 auth_require_login('company_recruiter');
 auth_session_start();
@@ -72,6 +73,21 @@ function candidate_portal_base_url(): string {
     return 'https://vati.payfiller.com/myapplication';
 }
 
+function save_case_selected_level(PDO $pdo, int $caseId, string $selectedLevel): void {
+    if ($caseId <= 0 || $selectedLevel === '') {
+        return;
+    }
+    try {
+        $sql = "UPDATE Vati_Payfiller_Cases
+                SET selected_level = ?, updated_at = NOW()
+                WHERE case_id = ?";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([$selectedLevel, $caseId]);
+    } catch (Throwable $e) {
+        // best-effort for environments where selected_level column is not yet present
+    }
+}
+
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         http_response_code(405);
@@ -100,6 +116,7 @@ try {
 
     $joiningLocation = post_str('joining_location');
     $jobRole = post_str('job_role');
+    $selectedLevel = strtolower(post_str('selected_level', post_str('level_key', '')));
 
     $recruiterName = post_str('recruiter_name');
     $recruiterEmail = integration_normalize_email(post_str('recruiter_email'));
@@ -184,6 +201,12 @@ try {
         echo json_encode(['status' => 0, 'message' => 'Case created but case_id missing']);
         exit;
     }
+
+    save_case_selected_level($pdo, $caseId, $selectedLevel);
+
+    // Ensure workflow snapshot rows exist for every required case component.
+    case_component_binding_sync_case_components($pdo, $caseId, $applicationId);
+    case_component_binding_seed_stage_workflow_rows($pdo, $caseId, $applicationId, ['candidate', 'validator']);
 
     $candidateUserId = 0;
     $tempPassword = '';
@@ -362,6 +385,9 @@ try {
             'emailSent' => $sent ? 1 : 0,
         ], $links),
     ]);
+
+    // Re-run seeding at end of full creation flow in case any late component rows were inserted.
+    case_component_binding_seed_stage_workflow_rows_until_stable($pdo, $caseId, $applicationId, ['candidate', 'validator']);
 
     echo json_encode([
         'status' => 1,

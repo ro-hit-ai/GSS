@@ -224,6 +224,119 @@ function render_layout(string $title, string $roleLabel, array $menu, string $co
     <script src="<?php echo htmlspecialchars(app_url('/js/includes/date_utils.js')); ?>"></script>
     <script src="<?php echo htmlspecialchars(app_url('/js/includes/dialog.js')); ?>"></script>
     <script src="<?php echo htmlspecialchars(app_url('/js/includes/layout.js')); ?>"></script>
+    <script>
+        (function () {
+            var host = null;
+            function ensureHost() {
+                if (host && document.body.contains(host)) return host;
+                if (!document.getElementById('gss-global-toast-style')) {
+                    var st = document.createElement('style');
+                    st.id = 'gss-global-toast-style';
+                    st.textContent =
+                        '.gss-global-toast-host{position:fixed;top:16px;right:16px;z-index:2000;display:flex;flex-direction:column;gap:8px;max-width:min(420px,calc(100vw - 24px));}' +
+                        '.gss-global-toast{border-radius:10px;padding:11px 14px;font-size:13px;font-weight:700;border:1px solid transparent;box-shadow:0 10px 25px rgba(2,6,23,.15);opacity:0;transform:translateY(-8px);transition:all .18s ease;}' +
+                        '.gss-global-toast.show{opacity:1;transform:translateY(0);}' +
+                        '.gss-global-toast.success{background:#ecfdf3;color:#065f46;border-color:#a7f3d0;}' +
+                        '.gss-global-toast.danger,.gss-global-toast.error{background:#fef2f2;color:#991b1b;border-color:#fecaca;}' +
+                        '.gss-global-toast.warning{background:#fffbeb;color:#92400e;border-color:#fde68a;}' +
+                        '.gss-global-toast.info{background:#eff6ff;color:#1e3a8a;border-color:#bfdbfe;}';
+                    document.head.appendChild(st);
+                }
+                host = document.createElement('div');
+                host.className = 'gss-global-toast-host';
+                document.body.appendChild(host);
+                return host;
+            }
+
+            function normalizeType(v) {
+                var t = String(v || '').toLowerCase().trim();
+                if (t.indexOf('danger') !== -1 || t.indexOf('error') !== -1) return 'danger';
+                if (t.indexOf('warning') !== -1 || t.indexOf('warn') !== -1) return 'warning';
+                if (t.indexOf('success') !== -1) return 'success';
+                return 'info';
+            }
+
+            function showToast(message, type) {
+                var msg = String(message || '').trim();
+                if (!msg) return;
+                var h = ensureHost();
+                var item = document.createElement('div');
+                item.className = 'gss-global-toast ' + normalizeType(type);
+                item.textContent = msg;
+                h.appendChild(item);
+                requestAnimationFrame(function () { item.classList.add('show'); });
+                setTimeout(function () {
+                    item.classList.remove('show');
+                    setTimeout(function () {
+                        if (item.parentNode) item.parentNode.removeChild(item);
+                    }, 220);
+                }, 3000);
+            }
+
+            function isMessageBlock(el) {
+                if (!el || el.nodeType !== 1) return false;
+                var id = String(el.id || '').toLowerCase();
+                var cls = String(el.className || '').toLowerCase();
+                if (!id && !cls) return false;
+                var idHint = id.indexOf('message') !== -1 || id.indexOf('msg') !== -1;
+                var classHint = cls.indexOf('alert') !== -1 || cls.indexOf('message') !== -1;
+                return idHint || classHint;
+            }
+
+            function consumeBlock(el) {
+                if (!isMessageBlock(el)) return;
+                var txt = String(el.textContent || '').trim();
+                if (!txt) return;
+                var sig = txt + '|' + String(el.className || '');
+                if (el.dataset.toastSig === sig) return;
+                el.dataset.toastSig = sig;
+                showToast(txt, el.className || '');
+                el.style.display = 'none';
+                el.textContent = '';
+            }
+
+            function scanAll() {
+                var nodes = document.querySelectorAll('[id*="Message"], [id*="message"], .alert, .message');
+                nodes.forEach(function (el) { consumeBlock(el); });
+            }
+
+            window.GSS_TOAST = window.GSS_TOAST || {
+                show: function (message, type) { showToast(message, type || 'info'); }
+            };
+
+            var mo = new MutationObserver(function (mutations) {
+                mutations.forEach(function (m) {
+                    if (m.type === 'childList') {
+                        m.addedNodes.forEach(function (n) {
+                            if (n && n.nodeType === 1) {
+                                if (isMessageBlock(n)) consumeBlock(n);
+                                if (n.querySelectorAll) {
+                                    n.querySelectorAll('[id*="Message"], [id*="message"], .alert, .message').forEach(function (el) {
+                                        consumeBlock(el);
+                                    });
+                                }
+                            }
+                        });
+                    } else if (m.type === 'attributes') {
+                        consumeBlock(m.target);
+                    } else if (m.type === 'characterData') {
+                        if (m.target && m.target.parentElement) consumeBlock(m.target.parentElement);
+                    }
+                });
+            });
+
+            document.addEventListener('DOMContentLoaded', function () {
+                scanAll();
+                mo.observe(document.body, {
+                    subtree: true,
+                    childList: true,
+                    characterData: true,
+                    attributes: true,
+                    attributeFilter: ['class', 'style']
+                });
+            });
+        })();
+    </script>
     <?php if (!empty($currentModule) && !empty($currentScript)): 
         $scriptBase = pathinfo($currentScript, PATHINFO_FILENAME);
         $pageJsPath = app_url("/js/modules/{$currentModule}/{$scriptBase}.js");

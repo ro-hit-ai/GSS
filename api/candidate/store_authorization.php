@@ -57,14 +57,31 @@ try {
         $stmt->execute([$application_id, $fileName, $signature]);
     }
 
-    /* ---------- MARK APPLICATION SUBMITTED ---------- */
-    $upd = $pdo->prepare("
-        UPDATE Vati_Payfiller_Candidate_Applications
-           SET status = 'submitted',
-               submitted_at = NOW()
+    /* ---------- MARK APPLICATION SUBMITTED (UPSERT) ---------- */
+    $caseMetaStmt = $pdo->prepare(
+        "SELECT candidate_first_name, candidate_middle_name, candidate_last_name
+         FROM Vati_Payfiller_Cases
          WHERE application_id = ?
-    ");
-    $upd->execute([$application_id]);
+         LIMIT 1"
+    );
+    $caseMetaStmt->execute([$application_id]);
+    $caseMeta = $caseMetaStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $candidateName = trim(
+        (string)($caseMeta['candidate_first_name'] ?? '') . ' '
+        . (string)($caseMeta['candidate_middle_name'] ?? '') . ' '
+        . (string)($caseMeta['candidate_last_name'] ?? '')
+    );
+
+    $upd = $pdo->prepare(
+        "INSERT INTO Vati_Payfiller_Candidate_Applications
+            (application_id, candidate_name, status, submitted_at, created_at, updated_at)
+         VALUES (?, ?, 'submitted', NOW(), NOW(), NOW())
+         ON DUPLICATE KEY UPDATE
+            status = 'submitted',
+            submitted_at = COALESCE(submitted_at, VALUES(submitted_at)),
+            updated_at = NOW()"
+    );
+    $upd->execute([$application_id, $candidateName]);
 
     // Best-effort: enqueue into validator queue
     try {
@@ -112,6 +129,24 @@ try {
                         completed_at = COALESCE(completed_at, NOW()),
                         updated_at = NOW()"
                 )->execute([$caseId]);
+            } catch (Throwable $e) {
+                // ignore
+            }
+
+            // Ensure pre-seeded candidate-stage pending rows are finalized on submit.
+            // Keep validator/verifier/qa rows untouched by filtering only stage='candidate'.
+            try {
+                $pdo->prepare(
+                    "UPDATE Vati_Payfiller_Case_Component_Workflow
+                     SET status = 'approved',
+                         completed_at = COALESCE(completed_at, NOW()),
+                         updated_by_user_id = NULL,
+                         updated_by_role = 'candidate',
+                         updated_at = NOW()
+                     WHERE application_id = ?
+                       AND LOWER(TRIM(stage)) = 'candidate'
+                       AND COALESCE(LOWER(TRIM(status)), '') IN ('', 'pending', 'in_progress', 'in-progress', 'submitted')"
+                )->execute([$application_id]);
             } catch (Throwable $e) {
                 // ignore
             }

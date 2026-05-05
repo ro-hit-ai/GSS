@@ -1,0 +1,49 @@
+RewriteEngine On
+RewriteBase /GSS/
+
+# GSS Admin
+RewriteRule ^gssadmin/?$ modules/gss_admin/dashboard.php [L,QSA]
+RewriteRule ^gssadmin/([A-Za-z0-9_]+)/?$ modules/gss_admin/$1.php [L,QSA]
+
+RewriteRule ^clients_create/?$ modules/gss_admin/clients_create.php [L,QSA]
+RewriteRule ^clients_create/([A-Za-z0-9_]+)/?$ modules/clients_create/$1.php [L,QSA]
+
+# Client Admin
+RewriteRule ^client_admin/?$ modules/client_admin/dashboard.php [L,QSA]
+RewriteRule ^client_admin/([A-Za-z0-9_]+)/?$ modules/client_admin/$1.php [L,QSA]
+
+# Recruiter
+RewriteRule ^recruiter/?$ modules/recruiter/dashboard.php [L,QSA]
+RewriteRule ^recruiter/([A-Za-z0-9_]+)/?$ modules/recruiter/$1.php [L,QSA]
+
+# Vendor
+RewriteRule ^vendor/?$ modules/vendor/dashboard.php [L,QSA]
+RewriteRule ^vendor/([A-Za-z0-9_]+)/?$ modules/vendor/$1.php [L,QSA]
+
+# Candidate
+RewriteRule ^candidate/?$ modules/candidate/dashboard.php [L,QSA]
+RewriteRule ^candidate/([A-Za-z0-9_]+)/?$ modules/candidate/$1.php [L,QSA]
+
+# Verifier
+RewriteRule ^verifier/?$ modules/verifier/dashboard.php [L,QSA]
+RewriteRule ^verifier/([A-Za-z0-9_]+)/?$ modules/verifier/$1.php [L,QSA]
+
+# DB Verifier
+RewriteRule ^db_verifier/?$ modules/db_verifier/dashboard.php [L,QSA]
+RewriteRule ^db_verifier/([A-Za-z0-9_]+)/?$ modules/db_verifier/$1.php [L,QSA]
+
+# QA / Team lead
+RewriteRule ^qa/?$ modules/qa/dashboard.php [L,QSA]
+RewriteRule ^qa/([A-Za-z0-9_]+)/?$ modules/qa/$1.php [L,QSA]
+
+# Billing
+RewriteRule ^billing/?$ modules/billing/dashboard.php [L,QSA]
+RewriteRule ^billing/([A-Za-z0-9_]+)/?$ modules/billing/$1.php [L,QSA]
+
+# Reports
+RewriteRule ^reports/?$ modules/reports/dashboard.php [L,QSA]
+RewriteRule ^reports/([A-Za-z0-9_]+)/?$ modules/reports/$1.php [L,QSA]
+
+# Allocator
+RewriteRule ^allocator/?$ modules/allocator/delegation_reports.php [L,QSA]
+RewriteRule ^allocator/([A-Za-z0-9_]+)/?$ modules/allocator/$1.php [L,QSA]

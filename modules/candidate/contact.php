@@ -37,7 +37,7 @@ $existingCurrentProofUrl = $existingCurrentProofPath !== '' ? app_url($existingC
 
     <form id="contactForm" enctype="multipart/form-data">
         <input type="hidden" name="has_current_address" value="1">
-        <input type="hidden" name="has_permanent_address" value="1">
+        <input type="hidden" name="has_permanent_address" value="<?= $sameAsCurrent ? '0' : '1' ?>">
 
         <div class="form-row-full compact-row mt-3 mb-3" id="sameAsCurrentWrap">
             <div class="form-check normal-checkbox compact-checkbox contact-address-switch" style="display:flex; gap:20px; flex-wrap:wrap;">

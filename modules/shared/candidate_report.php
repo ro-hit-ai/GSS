@@ -45,6 +45,34 @@ if ($applicationId === '' && $caseId > 0) {
 }
 
 auth_session_start();
+$normalizeRole = function (string $role): string {
+    $r = strtolower(trim($role));
+    if ($r === 'customer_admin') return 'client_admin';
+    if ($r === 'component verifier' || $r === 'component_verifier') return 'verifier';
+    if ($r === 'component validator' || $r === 'component_validator') return 'validator';
+    if ($r === 'db verifier' || $r === 'db-verifier') return 'db_verifier';
+    if ($r === 'gss admin') return 'gss_admin';
+    if ($r === 'team lead' || $r === 'team_lead') return 'team_lead';
+    return $r;
+};
+
+$sessionRole = $normalizeRole((string)($_SESSION['auth_moduleAccess'] ?? ''));
+if ($sessionRole === '') {
+    $sessionRole = $normalizeRole((string)($_SESSION['auth_role'] ?? ''));
+}
+if ($sessionRole === '') {
+    $sessionRole = $normalizeRole((string)($_SESSION['role'] ?? ''));
+}
+if ($sessionRole === '' && !empty($_SESSION['logged_in']) && !empty($_SESSION['application_id'])) {
+    $sessionRole = 'candidate';
+}
+if ($sessionRole !== '') {
+    $role = $sessionRole;
+}
+
+if ($role !== 'verifier') {
+    $group = '';
+}
 $allowedSections = '';
 if (!empty($_SESSION['auth_allowed_sections'])) {
     $allowedSections = (string)$_SESSION['auth_allowed_sections'];
@@ -236,6 +264,8 @@ if ($role === 'verifier') {
     $backToListHref = '../verifier/candidates_list.php';
 } elseif ($role === 'validator') {
     $backToListHref = '../validator/candidates_list.php';
+} elseif ($role === 'qa' || $role === 'team_lead') {
+    $backToListHref = '../qa/review_list.php';
 } elseif ($role === 'gss_admin') {
     $backToListHref = '../gss_admin/candidates_list.php';
 } elseif ($role === 'client_admin') {
@@ -306,47 +336,69 @@ ob_start();
 
     .cr-report-root.cr-role-verifier .cr-compnav,
     .cr-report-root.cr-role-validator .cr-compnav,
-    .cr-report-root.cr-role-db_verifier .cr-compnav{display:none;}
+    .cr-report-root.cr-role-db_verifier .cr-compnav,
+    .cr-report-root.cr-role-qa .cr-compnav,
+    .cr-report-root.cr-role-team_lead .cr-compnav{display:none;}
 
     .cr-report-root.cr-role-verifier .cr-sidebar,
     .cr-report-root.cr-role-validator .cr-sidebar,
-    .cr-report-root.cr-role-db_verifier .cr-sidebar{display:block;}
+    .cr-report-root.cr-role-db_verifier .cr-sidebar,
+    .cr-report-root.cr-role-qa .cr-sidebar,
+    .cr-report-root.cr-role-team_lead .cr-sidebar{display:block;}
 
     .cr-report-root.cr-role-verifier .cr-shell,
     .cr-report-root.cr-role-validator .cr-shell,
-    .cr-report-root.cr-role-db_verifier .cr-shell{gap:0;}
+    .cr-report-root.cr-role-db_verifier .cr-shell,
+    .cr-report-root.cr-role-qa .cr-shell,
+    .cr-report-root.cr-role-team_lead .cr-shell{gap:0;}
 
     .cr-report-root.cr-role-verifier,
     .cr-report-root.cr-role-validator,
-    .cr-report-root.cr-role-db_verifier{background:#fff; border:1px solid rgba(148,163,184,0.22); box-shadow:none;}
+    .cr-report-root.cr-role-db_verifier,
+    .cr-report-root.cr-role-qa,
+    .cr-report-root.cr-role-team_lead{background:#fff; border:1px solid rgba(148,163,184,0.22); box-shadow:none;}
 
     .cr-report-root.cr-role-verifier .cr-hero,
     .cr-report-root.cr-role-validator .cr-hero,
-    .cr-report-root.cr-role-db_verifier .cr-hero{background:#fff; box-shadow:none; border-radius:10px; border-color:rgba(148,163,184,0.22); padding:12px;}
+    .cr-report-root.cr-role-db_verifier .cr-hero,
+    .cr-report-root.cr-role-qa .cr-hero,
+    .cr-report-root.cr-role-team_lead .cr-hero{background:#fff; box-shadow:none; border-radius:10px; border-color:rgba(148,163,184,0.22); padding:12px;}
 
     .cr-report-root.cr-role-verifier .cr-avatar,
     .cr-report-root.cr-role-validator .cr-avatar,
-    .cr-report-root.cr-role-db_verifier .cr-avatar{border-radius:8px; box-shadow:none;}
+    .cr-report-root.cr-role-db_verifier .cr-avatar,
+    .cr-report-root.cr-role-qa .cr-avatar,
+    .cr-report-root.cr-role-team_lead .cr-avatar{border-radius:8px; box-shadow:none;}
 
     .cr-report-root.cr-role-verifier .cr-action-btn,
     .cr-report-root.cr-role-validator .cr-action-btn,
-    .cr-report-root.cr-role-db_verifier .cr-action-btn{border-radius:6px; padding:7px 10px; font-weight:800;}
+    .cr-report-root.cr-role-db_verifier .cr-action-btn,
+    .cr-report-root.cr-role-qa .cr-action-btn,
+    .cr-report-root.cr-role-team_lead .cr-action-btn{border-radius:6px; padding:7px 10px; font-weight:800;}
 
     .cr-report-root.cr-role-verifier .card,
     .cr-report-root.cr-role-validator .card,
-    .cr-report-root.cr-role-db_verifier .card{box-shadow:none !important; border-radius:10px; border:1px solid rgba(148,163,184,0.22) !important;}
+    .cr-report-root.cr-role-db_verifier .card,
+    .cr-report-root.cr-role-qa .card,
+    .cr-report-root.cr-role-team_lead .card{box-shadow:none !important; border-radius:10px; border:1px solid rgba(148,163,184,0.22) !important;}
 
     .cr-report-root.cr-role-verifier .cr-panel,
     .cr-report-root.cr-role-validator .cr-panel,
-    .cr-report-root.cr-role-db_verifier .cr-panel{box-shadow:none !important; border-radius:10px; border:1px solid rgba(148,163,184,0.22) !important; background:#fff;}
+    .cr-report-root.cr-role-db_verifier .cr-panel,
+    .cr-report-root.cr-role-qa .cr-panel,
+    .cr-report-root.cr-role-team_lead .cr-panel{box-shadow:none !important; border-radius:10px; border:1px solid rgba(148,163,184,0.22) !important; background:#fff;}
 
     .cr-report-root.cr-role-verifier .cr-secbar,
     .cr-report-root.cr-role-validator .cr-secbar,
-    .cr-report-root.cr-role-db_verifier .cr-secbar{background:#111827; border-radius:0;}
+    .cr-report-root.cr-role-db_verifier .cr-secbar,
+    .cr-report-root.cr-role-qa .cr-secbar,
+    .cr-report-root.cr-role-team_lead .cr-secbar{background:#111827; border-radius:0;}
 
     .cr-report-root.cr-role-verifier .form-control,
     .cr-report-root.cr-role-validator .form-control,
-    .cr-report-root.cr-role-db_verifier .form-control{background:transparent; border:0; padding:0;}
+    .cr-report-root.cr-role-db_verifier .form-control,
+    .cr-report-root.cr-role-qa .form-control,
+    .cr-report-root.cr-role-team_lead .form-control{background:transparent; border:0; padding:0;}
 
     .cr-report-root.cr-role-verifier .form-control label,
     .cr-report-root.cr-role-validator .form-control label,
@@ -1447,24 +1499,17 @@ ob_start();
     }
 
 
-.qa-case-review-mode .cr-hero,
 .qa-case-review-mode .cr-compnav,
 .qa-case-review-mode .cr-secbar,
 .qa-case-review-mode .cr-secbar-meta {
     display: none !important;
 }
 
-/* QA mode: keep hero but simplify it */
+/* QA mode: keep hero visible like validator/verifier workspace */
 .qa-case-review-mode .cr-hero {
     display: block !important;
     padding: 8px 12px !important;
     margin-top: 10px !important;
-}
-
-/* Hide only header visuals, NOT actions */
-.qa-case-review-mode .cr-hero-head,
-.qa-case-review-mode .cr-stat-row {
-    display: none !important;
 }
 
 /* Keep action buttons visible */
@@ -1676,6 +1721,12 @@ ob_start();
 .qa-case-review-mode .cr-main{
     flex:1 1 auto;
     min-width:0;
+}
+
+/* Parent QA page already provides right-side remarks/timeline.
+   Hide iframe utility column to match validator/verifier content width. */
+.qa-case-review-mode .cr-right{
+    display:none !important;
 }
 
 .qa-case-review-mode .cr-sections-scroll{
@@ -2341,6 +2392,741 @@ ob_start();
     height:14px;
     cursor:se-resize;
 }
+
+/* ===========================
+   Connected Enterprise Cockpit
+   (validator/verifier workspace only)
+   =========================== */
+.page-content{overflow:hidden;}
+.cr-report-root.cr-validator-workspace{
+    background:#f8fafc;
+    border:1px solid #e5e7eb;
+    box-shadow:none;
+    border-radius:12px;
+}
+.cr-report-root.cr-validator-workspace .cr-shell.cr-layout.cr-page{
+    display:grid;
+    grid-template-columns:260px minmax(0,1fr) 320px;
+    gap:0;
+    margin-top:16px;
+    align-items:start;
+    border-top:1px solid #e5e7eb;
+}
+.cr-report-root.cr-validator-workspace .cr-sections{
+    grid-column:1;
+    position:sticky;
+    top:12px;
+    max-height:calc(100vh - 120px);
+    overflow-y:auto;
+    border:0 !important;
+    border-right:1px solid #e5e7eb !important;
+    border-radius:0 !important;
+    box-shadow:none !important;
+    background:#fff !important;
+    padding:16px !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content{
+    grid-column:2;
+    min-width:0;
+    overflow-y:auto;
+    max-height:calc(100vh - 120px);
+    border:0;
+    background:#fff;
+    padding:0;
+}
+.cr-report-root.cr-validator-workspace .cr-right{
+    grid-column:3;
+    min-width:0;
+    overflow-y:auto;
+    max-height:calc(100vh - 120px);
+    border-left:1px solid #e5e7eb;
+    background:#fff;
+    padding:0;
+}
+.cr-report-root.cr-validator-workspace .cr-main{
+    gap:0 !important;
+}
+.cr-report-root.cr-validator-workspace .cr-review-actionbar{
+    position:sticky;
+    top:0;
+    z-index:30;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:16px;
+    padding:12px 16px;
+    border-bottom:1px solid #e5e7eb;
+    background:#fff;
+}
+.cr-report-root.cr-validator-workspace #crReviewActionbar{
+    display:none !important; /* keep JS-bound original buttons in DOM, but hidden */
+}
+.cr-report-root.cr-validator-workspace .cr-review-actionbar-title{
+    font-size:12px;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    color:#6b7280;
+    font-weight:800;
+}
+.cr-report-root.cr-validator-workspace .cr-secbar{
+    align-items:center !important;
+}
+.cr-report-root.cr-validator-workspace .cr-secbar-meta{
+    display:none !important; /* remove TAT badge from section header */
+}
+.cr-report-root.cr-validator-workspace .cr-secbar-actions{
+    margin-left:auto;
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:flex-end;
+    align-items:center;
+    gap:8px;
+    max-width:60%;
+}
+.cr-report-root.cr-validator-workspace .cr-secbar-actions .cr-sec-action{
+    height:30px;
+    padding:0 10px;
+    border-radius:8px;
+    font-size:11px;
+    font-weight:700;
+    border:1px solid #d1d5db;
+    background:#fff;
+    color:#374151;
+    white-space:nowrap;
+    line-height:1;
+    cursor:pointer;
+}
+.cr-report-root.cr-validator-workspace .cr-secbar-actions .cr-sec-action:disabled{
+    opacity:.5;
+    cursor:not-allowed;
+}
+.cr-report-root.cr-validator-workspace .cr-secbar-actions .cr-sec-action.need-docs{
+    background:#fff;
+    border-color:#d1d5db;
+    color:#374151;
+}
+.cr-report-root.cr-validator-workspace .cr-secbar-actions .cr-sec-action.hold{
+    background:#fef3c7;
+    border-color:#f59e0b;
+    color:#92400e;
+}
+.cr-report-root.cr-validator-workspace .cr-secbar-actions .cr-sec-action.reject{
+    background:#dc2626;
+    border-color:#b91c1c;
+    color:#fff;
+}
+.cr-report-root.cr-validator-workspace .cr-secbar-actions .cr-sec-action.approve{
+    background:#16a34a;
+    border-color:#15803d;
+    color:#fff;
+}
+@media (max-width: 1180px){
+    .cr-report-root.cr-validator-workspace .cr-secbar-actions{
+        max-width:100%;
+    }
+}
+.cr-report-root.cr-validator-workspace .cr-sections-scroll{
+    border:0 !important;
+    border-radius:0 !important;
+    box-shadow:none !important;
+    background:#fff !important;
+    padding:16px !important;
+    max-height:none !important;
+    overflow:visible !important;
+}
+.cr-report-root.cr-validator-workspace .candidate-section{
+    margin:0 !important;
+    border:1px solid #e5e7eb !important;
+    border-radius:10px !important;
+    box-shadow:none !important;
+    background:#fff !important;
+}
+.cr-report-root.cr-validator-workspace .candidate-section + .candidate-section{
+    margin-top:16px !important;
+}
+
+/* Center Review Worksheet Redesign (content area only) */
+.cr-report-root.cr-validator-workspace .cr-content .cr-sections-scroll{
+    padding:0 !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section{
+    border:1px solid #e5e7eb !important;
+    border-radius:10px !important;
+    background:#fff !important;
+    box-shadow:none !important;
+    margin-top:12px !important;
+    overflow:hidden;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-secbar{
+    border:0 !important;
+    border-bottom:1px solid #e5e7eb !important;
+    border-radius:0 !important;
+    background:#fff !important;
+    padding:12px 16px !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-secbar-title{
+    font-size:15px !important;
+    font-weight:800 !important;
+    color:#111827 !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-secbar-sub{
+    font-size:12px !important;
+    color:#6b7280 !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-secbar-actions{
+    max-width:none !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-kv2-wrap{
+    border:0 !important;
+    border-radius:0 !important;
+    padding:0 !important;
+    margin:0 !important;
+    background:#fff !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-kv2-grid{
+    border:0 !important;
+    grid-template-columns:minmax(0,1fr) minmax(0,1fr) !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-kv2-cell{
+    border-right:0 !important;
+    padding:10px 16px !important;
+    border-bottom:1px solid #eef2f7 !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-kv2-cell:after{
+    display:none !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-kv2-k{
+    font-size:11px !important;
+    text-transform:uppercase !important;
+    letter-spacing:.04em !important;
+    color:#6b7280 !important;
+    font-weight:700 !important;
+    margin-bottom:4px !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-kv2-v{
+    font-size:13px !important;
+    font-weight:700 !important;
+    color:#0f172a !important;
+}
+
+/* Single-record sheet rows */
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section.cr-single-record .form-grid{
+    display:grid !important;
+    grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+    gap:0 !important;
+    border-top:0 !important;
+    margin-top:0 !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section.cr-single-record .form-control{
+    border:0 !important;
+    border-radius:0 !important;
+    box-shadow:none !important;
+    padding:10px 16px !important;
+    margin:0 !important;
+    border-bottom:1px solid #eef2f7 !important;
+    background:#fff !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section.cr-single-record .form-control label{
+    margin:0 0 4px 0 !important;
+    font-size:11px !important;
+    text-transform:uppercase !important;
+    letter-spacing:.04em !important;
+    color:#6b7280 !important;
+    font-weight:700 !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section.cr-single-record .form-control input,
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section.cr-single-record .form-control textarea,
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section.cr-single-record .form-control select{
+    border:0 !important;
+    border-radius:0 !important;
+    background:transparent !important;
+    padding:0 !important;
+    min-height:auto !important;
+    font-size:13px !important;
+    color:#0f172a !important;
+    font-weight:700 !important;
+}
+
+/* Multi-record worksheet with tabbed records and split detail feel */
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section.cr-multi-record .cr-record-tabs{
+    margin:0 !important;
+    padding:8px 12px !important;
+    border-bottom:1px solid #e5e7eb !important;
+    background:#f8fafc !important;
+    gap:8px !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section.cr-multi-record .cr-record-tab{
+    border:1px solid #dbe3ee !important;
+    background:#fff !important;
+    border-radius:8px !important;
+    padding:5px 10px !important;
+    font-size:12px !important;
+    font-weight:700 !important;
+    color:#334155 !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section.cr-multi-record .cr-record-tab.active{
+    border-color:#2563eb !important;
+    color:#1e3a8a !important;
+    background:#eff6ff !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section.cr-multi-record .cr-record-panel{
+    margin:0 !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section.cr-multi-record .cr-kv2-wrap{
+    display:grid;
+    grid-template-columns:minmax(0,1.1fr) minmax(260px,.9fr);
+    column-gap:16px;
+    padding:12px 16px !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section.cr-multi-record .cr-kv2-wrap > div:first-child{
+    grid-column:1 / -1;
+    margin-bottom:8px !important;
+    font-size:12px !important;
+    color:#475569 !important;
+    font-weight:800 !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section.cr-multi-record .cr-kv2-grid{
+    grid-column:1 / -1;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section.cr-multi-record .cr-kv2-cell:has(.cr-doc-uploadbox){
+    background:#f9fafb !important;
+    border:1px solid #e5e7eb !important;
+    border-radius:8px !important;
+    margin-top:2px;
+}
+
+/* Evidence / remark area as clean footer row */
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-comp-tools,
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-remarks{
+    margin:0 !important;
+    border-top:1px solid #e5e7eb !important;
+    border-left:0 !important;
+    border-right:0 !important;
+    border-bottom:0 !important;
+    border-radius:0 !important;
+    background:#fcfcfd !important;
+    padding:12px 16px !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-remarks label{
+    font-size:11px !important;
+    text-transform:uppercase !important;
+    letter-spacing:.04em !important;
+    color:#6b7280 !important;
+}
+
+/* Compact documents utility row: reduce oversized upload/file blocks */
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-doc-uploadbox{
+    border:0 !important;
+    border-radius:0 !important;
+    background:transparent !important;
+    padding:0 !important;
+    margin:0 !important;
+    box-shadow:none !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-doc-uploadrow{
+    display:flex !important;
+    align-items:center !important;
+    gap:6px !important;
+    flex-wrap:wrap !important;
+    min-height:24px;
+    border:0 !important;
+    border-radius:0 !important;
+    padding:0 !important;
+    background:transparent !important;
+    box-shadow:none !important;
+    margin:0 !important;
+    border-bottom:1px solid #eef2f7 !important;
+    padding-bottom:4px !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-doc-uploadbtn{
+    padding:2px 7px !important;
+    height:20px !important;
+    border-radius:999px !important;
+    font-size:10px !important;
+    line-height:1.2 !important;
+    background:transparent !important;
+    color:#475569 !important;
+    border:0 !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-doc-uploadname{
+    min-height:20px !important;
+    padding:0 !important;
+    border-radius:0 !important;
+    border:0 !important;
+    font-size:12px !important;
+    line-height:1.2 !important;
+    display:inline-flex !important;
+    align-items:center !important;
+    gap:5px !important;
+    max-width:100%;
+    background:transparent !important;
+    color:#0f172a !important;
+    text-decoration:none !important;
+    flex:1 1 auto;
+    min-width:0;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-doc-uploadname span{
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    max-width:280px;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-doc-uploadname i{
+    font-style:normal !important;
+    font-size:0 !important;
+    width:16px;
+    height:16px;
+    display:inline-block;
+    border-radius:4px;
+    background:#dbeafe;
+    position:relative;
+    flex:0 0 auto;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-doc-uploadname i::before{
+    content:"";
+    position:absolute;
+    left:4px;
+    top:3px;
+    width:8px;
+    height:10px;
+    border:1.5px solid #2563eb;
+    border-top-width:3px;
+    border-radius:1px;
+    box-sizing:border-box;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-file-actions{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    margin-left:auto;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-file-action{
+    font-size:11px;
+    color:#2563eb;
+    text-decoration:none;
+    padding:1px 4px;
+    border-radius:4px;
+    border:0;
+    background:transparent;
+    line-height:1.2;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-file-action:hover{
+    background:#eff6ff;
+}
+
+/* Identification uploaded file as supporting inline metadata row (no standalone container) */
+.cr-report-root.cr-validator-workspace .cr-content #cv_identification_table .cr-kv2-cell:has(.cr-doc-uploadname){
+    grid-column:1 / -1 !important;
+    padding:6px 16px 10px !important;
+    background:transparent !important;
+    border-bottom:1px solid #eef2f7 !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content #cv_identification_table .cr-kv2-cell:has(.cr-doc-uploadname) .cr-kv2-k{
+    margin-bottom:3px !important;
+    color:#64748b !important;
+    font-size:10px !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content #cv_identification_table .cr-doc-uploadbox{
+    display:contents !important; /* remove outer uploaded-file wrapper box entirely */
+}
+.cr-report-root.cr-validator-workspace .cr-content #cv_identification_table .cr-doc-uploadrow{
+    border:0 !important;
+    background:transparent !important;
+    border-radius:0 !important;
+    padding:0 !important;
+    min-height:22px !important;
+    display:flex !important;
+    align-items:center !important;
+    gap:8px !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content #cv_identification_table .cr-doc-uploadbtn{
+    display:none !important; /* hide tag chip, keep only metadata row */
+}
+.cr-report-root.cr-validator-workspace .cr-content #cv_identification_table .cr-doc-uploadname{
+    flex:1 1 auto;
+    min-width:0;
+}
+.cr-report-root.cr-validator-workspace .cr-content #cv_identification_table .cr-file-actions{
+    margin-left:auto;
+    gap:8px;
+}
+
+/* Evidence upload as slim footer toolbar */
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-comp-tools{
+    padding:8px 12px !important;
+    background:#f8fafc !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-comp-tools .cr-tools-head{
+    margin:0 0 6px 0 !important;
+    font-size:11px !important;
+    color:#64748b !important;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-comp-tools .cr-tools-actions{
+    display:flex !important;
+    align-items:center !important;
+    gap:8px !important;
+    flex-wrap:wrap !important;
+    margin:0 !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-comp-tools input[type="file"]{
+    font-size:12px !important;
+    padding:2px !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-comp-tools .btn,
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-comp-tools button{
+    height:30px !important;
+    padding:0 12px !important;
+    border-radius:7px !important;
+    font-size:12px !important;
+    font-weight:700 !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-comp-tools .cr-tools-note{
+    margin-top:4px !important;
+    font-size:11px !important;
+    color:#64748b !important;
+}
+
+@media (max-width: 1100px){
+    .cr-report-root.cr-validator-workspace .cr-content .candidate-section.cr-multi-record .cr-kv2-wrap{
+        grid-template-columns:1fr !important;
+    }
+}
+@media (max-width: 860px){
+    .cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-kv2-grid,
+    .cr-report-root.cr-validator-workspace .cr-content .candidate-section.cr-single-record .form-grid{
+        grid-template-columns:1fr !important;
+    }
+}
+
+/* Unified 3-column center worksheet grid across all components */
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-kv2-grid{
+    display:grid !important;
+    grid-template-columns:repeat(3, minmax(0, 1fr)) !important;
+    gap:0 !important;
+}
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .form-grid{
+    display:grid !important;
+    grid-template-columns:repeat(3, minmax(0, 1fr)) !important;
+    gap:0 !important;
+}
+
+/* Default cell rhythm */
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-kv2-cell,
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .form-control{
+    padding:10px 16px !important;
+    border-bottom:1px solid #eef2f7 !important;
+}
+
+/* Medium fields can span two columns (document/file style cells) */
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-kv2-cell:has(.cr-doc-uploadbox){
+    grid-column:span 2;
+}
+
+/* Long fields and narrative sections span full width */
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-kv2-cell:has(.cr-doc-uploadbox) + .cr-kv2-cell:has(.cr-doc-uploadbox){
+    grid-column:1 / -1;
+}
+.cr-report-root.cr-validator-workspace .cr-content #section-contact .form-control:has(#cv_contact_current_address),
+.cr-report-root.cr-validator-workspace .cr-content #section-contact .form-control:has(#cv_contact_permanent_address),
+.cr-report-root.cr-validator-workspace .cr-content #section-socialmedia .form-control:has(#cv_social_content),
+.cr-report-root.cr-validator-workspace .cr-content #section-ecourt .form-control:has(#cv_ecourt_comments),
+.cr-report-root.cr-validator-workspace .cr-content #section-ecourt .form-control:has(#cv_ecourt_current_address),
+.cr-report-root.cr-validator-workspace .cr-content #section-ecourt .form-control:has(#cv_ecourt_permanent_address),
+.cr-report-root.cr-validator-workspace .cr-content #section-reports .form-control:has(#cv_auth_signature),
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-remarks,
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-comp-tools{
+    grid-column:1 / -1 !important;
+}
+
+/* Keep labels above values consistently */
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .form-control label,
+.cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-kv2-k{
+    display:block;
+    margin-bottom:4px !important;
+}
+
+/* Responsive behavior */
+@media (max-width: 1280px){
+    .cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-kv2-grid,
+    .cr-report-root.cr-validator-workspace .cr-content .candidate-section .form-grid{
+        grid-template-columns:repeat(2, minmax(0, 1fr)) !important;
+    }
+}
+@media (max-width: 860px){
+    .cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-kv2-grid,
+    .cr-report-root.cr-validator-workspace .cr-content .candidate-section .form-grid{
+        grid-template-columns:1fr !important;
+    }
+    .cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-kv2-cell:has(.cr-doc-uploadbox){
+        grid-column:1 / -1 !important;
+    }
+}
+.cr-report-root.cr-validator-workspace .cr-secbar{
+    border-radius:10px 10px 0 0 !important;
+    border:0 !important;
+    border-bottom:1px solid #e5e7eb !important;
+    background:#fcfcfd !important;
+    padding:12px 14px !important;
+}
+.cr-report-root.cr-validator-workspace .candidate-section > .form-grid,
+.cr-report-root.cr-validator-workspace .candidate-section > div[id$="_table"]{
+    padding:16px !important;
+    margin-top:0 !important;
+}
+.cr-report-root.cr-validator-workspace .cr-kv2-wrap{
+    border:1px solid #e5e7eb !important;
+    border-radius:10px !important;
+    box-shadow:none !important;
+}
+
+/* Component list density + active state */
+.cr-report-root.cr-validator-workspace .cr-nav{gap:8px !important;}
+.cr-report-root.cr-validator-workspace .cr-nav .list-group-item{
+    border:1px solid #e5e7eb !important;
+    border-radius:10px !important;
+    padding:10px 12px !important;
+    min-height:52px !important;
+    background:#fff !important;
+}
+.cr-report-root.cr-validator-workspace .cr-nav .list-group-item.active{
+    border-color:#2563eb !important;
+    background:rgba(37,99,235,0.06) !important;
+    box-shadow:inset 3px 0 0 #2563eb !important;
+}
+
+/* Utility right rail as connected tabbed zone */
+.cr-report-root.cr-validator-workspace .cr-utility-panel{
+    border:0 !important;
+    border-radius:0 !important;
+    box-shadow:none !important;
+    padding:0 !important;
+    margin:0 !important;
+    background:#fff !important;
+}
+.cr-report-root.cr-validator-workspace .cr-util-tabs{
+    position:sticky;
+    top:0;
+    z-index:5;
+    display:grid;
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    margin:0;
+    border-bottom:1px solid #e5e7eb;
+    background:#fff;
+}
+.cr-report-root.cr-validator-workspace .cr-util-tabs .nav-item{margin:0;}
+.cr-report-root.cr-validator-workspace .cr-util-tabs .nav-link{
+    width:100%;
+    border:0;
+    border-right:1px solid #e5e7eb;
+    border-radius:0;
+    padding:10px 8px;
+    font-size:12px;
+    font-weight:700;
+    color:#6b7280;
+    background:#fff;
+}
+.cr-report-root.cr-validator-workspace .cr-util-tabs .nav-item:last-child .nav-link{
+    border-right:0;
+}
+.cr-report-root.cr-validator-workspace .cr-util-tabs .nav-link.active{
+    color:#0f172a;
+    background:#f8fafc;
+    box-shadow:inset 0 -2px 0 #2563eb;
+}
+.cr-report-root.cr-validator-workspace .cr-util-content{
+    padding:16px;
+}
+.cr-report-root.cr-validator-workspace .cr-util-scroll{
+    max-height:360px;
+    overflow:auto;
+    border:1px solid #e5e7eb;
+    border-radius:10px;
+    padding:10px;
+    background:#f9fafb;
+}
+
+/* Dynamic tools block style */
+.cr-comp-tools{
+    margin-top:20px !important;
+    padding:14px !important;
+    border-radius:10px !important;
+    background:#f9fafb !important;
+    border:1px solid #e5e7eb !important;
+    box-shadow:none !important;
+}
+
+/* Action hierarchy */
+.cr-report-root.cr-validator-workspace #cvValidatorActionApprove{
+    background:#16a34a !important;
+    border:1px solid #15803d !important;
+    color:#fff !important;
+}
+.cr-report-root.cr-validator-workspace #cvValidatorActionReject{
+    background:#dc2626 !important;
+    border:1px solid #b91c1c !important;
+    color:#fff !important;
+}
+.cr-report-root.cr-validator-workspace #cvValidatorActionHold{
+    background:#f3f4f6 !important;
+    border:1px solid #d1d5db !important;
+    color:#111827 !important;
+}
+.cr-report-root.cr-validator-workspace #cvValidatorActionInsufficient{
+    background:#ffffff !important;
+    border:1px solid #d1d5db !important;
+    color:#374151 !important;
+}
+
+/* Keep only integrated utility rail on right for this cockpit */
+.cr-report-root.cr-validator-workspace .cr-docbar{
+    display:none !important;
+}
+
+/* Compact enterprise density */
+.cr-report-root.cr-validator-workspace .cr-case-actions-head,
+.cr-report-root.cr-validator-workspace .cr-sidebar-title{
+    font-size:11px !important;
+    letter-spacing:.08em !important;
+    text-transform:uppercase !important;
+    color:#6b7280 !important;
+    font-weight:800 !important;
+}
+
+@media (max-width: 1280px){
+    .cr-report-root.cr-validator-workspace .cr-shell.cr-layout.cr-page{
+        grid-template-columns:230px minmax(0,1fr) 300px;
+    }
+}
+@media (max-width: 1080px){
+    .cr-report-root.cr-validator-workspace .cr-shell.cr-layout.cr-page{
+        grid-template-columns:220px minmax(0,1fr);
+    }
+    .cr-report-root.cr-validator-workspace .cr-right{
+        grid-column:1 / -1;
+        border-left:0;
+        border-top:1px solid #e5e7eb;
+        max-height:none;
+    }
+}
+@media (max-width: 860px){
+    .cr-report-root.cr-validator-workspace .cr-shell.cr-layout.cr-page{
+        grid-template-columns:1fr;
+    }
+    .cr-report-root.cr-validator-workspace .cr-sections{
+        position:relative;
+        top:auto;
+        max-height:none;
+        border-right:0 !important;
+        border-bottom:1px solid #e5e7eb !important;
+    }
+    .cr-report-root.cr-validator-workspace .cr-content,
+    .cr-report-root.cr-validator-workspace .cr-right{
+        max-height:none;
+        overflow-y:visible;
+    }
+}
 @media (max-width: 900px){
     .cv-docviewer-modal{
         top:12px;
@@ -2353,7 +3139,11 @@ ob_start();
     }
 }
 </style>
-<div class="card cr-report-root cr-role-<?php echo htmlspecialchars($role); ?><?php echo $isPrint ? ' cr-print' : ''; ?><?php echo (in_array($role, ['validator', 'verifier'], true) && !$isPrint && !$isEmbed) ? ' cr-validator-workspace' : ''; ?>" data-ui-ready="<?php echo $isPrint ? '1' : '0'; ?>">
+<?php
+$workspaceRoles = in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true);
+$enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 'qa' || $role === 'team_lead');
+?>
+<div class="card cr-report-root cr-role-<?php echo htmlspecialchars($role); ?><?php echo $isPrint ? ' cr-print' : ''; ?><?php echo $enableWorkspaceClass ? ' cr-validator-workspace' : ''; ?>" data-ui-ready="<?php echo $isPrint ? '1' : '0'; ?>">
     <!-- <h3>Candidate Report</h3>
     <p class="card-subtitle">Individual candidate report with quick navigation across all verification sections.</p> -->
 
@@ -2432,12 +3222,12 @@ ob_start();
                     <button type="button" class="cr-action-btn" id="cvOpenMailModal">Mail</button>
                     <button type="button" class="cr-action-btn" id="cvPrintLetterBtn">Print Letter</button>
                 <?php endif; ?>
-                <button type="button" class="cr-action-btn cr-icon" id="cvOpenTimelineModal" title="Timeline" aria-label="Timeline">
+                <!-- <button type="button" class="cr-action-btn cr-icon" id="cvOpenTimelineModal" title="Timeline" aria-label="Timeline">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <path d="M3 12a9 9 0 1 0 9-9" />
                         <path d="M12 7v5l3 2" />
                     </svg>
-                </button>
+                </button> -->
             </div>
         </div>
     </div>
@@ -2446,16 +3236,16 @@ ob_start();
         <div class="cr-compnav-title">Components</div>
         <div id="cvComponentNavItems" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
     </div>
-    <?php if (in_array($role, ['validator', 'verifier'], true) && !$isPrint && !$isEmbed): ?>
+    <!-- <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
     <div class="cr-review-tabs" id="cvReviewTabs" aria-label="Review Sections">
         <button type="button" class="cr-review-tab" data-review-section="id">Identification</button>
         <button type="button" class="cr-review-tab" data-review-section="education">Education</button>
         <button type="button" class="cr-review-tab" data-review-section="employment">Employment</button>
     </div>
-    <?php endif; ?>
+    <?php endif; ?> -->
 
-    <div class="cr-shell cr-layout">
-        <aside class="cr-sidebar cr-validator-nav">
+    <div class="cr-shell cr-layout cr-page">
+        <aside class="cr-sidebar cr-validator-nav cr-sections">
             <div class="cr-sidebar-title">Sections</div>
             <div class="cr-nav" style="font-size:13px;">
                 <button type="button" class="list-group-item active" data-section="basic" style="text-align:left;">
@@ -2559,8 +3349,8 @@ ob_start();
                 </button>
             </div>
         </aside>
-        <div class="cr-main cr-content">
-            <?php if (in_array($role, ['validator', 'verifier'], true) && !$isPrint && !$isEmbed): ?>
+        <main class="cr-main cr-content">
+            <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
                 <div class="cr-upload-inline">
                     <h3>Upload Documents</h3>
 
@@ -2609,6 +3399,18 @@ ob_start();
                 </div>
             <?php endif; ?>
 
+            <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
+                <div class="cr-review-actionbar" id="crReviewActionbar">
+                    <div class="cr-review-actionbar-title">Section Actions</div>
+                    <div class="cr-validator-action-grid">
+                        <button type="button" class="cr-action-btn" id="cvValidatorActionInsufficient">Need Docs</button>
+                        <button type="button" class="cr-action-btn cr-dark" id="cvValidatorActionHold">Hold</button>
+                        <button type="button" class="cr-action-btn cr-danger" id="cvValidatorActionReject">Reject</button>
+                        <button type="button" class="cr-action-btn cr-ok" id="cvValidatorActionApprove">Approve</button>
+                    </div>
+                </div>
+            <?php endif; ?>
+
             <div class="cr-sections-scroll" id="crSectionsScroll">
                 <?php if ($isPrint): ?>
                     <div class="card cr-panel" style="margin-bottom:12px;">
@@ -2620,19 +3422,27 @@ ob_start();
                         <div id="cvPrintAllDocs" style="margin-top:10px;"></div>
                     </div>
                 <?php endif; ?>
-                <div class="card candidate-section cr-panel" id="section-basic" style="margin-top:12px; display:none;">
+                <div class="card candidate-section cr-panel cr-single-record" id="section-basic" style="margin-top:12px; display:none;">
                     <div class="cr-secbar">
                         <div class="cr-secbar-titleblock">
                             <div class="cr-secbar-icon">BD</div>
                             <div class="cr-secbar-copy">
                                 <div class="cr-secbar-title">Basic Details</div>
-                                <div class="cr-secbar-sub">Candidate submitted personal information</div>
+                                <!-- <div class="cr-secbar-sub">Candidate submitted personal information</div> -->
                             </div>
                         </div>
                         <div class="cr-secbar-meta" id="cvSectionTatBasic"></div>
+                        <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
+                        <div class="cr-secbar-actions" aria-label="Section Actions">
+                            <button type="button" class="cr-sec-action need-docs" data-proxy-action="insufficient_documents">Need Docs</button>
+                            <button type="button" class="cr-sec-action hold" data-proxy-action="hold">Hold</button>
+                            <button type="button" class="cr-sec-action reject" data-proxy-action="reject">Reject</button>
+                            <button type="button" class="cr-sec-action approve" data-proxy-action="approve">Approve</button>
+                        </div>
+                        <?php endif; ?>
                     </div>
                     <div id="cv_basic_table" style="margin-top:10px;"></div>
-                    <?php if (in_array($role, ['validator', 'verifier'], true) && !$isPrint && !$isEmbed): ?>
+                    <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
                         <div class="cr-remarks">
                             <label>Comments / Remarks</label>
                             <textarea id="cvRemarksBasic" rows="2" placeholder="Enter comments..." style="width:100%; resize:vertical;"></textarea>
@@ -2643,19 +3453,27 @@ ob_start();
                     <?php endif; ?>
                 </div>
 
-                <div class="card candidate-section cr-panel" id="section-id" style="margin-top:12px; display:none;">
+                <div class="card candidate-section cr-panel cr-multi-record" id="section-id" style="margin-top:12px; display:none;">
                     <div class="cr-secbar">
                         <div class="cr-secbar-titleblock">
                             <div class="cr-secbar-icon">ID</div>
                             <div class="cr-secbar-copy">
                                 <div class="cr-secbar-title">Identification</div>
-                                <div class="cr-secbar-sub">Government ID details and supporting documents</div>
+                                <!-- <div class="cr-secbar-sub">Government ID details and supporting documents</div> -->
                             </div>
                         </div>
                         <div class="cr-secbar-meta" id="cvSectionTatId"></div>
+                        <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
+                        <div class="cr-secbar-actions" aria-label="Section Actions">
+                            <button type="button" class="cr-sec-action need-docs" data-proxy-action="insufficient_documents">Need Docs</button>
+                            <button type="button" class="cr-sec-action hold" data-proxy-action="hold">Hold</button>
+                            <button type="button" class="cr-sec-action reject" data-proxy-action="reject">Reject</button>
+                            <button type="button" class="cr-sec-action approve" data-proxy-action="approve">Approve</button>
+                        </div>
+                        <?php endif; ?>
                     </div>
                     <div id="cv_identification_table" style="margin-top:10px;"></div>
-                    <?php if (in_array($role, ['validator', 'verifier'], true) && !$isPrint && !$isEmbed): ?>
+                    <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
                         <div class="cr-remarks">
                             <label>Comments / Remarks</label>
                             <textarea id="cvRemarksId" rows="2" placeholder="Enter comments..." style="width:100%; resize:vertical;"></textarea>
@@ -2666,16 +3484,24 @@ ob_start();
                     <?php endif; ?>
                 </div>
 
-                <div class="card candidate-section cr-panel" id="section-contact" style="margin-top:12px; display:none;">
+                <div class="card candidate-section cr-panel cr-single-record" id="section-contact" style="margin-top:12px; display:none;">
                     <div class="cr-secbar">
                         <div class="cr-secbar-titleblock">
                             <div class="cr-secbar-icon">CT</div>
                             <div class="cr-secbar-copy">
                                 <div class="cr-secbar-title">Contact Information</div>
-                                <div class="cr-secbar-sub">Current and permanent address information</div>
+                                <!-- <div class="cr-secbar-sub">Current and permanent address information</div> -->
                             </div>
                         </div>
                         <div class="cr-secbar-meta" id="cvSectionTatContact"></div>
+                        <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
+                        <div class="cr-secbar-actions" aria-label="Section Actions">
+                            <button type="button" class="cr-sec-action need-docs" data-proxy-action="insufficient_documents">Need Docs</button>
+                            <button type="button" class="cr-sec-action hold" data-proxy-action="hold">Hold</button>
+                            <button type="button" class="cr-sec-action reject" data-proxy-action="reject">Reject</button>
+                            <button type="button" class="cr-sec-action approve" data-proxy-action="approve">Approve</button>
+                        </div>
+                        <?php endif; ?>
                     </div>
                     <div class="form-grid" style="margin-top:10px;">
                         <div class="form-control">
@@ -2695,7 +3521,7 @@ ob_start();
                             <input type="text" id="cv_contact_proof_file" value="" disabled>
                         </div>
 
-                        <?php if (in_array($role, ['validator', 'verifier'], true) && !$isPrint && !$isEmbed): ?>
+                        <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
                             <div class="form-control" style="grid-column:1/-1;">
                                 <div class="cr-remarks">
                                     <label>Comments / Remarks</label>
@@ -2709,19 +3535,27 @@ ob_start();
                     </div>
                 </div>
 
-                <div class="card candidate-section cr-panel" id="section-education" style="margin-top:12px; display:none;">
+                <div class="card candidate-section cr-panel cr-multi-record" id="section-education" style="margin-top:12px; display:none;">
                     <div class="cr-secbar">
                         <div class="cr-secbar-titleblock">
                             <div class="cr-secbar-icon">ED</div>
                             <div class="cr-secbar-copy">
                                 <div class="cr-secbar-title">Education Details</div>
-                                <div class="cr-secbar-sub">Academic history, institutions, and certificates</div>
+                                <!-- <div class="cr-secbar-sub">Academic history, institutions, and certificates</div> -->
                             </div>
                         </div>
                         <div class="cr-secbar-meta" id="cvSectionTatEducation"></div>
+                        <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
+                        <div class="cr-secbar-actions" aria-label="Section Actions">
+                            <button type="button" class="cr-sec-action need-docs" data-proxy-action="insufficient_documents">Need Docs</button>
+                            <button type="button" class="cr-sec-action hold" data-proxy-action="hold">Hold</button>
+                            <button type="button" class="cr-sec-action reject" data-proxy-action="reject">Reject</button>
+                            <button type="button" class="cr-sec-action approve" data-proxy-action="approve">Approve</button>
+                        </div>
+                        <?php endif; ?>
                     </div>
                     <div id="cv_education_table" style="margin-top:10px;"></div>
-                    <?php if (in_array($role, ['validator', 'verifier'], true) && !$isPrint && !$isEmbed): ?>
+                    <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
                         <div class="cr-remarks">
                             <label>Comments / Remarks</label>
                             <textarea id="cvRemarksEducation" rows="2" placeholder="Enter comments..." style="width:100%; resize:vertical;"></textarea>
@@ -2732,19 +3566,27 @@ ob_start();
                     <?php endif; ?>
                 </div>
 
-                <div class="card candidate-section cr-panel" id="section-employment" style="margin-top:12px; display:none;">
+                <div class="card candidate-section cr-panel cr-multi-record" id="section-employment" style="margin-top:12px; display:none;">
                     <div class="cr-secbar">
                         <div class="cr-secbar-titleblock">
                             <div class="cr-secbar-icon">EM</div>
                             <div class="cr-secbar-copy">
                                 <div class="cr-secbar-title">Employment Details</div>
-                                <div class="cr-secbar-sub">Employer history, tenure, and proof documents</div>
+                                <!-- <div class="cr-secbar-sub">Employer history, tenure, and proof documents</div> -->
                             </div>
                         </div>
                         <div class="cr-secbar-meta" id="cvSectionTatEmployment"></div>
+                        <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
+                        <div class="cr-secbar-actions" aria-label="Section Actions">
+                            <button type="button" class="cr-sec-action need-docs" data-proxy-action="insufficient_documents">Need Docs</button>
+                            <button type="button" class="cr-sec-action hold" data-proxy-action="hold">Hold</button>
+                            <button type="button" class="cr-sec-action reject" data-proxy-action="reject">Reject</button>
+                            <button type="button" class="cr-sec-action approve" data-proxy-action="approve">Approve</button>
+                        </div>
+                        <?php endif; ?>
                     </div>
                     <div id="cv_employment_table" style="margin-top:10px;"></div>
-                    <?php if (in_array($role, ['validator', 'verifier'], true) && !$isPrint && !$isEmbed): ?>
+                    <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
                         <div class="cr-remarks">
                             <label>Comments / Remarks</label>
                             <textarea id="cvRemarksEmployment" rows="2" placeholder="Enter comments..." style="width:100%; resize:vertical;"></textarea>
@@ -2755,16 +3597,24 @@ ob_start();
                     <?php endif; ?>
                 </div>
 
-                <div class="card candidate-section cr-panel" id="section-reference" style="margin-top:12px; display:none;">
+                <div class="card candidate-section cr-panel cr-single-record" id="section-reference" style="margin-top:12px; display:none;">
                     <div class="cr-secbar">
                         <div class="cr-secbar-titleblock">
                             <div class="cr-secbar-icon">RF</div>
                             <div class="cr-secbar-copy">
                                 <div class="cr-secbar-title">Reference</div>
-                                <div class="cr-secbar-sub">Professional reference and relationship details</div>
+                                <!-- <div class="cr-secbar-sub">Professional reference and relationship details</div> -->
                             </div>
                         </div>
                         <div class="cr-secbar-meta" id="cvSectionTatReference"></div>
+                        <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
+                        <div class="cr-secbar-actions" aria-label="Section Actions">
+                            <button type="button" class="cr-sec-action need-docs" data-proxy-action="insufficient_documents">Need Docs</button>
+                            <button type="button" class="cr-sec-action hold" data-proxy-action="hold">Hold</button>
+                            <button type="button" class="cr-sec-action reject" data-proxy-action="reject">Reject</button>
+                            <button type="button" class="cr-sec-action approve" data-proxy-action="approve">Approve</button>
+                        </div>
+                        <?php endif; ?>
                     </div>
                     <div class="form-grid" style="margin-top:10px;">
                         <div class="form-control">
@@ -2796,7 +3646,7 @@ ob_start();
                             <input type="text" id="cv_reference_years_known" value="" disabled>
                         </div>
 
-                        <?php if (in_array($role, ['validator', 'verifier'], true) && !$isPrint && !$isEmbed): ?>
+                        <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
                             <div class="form-control" style="grid-column:1/-1;">
                                 <div class="cr-remarks">
                                     <label>Comments / Remarks</label>
@@ -2810,16 +3660,24 @@ ob_start();
                     </div>
                 </div>
 
-                <div class="card candidate-section cr-panel" id="section-socialmedia" style="margin-top:12px; display:none;">
+                <div class="card candidate-section cr-panel cr-single-record" id="section-socialmedia" style="margin-top:12px; display:none;">
                     <div class="cr-secbar">
                         <div class="cr-secbar-titleblock">
                             <div class="cr-secbar-icon">SM</div>
                             <div class="cr-secbar-copy">
                                 <div class="cr-secbar-title">Social Media</div>
-                                <div class="cr-secbar-sub">Online profile details shared by the candidate</div>
+                                <!-- <div class="cr-secbar-sub">Online profile details shared by the candidate</div> -->
                             </div>
                         </div>
                         <div class="cr-secbar-meta" id="cvSectionTatSocialmedia"></div>
+                        <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
+                        <div class="cr-secbar-actions" aria-label="Section Actions">
+                            <button type="button" class="cr-sec-action need-docs" data-proxy-action="insufficient_documents">Need Docs</button>
+                            <button type="button" class="cr-sec-action hold" data-proxy-action="hold">Hold</button>
+                            <button type="button" class="cr-sec-action reject" data-proxy-action="reject">Reject</button>
+                            <button type="button" class="cr-sec-action approve" data-proxy-action="approve">Approve</button>
+                        </div>
+                        <?php endif; ?>
                     </div>
                     <div class="form-grid" style="margin-top:10px;">
                         <div class="form-control">
@@ -2853,16 +3711,24 @@ ob_start();
                     </div>
                 </div>
 
-                <div class="card candidate-section cr-panel" id="section-ecourt" style="margin-top:12px; display:none;">
+                <div class="card candidate-section cr-panel cr-single-record" id="section-ecourt" style="margin-top:12px; display:none;">
                     <div class="cr-secbar">
                         <div class="cr-secbar-titleblock">
                             <div class="cr-secbar-icon">EC</div>
                             <div class="cr-secbar-copy">
                                 <div class="cr-secbar-title">E-Court</div>
-                                <div class="cr-secbar-sub">Court-related declarations and supporting evidence</div>
+                                <!-- <div class="cr-secbar-sub">Court-related declarations and supporting evidence</div> -->
                             </div>
                         </div>
                         <div class="cr-secbar-meta" id="cvSectionTatEcourt"></div>
+                        <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
+                        <div class="cr-secbar-actions" aria-label="Section Actions">
+                            <button type="button" class="cr-sec-action need-docs" data-proxy-action="insufficient_documents">Need Docs</button>
+                            <button type="button" class="cr-sec-action hold" data-proxy-action="hold">Hold</button>
+                            <button type="button" class="cr-sec-action reject" data-proxy-action="reject">Reject</button>
+                            <button type="button" class="cr-sec-action approve" data-proxy-action="approve">Approve</button>
+                        </div>
+                        <?php endif; ?>
                     </div>
                     <div class="form-grid" style="margin-top:10px;">
                         <div class="form-control">
@@ -2900,16 +3766,24 @@ ob_start();
                     </div>
                 </div>
 
-                <div class="card candidate-section cr-panel" id="section-reports" style="margin-top:12px; display:none;">
+                <div class="card candidate-section cr-panel cr-single-record" id="section-reports" style="margin-top:12px; display:none;">
                     <div class="cr-secbar">
                         <div class="cr-secbar-titleblock">
                             <div class="cr-secbar-icon">RP</div>
                             <div class="cr-secbar-copy">
                                 <div class="cr-secbar-title">Reports</div>
-                                <div class="cr-secbar-sub">Submission milestones and authorization details</div>
+                                <!-- <div class="cr-secbar-sub">Submission milestones and authorization details</div> -->
                             </div>
                         </div>
                         <div class="cr-secbar-meta" id="cvSectionTatReports"></div>
+                        <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
+                        <div class="cr-secbar-actions" aria-label="Section Actions">
+                            <button type="button" class="cr-sec-action need-docs" data-proxy-action="insufficient_documents">Need Docs</button>
+                            <button type="button" class="cr-sec-action hold" data-proxy-action="hold">Hold</button>
+                            <button type="button" class="cr-sec-action reject" data-proxy-action="reject">Reject</button>
+                            <button type="button" class="cr-sec-action approve" data-proxy-action="approve">Approve</button>
+                        </div>
+                        <?php endif; ?>
                     </div>
                     <div class="form-grid" style="margin-top:10px;">
                         <div class="form-control">
@@ -2929,7 +3803,7 @@ ob_start();
                             <input type="text" id="cv_auth_uploaded_at" value="" disabled>
                         </div>
 
-                        <?php if (in_array($role, ['validator', 'verifier'], true) && !$isPrint && !$isEmbed): ?>
+                        <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
                             <div class="form-control" style="grid-column:1/-1;">
                                 <div class="cr-remarks">
                                     <label>Comments / Remarks</label>
@@ -2944,41 +3818,46 @@ ob_start();
                 </div>
 
             </div>
-        </div>
+            <div id="cr-evidence-container"></div>
+        </main>
 
-        <?php if (in_array($role, ['validator', 'verifier'], true) && !$isPrint && !$isEmbed): ?>
-            <aside class="cr-validator-side" aria-label="Validator Review Panel">
-                <div class="cr-case-actions-card">
-                    <div class="cr-case-actions-head">Section Decision</div>
-                    <div class="cr-validator-action-grid">
-                        <button type="button" class="cr-action-btn" id="cvValidatorActionInsufficient">Insufficient Documents</button>
-                        <button type="button" class="cr-action-btn cr-dark" id="cvValidatorActionHold">Hold</button>
-                        <button type="button" class="cr-action-btn cr-danger" id="cvValidatorActionReject">Reject</button>
-                        <button type="button" class="cr-action-btn cr-ok" id="cvValidatorActionApprove">Approve</button>
-                    </div>
-                </div>
-
-                <div class="cr-case-actions-card">
-                    <div class="cr-case-actions-head">Remarks</div>
-                    <div id="cvValidatorRemarksPanel" class="cr-validator-remarks-list">No remarks yet.</div>
-                    <div class="cr-validator-remark-entry">
-                        <textarea id="cvValidatorRemarkText" rows="4" placeholder="Enter section remark..."></textarea>
-                        <div class="cr-validator-remark-actions">
-                            <button type="button" class="btn btn-sm" id="cvValidatorRemarkSave">Save Remark</button>
+        <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
+            <aside class="cr-validator-side cr-right" aria-label="Review Utility Panel">
+                <div class="cr-case-actions-card cr-utility-panel">
+                    <ul class="nav nav-tabs cr-util-tabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#crUtilNotes" type="button" role="tab">Notes</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#crUtilReplies" type="button" role="tab">Replies</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#crUtilAudit" type="button" role="tab">Audit</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#crUtilTimeline" type="button" role="tab">Timeline</button>
+                        </li>
+                    </ul>
+                    <div class="tab-content cr-util-content">
+                        <div class="tab-pane fade show active cr-util-notes" id="crUtilNotes" role="tabpanel">
+                            <div id="cvValidatorRemarksPanel" class="cr-validator-remarks-list">No remarks yet.</div>
+                            <div class="cr-validator-remark-entry">
+                                <textarea id="cvValidatorRemarkText" rows="4" placeholder="Enter section remark..."></textarea>
+                                <div class="cr-validator-remark-actions">
+                                    <button type="button" class="btn btn-sm" id="cvValidatorRemarkSave">Save Remark</button>
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                </div>
-
-                <div class="cr-case-actions-card">
-                    <div class="cr-case-actions-head">Recent Activity</div>
-                    <div id="cvValidatorTimeline" class="cr-validator-timeline">No activity yet.</div>
-                </div>
-
-                <div class="email-replies-container">
-                    <div class="cr-case-actions-card" style="margin-top:12px;">
-                        <div class="cr-case-actions-head"><strong>Email Replies</strong></div>
-                        <div id="emailReplies" class="card-body" style="max-height:250px; overflow-y:auto; background:#fafafa;">
-                            <p style="color:#888; margin:0;">No replies yet</p>
+                        <div class="tab-pane fade" id="crUtilReplies" role="tabpanel">
+                            <div id="emailReplies" class="cr-util-scroll">
+                                <p style="color:#888; margin:0;">No replies yet</p>
+                            </div>
+                        </div>
+                        <div class="tab-pane fade" id="crUtilAudit" role="tabpanel">
+                            <div class="cr-util-scroll" id="cvValidatorAuditTrail">No audit trail yet.</div>
+                        </div>
+                        <div class="tab-pane fade" id="crUtilTimeline" role="tabpanel">
+                            <div id="cvValidatorTimeline" class="cr-validator-timeline">No activity yet.</div>
                         </div>
                     </div>
                 </div>
@@ -3369,8 +4248,252 @@ render_layout('Candidate Report', $roleLabel, $menu, $content);
     window.VR_GROUP = <?php echo json_encode($group); ?>;
 </script>
 
+<script>
+(function () {
+    function enhanceInlineFileRows(root) {
+        var scope = root || document;
+        var links = scope.querySelectorAll('.cr-content .cr-doc-uploadname[href]');
+        if (!links.length) return;
+        links.forEach(function (a) {
+            if (!a || a.dataset.enhancedFileRow === '1') return;
+            a.dataset.enhancedFileRow = '1';
+            var href = String(a.getAttribute('href') || '').trim();
+            if (!href) return;
+
+            var row = a.closest('.cr-doc-uploadrow');
+            if (!row) return;
+            if (row.querySelector('.cr-file-actions')) return;
+
+            var actions = document.createElement('span');
+            actions.className = 'cr-file-actions';
+
+            var preview = document.createElement('button');
+            preview.type = 'button';
+            preview.className = 'cr-file-action';
+            preview.textContent = 'Preview';
+            preview.addEventListener('click', function (ev) {
+                ev.preventDefault();
+                ev.stopPropagation();
+                try {
+                    a.click(); // uses existing custom modal viewer flow via js-cv-doc-view handlers
+                } catch (_e) {}
+            });
+            actions.appendChild(preview);
+
+            var down = document.createElement('a');
+            down.className = 'cr-file-action';
+            down.href = href;
+            down.setAttribute('download', '');
+            down.textContent = 'Download';
+            actions.appendChild(down);
+
+            row.appendChild(actions);
+        });
+    }
+
+    function normalizeRecordTabLabels(root) {
+        var scope = root || document;
+        var tabs = scope.querySelectorAll('.cr-content .cr-record-tab');
+        if (!tabs.length) return;
+        tabs.forEach(function (tab) {
+            var txt = String(tab.textContent || '').trim();
+            if (!txt) return;
+            var m = txt.match(/^(ID|Education|Employment|Reference)\s+(\d+)$/i);
+            if (!m) return;
+            var prefix = m[1];
+            var n = m[2];
+            if (/^id$/i.test(prefix)) prefix = 'ID';
+            else if (/^education$/i.test(prefix)) prefix = 'Education';
+            else if (/^employment$/i.test(prefix)) prefix = 'Employment';
+            else if (/^reference$/i.test(prefix)) prefix = 'Reference';
+            tab.textContent = prefix + n;
+        });
+    }
+
+    function initSectionActionProxy() {
+        var root = document.querySelector('.cr-report-root.cr-validator-workspace');
+        if (!root) return;
+
+        var actionToId = {
+            insufficient_documents: 'cvValidatorActionInsufficient',
+            hold: 'cvValidatorActionHold',
+            reject: 'cvValidatorActionReject',
+            approve: 'cvValidatorActionApprove'
+        };
+        var actionToLabel = {
+            insufficient_documents: 'Need Docs',
+            hold: 'Hold',
+            reject: 'Reject',
+            approve: 'Approve'
+        };
+
+        function getCanonicalButton(action) {
+            var id = actionToId[String(action || '').toLowerCase().trim()];
+            return id ? document.getElementById(id) : null;
+        }
+
+        function syncProxyButtons() {
+            var proxies = document.querySelectorAll('.cr-sec-action[data-proxy-action]');
+            if (!proxies.length) return;
+            proxies.forEach(function (btn) {
+                var action = String(btn.getAttribute('data-proxy-action') || '').toLowerCase().trim();
+                var canonical = getCanonicalButton(action);
+                // Keep proxy actions always available so validators can update decisions later.
+                btn.style.display = '';
+                btn.disabled = false;
+            });
+        }
+
+        document.addEventListener('click', async function (e) {
+            var btn = e.target && e.target.closest ? e.target.closest('.cr-sec-action[data-proxy-action]') : null;
+            if (!btn) return;
+            e.preventDefault();
+            var action = String(btn.getAttribute('data-proxy-action') || '').toLowerCase().trim();
+            if (!action) return;
+
+            // Always prefer the core action handler so reason/confirm dialog logic stays intact.
+            if (typeof window.__CR_RUN_ACTION === 'function') {
+                try {
+                    await window.__CR_RUN_ACTION(action, actionToLabel[action] || action);
+                } catch (_e) {}
+
+                // After Need Docs, open existing mail flow (when available) to notify candidate.
+                if (action === 'insufficient_documents') {
+                    window.__CR_MAIL_PREFILL_NEED_DOCS = true;
+                    var mailBtn = document.getElementById('cvOpenMailModal');
+                    if (mailBtn) {
+                        setTimeout(function () { mailBtn.click(); }, 120);
+                    } else {
+                        var mailModal = document.getElementById('cvMailModal');
+                        if (mailModal && window.bootstrap && window.bootstrap.Modal) {
+                            setTimeout(function () {
+                                try {
+                                    window.bootstrap.Modal.getOrCreateInstance(mailModal).show();
+                                } catch (_e2) {}
+                            }, 120);
+                        }
+                    }
+                }
+                return;
+            }
+
+            // Absolute fallback if action runtime has not been initialized yet.
+            var canonical = getCanonicalButton(action);
+            if (canonical) {
+                canonical.click();
+            }
+        });
+
+        Object.keys(actionToId).forEach(function (key) {
+            var canonical = getCanonicalButton(key);
+            if (!canonical) return;
+            if (canonical.dataset.proxyObserved === '1') return;
+            canonical.dataset.proxyObserved = '1';
+            try {
+                var obs = new MutationObserver(function () { syncProxyButtons(); });
+                obs.observe(canonical, { attributes: true, attributeFilter: ['disabled', 'style', 'class'] });
+            } catch (_e) {}
+        });
+
+        document.addEventListener('cv:section-changed', syncProxyButtons);
+        document.addEventListener('cv:record-tab-changed', function () {
+            syncProxyButtons();
+            normalizeRecordTabLabels();
+            enhanceInlineFileRows();
+        });
+        syncProxyButtons();
+        normalizeRecordTabLabels();
+        enhanceInlineFileRows();
+        setTimeout(syncProxyButtons, 250);
+        setTimeout(normalizeRecordTabLabels, 250);
+        setTimeout(enhanceInlineFileRows, 250);
+        setTimeout(syncProxyButtons, 1000);
+        setTimeout(normalizeRecordTabLabels, 1000);
+        setTimeout(enhanceInlineFileRows, 1000);
+
+        try {
+            var obs = new MutationObserver(function () {
+                normalizeRecordTabLabels(root);
+                enhanceInlineFileRows(root);
+            });
+            var watchIds = ['cv_identification_table', 'cv_education_table', 'cv_employment_table'];
+            watchIds.forEach(function (id) {
+                var el = document.getElementById(id);
+                if (el) obs.observe(el, { childList: true, subtree: true });
+            });
+        } catch (_e) {}
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initSectionActionProxy);
+    } else {
+        initSectionActionProxy();
+    }
+})();
+</script>
+
+<script>
+(function () {
+    function wireNeedDocsTemplateAutoselect() {
+        var modal = document.getElementById('cvMailModal');
+        var tplSel = document.getElementById('cvMailTemplateSelect');
+        if (!modal || !tplSel || modal.dataset.needDocsTemplateBound === '1') return;
+        modal.dataset.needDocsTemplateBound = '1';
+
+        function pickNeedDocsTemplate() {
+            if (!window.__CR_MAIL_PREFILL_NEED_DOCS) return;
+            var options = Array.prototype.slice.call(tplSel.options || []);
+            if (!options.length) return;
+
+            var best = null;
+            var bestScore = -1;
+            options.forEach(function (opt) {
+                var v = String(opt.value || '').trim();
+                if (!v) return;
+                var txt = String(opt.textContent || '').toLowerCase();
+                var score = 0;
+                if (txt.indexOf('insufficient') !== -1) score += 7;
+                if (txt.indexOf('need docs') !== -1) score += 6;
+                if (txt.indexOf('need documents') !== -1) score += 6;
+                if (txt.indexOf('missing') !== -1) score += 4;
+                if (txt.indexOf('document') !== -1) score += 3;
+                if (txt.indexOf('candidate') !== -1) score += 1;
+                if (score > bestScore) {
+                    best = opt;
+                    bestScore = score;
+                }
+            });
+
+            if (best && bestScore > 0) {
+                tplSel.value = String(best.value || '');
+                try {
+                    tplSel.dispatchEvent(new Event('change', { bubbles: true }));
+                } catch (_e) {
+                    var ev = document.createEvent('Event');
+                    ev.initEvent('change', true, true);
+                    tplSel.dispatchEvent(ev);
+                }
+            }
+            window.__CR_MAIL_PREFILL_NEED_DOCS = false;
+        }
+
+        modal.addEventListener('shown.bs.modal', function () {
+            setTimeout(pickNeedDocsTemplate, 60);
+            setTimeout(pickNeedDocsTemplate, 240);
+        });
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', wireNeedDocsTemplateAutoselect);
+    } else {
+        wireNeedDocsTemplateAutoselect();
+    }
+})();
+</script>
+
 <?php if (in_array($role, ['validator', 'verifier'], true) && !$isPrint && !$isEmbed && $fullscreen): ?>
 <script>
     try { document.body.classList.add('cr-fullscreen-validator'); } catch (e) {}
 </script>
 <?php endif; ?>
+

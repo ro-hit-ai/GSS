@@ -63,15 +63,19 @@ function enforce_client_admin_application_scope(PDO $pdo, string $applicationId)
 
 function resolve_replies_table(PDO $pdo): string
 {
-    $table = 'GSS_Email_Replies';
-
-    $st = $pdo->query("SHOW TABLES LIKE 'GSS_Email_Replies'");
-    
-    if ($st && $st->fetchColumn()) {
-        return $table;
+    $candidates = ['GSS_Email_Replies', 'email_replies'];
+    $stmt = $pdo->prepare(
+        'SELECT 1 FROM information_schema.tables '
+        . 'WHERE table_schema = DATABASE() AND table_name = ? LIMIT 1'
+    );
+    foreach ($candidates as $table) {
+        $stmt->execute([$table]);
+        if ($stmt->fetchColumn()) {
+            return $table;
+        }
     }
 
-    throw new RuntimeException('Replies table not found: GSS_Email_Replies');
+    throw new RuntimeException('Replies table not found: GSS_Email_Replies or email_replies');
 }
 
 function ensure_required_columns(PDO $pdo, string $table): void

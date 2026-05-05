@@ -46,6 +46,34 @@ function submission_mail_debug_log(string $message): void
     @error_log($line);
 }
 
+function markCandidateWorkflowSubmitted(PDO $pdo, string $applicationId): int
+{
+    $stmt = $pdo->prepare(
+        "UPDATE Vati_Payfiller_Case_Component_Workflow
+         SET status = 'completed',
+             completed_at = COALESCE(completed_at, NOW()),
+             updated_at = NOW(),
+             updated_by_role = 'candidate'
+         WHERE application_id = ?
+           AND LOWER(TRIM(stage)) = 'candidate'"
+    );
+    $stmt->execute([$applicationId]);
+    return (int)$stmt->rowCount();
+}
+
+function ensureValidatorWorkflowPending(PDO $pdo, string $applicationId): int
+{
+    $stmt = $pdo->prepare(
+        "UPDATE Vati_Payfiller_Case_Component_Workflow
+         SET status = 'pending',
+             updated_at = NOW()
+         WHERE application_id = ?
+           AND LOWER(TRIM(stage)) = 'validator'"
+    );
+    $stmt->execute([$applicationId]);
+    return (int)$stmt->rowCount();
+}
+
 try {
 
     if (empty($_SESSION['application_id'])) {
@@ -61,25 +89,31 @@ try {
 
     $pdo->query("SELECT 1");
 
-   // Check application exists in the actual Payfiller applications table
-    $stmt = $pdo->prepare("
-        SELECT application_id
-        FROM Vati_Payfiller_Candidate_Applications
-        WHERE application_id = ?
-    ");
-    $stmt->execute([$application_id]);
+    // Ensure candidate application lifecycle row exists; submit action must be idempotent.
+    $caseMetaStmt = $pdo->prepare(
+        "SELECT candidate_first_name, candidate_middle_name, candidate_last_name
+         FROM Vati_Payfiller_Cases
+         WHERE application_id = ?
+         LIMIT 1"
+    );
+    $caseMetaStmt->execute([$application_id]);
+    $caseMeta = $caseMetaStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $candidateName = trim(
+        (string)($caseMeta['candidate_first_name'] ?? '') . ' '
+        . (string)($caseMeta['candidate_middle_name'] ?? '') . ' '
+        . (string)($caseMeta['candidate_last_name'] ?? '')
+    );
 
-    if ($stmt->rowCount() === 0) {
-        throw new Exception("No application found with ID: $application_id");
-    }
-
-    $update = $pdo->prepare("
-        UPDATE Vati_Payfiller_Candidate_Applications
-        SET status = 'submitted',
-            submitted_at = NOW()
-        WHERE application_id = ?
-    ");
-    $update->execute([$application_id]);
+    $upsert = $pdo->prepare(
+        "INSERT INTO Vati_Payfiller_Candidate_Applications
+            (application_id, candidate_name, status, submitted_at, created_at, updated_at)
+         VALUES (?, ?, 'submitted', NOW(), NOW(), NOW())
+         ON DUPLICATE KEY UPDATE
+            status = 'submitted',
+            submitted_at = COALESCE(submitted_at, VALUES(submitted_at)),
+            updated_at = NOW()"
+    );
+    $upsert->execute([$application_id, $candidateName]);
 
     // Best-effort: enqueue into validator queue (if this application maps to a Payfiller case)
     try {
@@ -128,9 +162,24 @@ try {
             } catch (Throwable $e) {
                 // ignore
             }
+
         }
     } catch (Throwable $e) {
         // ignore
+    }
+
+    // Finalize candidate-stage workflow statuses once per submit request.
+    try {
+        $wfAffected = markCandidateWorkflowSubmitted($pdo, $application_id);
+        $validatorReady = ensureValidatorWorkflowPending($pdo, $application_id);
+        if ($wfAffected <= 0) {
+            submission_mail_debug_log('candidate workflow transition: 0 rows updated; application_id=' . $application_id);
+        } else {
+            submission_mail_debug_log('candidate workflow transition: rows updated=' . $wfAffected . '; application_id=' . $application_id);
+        }
+        submission_mail_debug_log('validator workflow ready: rows updated=' . $validatorReady . '; application_id=' . $application_id);
+    } catch (Throwable $e) {
+        submission_mail_debug_log('candidate workflow transition: exception=' . $e->getMessage() . '; application_id=' . $application_id);
     }
 
     try {

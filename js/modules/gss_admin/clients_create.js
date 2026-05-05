@@ -44,6 +44,44 @@ document.addEventListener('DOMContentLoaded', function () {
     var sowPdfPathField = document.getElementById('sowPdfPathField');
     var sowPdfInput = document.getElementById('sowPdfInput');
     var sowPdfCurrent = document.getElementById('sowPdfCurrent');
+    var toastHost = null;
+
+    function ensureToastHost() {
+        if (toastHost && document.body.contains(toastHost)) return toastHost;
+        if (!document.getElementById('gss-toast-style')) {
+            var st = document.createElement('style');
+            st.id = 'gss-toast-style';
+            st.textContent =
+                '.gss-toast-host{position:fixed;top:16px;right:16px;z-index:1200;display:flex;flex-direction:column;gap:8px;max-width:min(420px,calc(100vw - 20px));}' +
+                '.gss-toast{border-radius:10px;padding:11px 14px;font-size:13px;font-weight:700;border:1px solid transparent;box-shadow:0 10px 25px rgba(2,6,23,.15);opacity:0;transform:translateY(-8px);transition:all .18s ease;}' +
+                '.gss-toast.show{opacity:1;transform:translateY(0);}' +
+                '.gss-toast.success{background:#ecfdf3;color:#065f46;border-color:#a7f3d0;}' +
+                '.gss-toast.danger,.gss-toast.error{background:#fef2f2;color:#991b1b;border-color:#fecaca;}' +
+                '.gss-toast.warning{background:#fffbeb;color:#92400e;border-color:#fde68a;}' +
+                '.gss-toast.info{background:#eff6ff;color:#1e3a8a;border-color:#bfdbfe;}';
+            document.head.appendChild(st);
+        }
+        toastHost = document.createElement('div');
+        toastHost.className = 'gss-toast-host';
+        document.body.appendChild(toastHost);
+        return toastHost;
+    }
+
+    function showToast(text, type) {
+        var msg = String(text || '').trim();
+        if (!msg) return;
+        var host = ensureToastHost();
+        var t = String(type || 'info').toLowerCase().trim();
+        var item = document.createElement('div');
+        item.className = 'gss-toast ' + t;
+        item.textContent = msg;
+        host.appendChild(item);
+        requestAnimationFrame(function () { item.classList.add('show'); });
+        setTimeout(function () {
+            item.classList.remove('show');
+            setTimeout(function () { if (item.parentNode) item.parentNode.removeChild(item); }, 220);
+        }, 3000);
+    }
 
     function getQueryParam(name) {
         try {
@@ -69,13 +107,16 @@ document.addEventListener('DOMContentLoaded', function () {
     var STORAGE_KEY = 'gss_client_create_draft_v1_' + (urlClientId > 0 ? String(urlClientId) : 'new');
 
     function setMessage(text, type) {
+        var msg = (typeof text === 'string') ? text : (text ? JSON.stringify(text) : '');
+        if (msg) showToast(msg, type || 'info');
         if (!messageEl) return;
-        messageEl.textContent = (typeof text === 'string') ? text : (text ? JSON.stringify(text) : '');
-        messageEl.className = type ? ('alert alert-' + type) : '';
-        messageEl.style.display = text ? 'block' : 'none';
+        messageEl.textContent = '';
+        messageEl.className = '';
+        messageEl.style.display = 'none';
     }
 
     function setVerificationMessage(text, type) {
+        if (text) showToast(text, type || 'info');
         if (!verificationMsgEl) return;
         try {
             if (verificationMsgEl.dataset.hideTimer) {
@@ -84,9 +125,9 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         } catch (e) {
         }
-        verificationMsgEl.textContent = text || '';
-        verificationMsgEl.className = type ? ('alert alert-' + type) : 'alert';
-        verificationMsgEl.style.display = text ? 'block' : 'none';
+        verificationMsgEl.textContent = '';
+        verificationMsgEl.className = '';
+        verificationMsgEl.style.display = 'none';
 
         // Auto-hide for non-error messages
         var t = String(type || '');

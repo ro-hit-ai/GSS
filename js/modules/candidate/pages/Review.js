@@ -35,6 +35,23 @@ class Review {
             e.preventDefault();
             await this.submitFinal();
         });
+
+        this.on(document.getElementById('reviewDownloadReportBtn'), 'click', (e) => {
+            e.preventDefault();
+            this.downloadReport();
+        });
+
+        this.on(document.getElementById('filePreviewCloseBtn'), 'click', (e) => {
+            e.preventDefault();
+            this.closePreview();
+        });
+
+        this.on(document.getElementById('candidateReviewContent'), 'click', (e) => {
+            const btn = e.target.closest('[data-preview-url]');
+            if (!btn) return;
+            e.preventDefault();
+            this.previewFile(btn.getAttribute('data-preview-url') || '');
+        });
     }
 
     static getRoot() {
@@ -63,7 +80,11 @@ class Review {
             const base = (window.APP_BASE_URL || '').replace(/\/$/, '');
             const url = `${base}/api/shared/candidate_report_get.php?application_id=${encodeURIComponent(appId)}&t=${Date.now()}`;
             const res = await fetch(url, { credentials: 'same-origin' });
-            const json = await res.json();
+            const json = await res.json().catch(() => null);
+
+            if (res.status === 401) {
+                throw new Error('Session expired. Please login again.');
+            }
 
             if (!json || json.status !== 1 || !json.data) {
                 throw new Error((json && json.message) || 'Unable to load review data.');
@@ -129,55 +150,124 @@ class Review {
         }
     }
 
+    static downloadReport() {
+        const appId = this.getApplicationId();
+        if (!appId) return;
+        const base = (window.APP_BASE_URL || '').replace(/\/$/, '');
+        const url = `${base}/api/candidate/generate_pdf.php?application_id=${encodeURIComponent(appId)}&force_download=1&t=${Date.now()}`;
+        window.open(url, '_blank', 'noopener');
+    }
+
+    static previewFile(url) {
+        const modal = document.getElementById('filePreviewModal');
+        const container = document.getElementById('previewContainer');
+        if (!modal || !container) return;
+
+        const raw = String(url || '').trim();
+        if (!raw) {
+            container.innerHTML = '<p>No file available</p>';
+            modal.style.display = 'block';
+            return;
+        }
+
+        const normalized = raw.replace(/ /g, '%20');
+        const safeUrl = this.escape(normalized);
+        console.log('Preview URL:', normalized);
+        const lower = normalized.toLowerCase().split('?')[0].split('#')[0];
+        if (lower.endsWith('.pdf')) {
+            container.innerHTML = `<iframe src="${safeUrl}" width="100%" height="500px" style="border:0;" onload="this.dataset.loaded='1'"></iframe>`;
+        } else {
+            container.innerHTML = `<img src="${safeUrl}" style="width:100%;max-height:500px;object-fit:contain;" alt="Document Preview" onerror="this.outerHTML='<p>Failed to load file</p>'" />`;
+        }
+        modal.style.display = 'block';
+    }
+
+    static closePreview() {
+        const modal = document.getElementById('filePreviewModal');
+        const container = document.getElementById('previewContainer');
+        if (container) container.innerHTML = '';
+        if (modal) modal.style.display = 'none';
+    }
+
     static renderAll(data) {
-        const sections = [];
+        const visible = Array.isArray(data?.visible_sections)
+            ? data.visible_sections
+            : (Array.isArray(data?.visibleSections) ? data.visibleSections : []);
+        const allowed = new Set(visible.map((s) => String(s || '').toLowerCase().trim()).filter(Boolean));
+        const showByData = (key, value) => {
+            if (allowed.has(key)) return true;
+            if (Array.isArray(value)) return value.length > 0;
+            if (value && typeof value === 'object') {
+                return Object.values(value).some((v) => String(v ?? '').trim() !== '');
+            }
+            return String(value ?? '').trim() !== '';
+        };
+        const output = [];
 
-        sections.push(this.renderSection('Basic Details', this.renderBasic(data.basic, data.contact)));
-        sections.push(this.renderSection('Identification Details', this.renderList(data.identification, (row, index) => [
-            this.kv('Document', `Document ${index + 1}`),
-            this.kv('Type', row.documentId_type || row.document_type),
-            this.kv('ID Number', row.id_number),
-            this.kv('Name on Document', row.name),
-            this.kv('Issue Date', row.issue_date),
-            this.kv('Expiry Date', row.expiry_date),
-            this.kv('Uploaded Document', this.fileName(row.upload_document || row.document_file || row.file_path))
-        ]), 'No identification details added.'));
-        sections.push(this.renderSection('Contact Details', this.renderContact(data.contact)));
-        sections.push(this.renderSection('Education Details', this.renderList(data.education, (row, index) => [
-            this.kv('Qualification', row.qualification),
-            this.kv('College', row.college_name),
-            this.kv('University / Board', row.university_board),
-            this.kv('Roll Number', row.roll_number),
-            this.kv('From Year', row.year_from),
-            this.kv('To Year', row.year_to),
-            this.kv('College Address', row.college_address),
-            this.kv('College Website', row.college_website),
-            this.kv('Marksheet File', this.fileName(row.marksheet_file)),
-            this.kv('Degree File', this.fileName(row.degree_file))
-        ]), 'No education details added.'));
-        sections.push(this.renderSection('Employment Details', this.renderList(data.employment, (row, index) => [
-            this.kv('Employer', row.employer_name),
-            this.kv('Job Title', row.job_title),
-            this.kv('Employee ID', row.employee_id),
-            this.kv('Joining Date', row.joining_date),
-            this.kv('Relieving Date', row.relieving_date),
-            this.kv('Employer Address', row.employer_address),
-            this.kv('Reason for Leaving', row.reason_leaving),
-            this.kv('HR Name', row.hr_manager_name),
-            this.kv('HR Phone', row.hr_manager_phone),
-            this.kv('HR Email', row.hr_manager_email),
-            this.kv('Manager Name', row.manager_name),
-            this.kv('Manager Phone', row.manager_phone),
-            this.kv('Manager Email', row.manager_email),
-            this.kv('Employment Proof', this.fileName(row.employment_doc || row.document_file || row.file_path))
-        ]), 'No employment details added.'));
-        sections.push(this.renderSection('Reference Details', this.renderReference(data.reference)));
-        sections.push(this.renderSection('Social Media', this.renderSocial(data.social_media)));
-        sections.push(this.renderSection('E-Court', this.renderEcourt(data.ecourt)));
-        sections.push(this.renderSection('Authorization', this.renderAuthorization(data.authorization)));
-        sections.push(this.renderSection('Evidence Documents', this.renderEvidence(data), 'No evidence documents uploaded.'));
+        if (showByData('basic', data.basic) || showByData('basic', data.contact)) {
+            output.push(this.renderSection('Basic Details', this.renderBasic(data.basic, data.contact)));
+        }
+        if (showByData('id', data.identification)) {
+            output.push(this.renderSection('Identification Details', this.renderList(data.identification, (row, index) => [
+                this.kv('Document', `Document ${index + 1}`),
+                this.kv('Type', row.documentId_type || row.document_type),
+                this.kv('ID Number', row.id_number),
+                this.kv('Name on Document', row.name),
+                this.kv('Issue Date', row.issue_date),
+                this.kv('Expiry Date', row.expiry_date),
+                this.kvHtml('Uploaded Document', this.renderFile(this.resolveDocUrl(row.upload_document || row.document_file || row.file_path, 'upload_document', 'id'), 'Download Document'))
+            ]), 'No identification details added.'));
+        }
+        if (showByData('contact', data.contact)) {
+            output.push(this.renderSection('Contact Details', this.renderContact(data.contact)));
+        }
+        if (showByData('education', data.education)) {
+            output.push(this.renderSection('Education Details', this.renderList(data.education, (row, index) => [
+                this.kv('Qualification', row.qualification),
+                this.kv('College', row.college_name),
+                this.kv('University / Board', row.university_board),
+                this.kv('Roll Number', row.roll_number),
+                this.kv('From Year', row.year_from),
+                this.kv('To Year', row.year_to),
+                this.kv('College Address', row.college_address),
+                this.kv('College Website', row.college_website),
+                this.kvHtml('Marksheet File', this.renderFile(row.marksheet_url || this.resolveDocUrl(row.marksheet_file, 'marksheet_file', 'education'), 'Download Marksheet')),
+                this.kvHtml('Degree File', this.renderFile(row.degree_url || this.resolveDocUrl(row.degree_file, 'degree_file', 'education'), 'Download Degree'))
+            ]), 'No education details added.'));
+        }
+        if (showByData('employment', data.employment)) {
+            output.push(this.renderSection('Employment Details', this.renderList(data.employment, (row, index) => [
+                this.kv('Employer', row.employer_name),
+                this.kv('Job Title', row.job_title),
+                this.kv('Employee ID', row.employee_id),
+                this.kv('Joining Date', row.joining_date),
+                this.kv('Relieving Date', row.relieving_date),
+                this.kv('Employer Address', row.employer_address),
+                this.kv('Reason for Leaving', row.reason_leaving),
+                this.kv('HR Name', row.hr_manager_name),
+                this.kv('HR Phone', row.hr_manager_phone),
+                this.kv('HR Email', row.hr_manager_email),
+                this.kv('Manager Name', row.manager_name),
+                this.kv('Manager Phone', row.manager_phone),
+                this.kv('Manager Email', row.manager_email),
+                this.kvHtml('Employment Proof', this.renderFile(this.resolveDocUrl(row.employment_doc || row.document_file || row.file_path, 'employment_doc', 'employment'), 'Download Employment Proof'))
+            ]), 'No employment details added.'));
+        }
+        if (showByData('reference', data.reference)) {
+            output.push(this.renderSection('Reference Details', this.renderReference(data.reference)));
+        }
+        if (showByData('socialmedia', data.social_media)) {
+            output.push(this.renderSection('Social Media', this.renderSocial(data.social_media)));
+        }
+        if (showByData('ecourt', data.ecourt)) {
+            output.push(this.renderSection('E-Court', this.renderEcourt(data.ecourt)));
+        }
+        if (showByData('authorization', data.authorization) || showByData('reports', data.authorization)) {
+            output.push(this.renderSection('Authorization', this.renderAuthorization(data.authorization)));
+        }
+        output.push(this.renderSection('Evidence / Uploaded Documents', this.renderEvidence(data), 'No evidence documents uploaded.'));
 
-        return sections.join('');
+        return output.join('');
     }
 
     static renderSection(title, content, emptyText = 'No data available.') {
@@ -228,7 +318,7 @@ class Review {
             this.kv('Permanent Address', this.joinParts([contact.permanent_address1, contact.permanent_address2, contact.permanent_city, contact.permanent_state, contact.permanent_country, contact.permanent_postal_code], ', ')),
             this.kv('Same as Current', this.yesNo(contact.same_as_current)),
             this.kv('Address Proof Type', contact.proof_type),
-            this.kv('Address Proof File', this.fileName(contact.proof_file || contact.address_proof_file))
+            this.kvHtml('Address Proof File', this.renderFile(contact.address_proof_url || this.resolveDocUrl(contact.proof_file || contact.address_proof_file, 'proof_file', 'contact'), 'Download Address Proof'))
         ]);
     }
 
@@ -312,7 +402,7 @@ class Review {
             this.kv('To Date', ecourt.period_to_date),
             this.kv('Duration (Years)', ecourt.period_duration_years),
             this.kv('Date of Birth', ecourt.dob),
-            this.kv('Evidence Document', this.fileName(ecourt.evidence_document))
+            this.kvHtml('Evidence Document', this.renderFile(ecourt.document_url || this.resolveDocUrl(ecourt.evidence_document || ecourt.document, 'evidence_document', 'ecourt'), 'Download Evidence'))
         ]);
     }
 
@@ -321,7 +411,7 @@ class Review {
         return this.renderGrid([
             this.kv('Digital Signature', authorization.digital_signature),
             this.kv('Uploaded At', authorization.uploaded_at),
-            this.kv('Authorization File', this.fileName(authorization.file_name || authorization.authorization_file_name || authorization.auth_file_name))
+            this.kvHtml('Authorization File', this.renderFile(authorization.file_url || this.resolveDocUrl(authorization.file_name || authorization.authorization_file_name || authorization.auth_file_name, 'authorization_file', 'authorization'), 'Download Authorization'))
         ]);
     }
 
@@ -413,7 +503,7 @@ class Review {
                 const uploader = doc.uploadedBy || 'Candidate';
                 const uploadedAt = doc.uploadedAt || '-';
                 const downloadHtml = href
-                    ? `<a class="review-doc-link" href="${this.escape(href)}" target="_blank" rel="noopener">View / Download</a>`
+                    ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-preview-url="${this.escape(href)}">View</button>`
                     : `<span class="review-empty">Unavailable</span>`;
 
                 return `
@@ -461,6 +551,22 @@ class Review {
                 <div class="review-v">${this.escape(text)}</div>
             </div>
         `;
+    }
+
+    static kvHtml(label, htmlValue) {
+        const html = String(htmlValue || '').trim() || '<span class="review-empty">Not provided</span>';
+        return `
+            <div class="review-kv">
+                <div class="review-k">${this.escape(label)}</div>
+                <div class="review-v">${html}</div>
+            </div>
+        `;
+    }
+
+    static renderFile(url, label = 'Download') {
+        const link = String(url || '').trim();
+        if (!link) return '<span class="review-empty">Not uploaded</span>';
+        return `<button type="button" class="btn btn-sm btn-outline-secondary" data-preview-url="${this.escape(link)}">${this.escape(label.replace(/^Download/i, 'View'))}</button>`;
     }
 
     static displayValue(value) {

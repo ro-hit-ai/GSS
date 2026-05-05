@@ -15,6 +15,19 @@ $roleLabel = $isTeamLead ? 'Team Lead' : 'QA';
 $applicationId = isset($_GET['application_id']) ? trim((string)$_GET['application_id']) : '';
 $clientId = isset($_GET['client_id']) ? (int)$_GET['client_id'] : 0;
 
+// Use the shared candidate report directly for QA/TL so layout is identical
+// to validator/verifier (single unified hero + sections + component + remarks).
+if ($applicationId !== '') {
+    $targetRole = $isTeamLead ? 'team_lead' : 'qa';
+    $target = '../shared/candidate_report.php?role=' . rawurlencode($targetRole)
+        . '&application_id=' . rawurlencode($applicationId);
+    if ($clientId > 0) {
+        $target .= '&client_id=' . rawurlencode((string)$clientId);
+    }
+    header('Location: ' . $target);
+    exit;
+}
+
 ob_start();
 ?>
 <div class="card">

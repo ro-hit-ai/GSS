@@ -1,46 +1,76 @@
 <?php
 
 require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../../config/env.php';
 require_once __DIR__ . '/../../includes/integration.php';
 require_once __DIR__ . '/case_component_binding.php';
+require_once __DIR__ . '/workflow_snapshot_service.php';
 
 integration_bootstrap_json_api();
 
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, X-API-Key');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit;
 }
 
-integration_resolve_actor(true);
-
-function workflow_table_available(PDO $pdo): bool {
-    try {
-        $pdo->query('SELECT 1 FROM Vati_Payfiller_Case_Component_Workflow LIMIT 1');
-        return true;
-    } catch (Throwable $e) {
-        return false;
-    }
+function shared_endpoint_log(string $msg): void {
+    error_log('[candidate_report_get] ' . $msg);
 }
 
-function component_item_workflow_table_available(PDO $pdo): bool {
-    try {
-        $pdo->query('SELECT 1 FROM Vati_Payfiller_Case_Component_Item_Workflow LIMIT 1');
-        return true;
-    } catch (Throwable $e) {
-        return false;
+function get_header_value(string $name): string {
+    $key = 'HTTP_' . strtoupper(str_replace('-', '_', $name));
+    if (!empty($_SERVER[$key])) return trim((string)$_SERVER[$key]);
+    if (function_exists('getallheaders')) {
+        $headers = getallheaders();
+        if (is_array($headers)) {
+            foreach ($headers as $k => $v) {
+                if (strcasecmp((string)$k, $name) === 0) return trim((string)$v);
+            }
+        }
     }
+    return '';
 }
 
-function norm_component_key(string $k): string {
-    $k = strtolower(trim($k));
-    if ($k === 'identification') return 'id';
-    if ($k === 'social_media' || $k === 'social-media') return 'socialmedia';
-    if ($k === 'driving' || $k === 'driving_license') return 'driving_licence';
-    return $k;
+function shared_api_key_valid(): bool {
+    $incoming = get_header_value('X-API-Key');
+    if ($incoming === '') return false;
+    $expected = (string)(env_get('PHP_API_KEY', env_get('SHARED_API_KEY', '')) ?? '');
+    if ($expected === '') return false;
+    return hash_equals($expected, $incoming);
+}
+
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+// Candidate portal uses a separate session model (logged_in + application_id).
+// Staff sessions can coexist in same browser, so candidate mode must NOT override
+// when staff auth is present.
+$hasStaffSession = !empty($_SESSION['auth_user_id'])
+    || !empty($_SESSION['auth_moduleAccess'])
+    || !empty($_SESSION['auth_role'])
+    || !empty($_SESSION['role']);
+$isCandidatePortalSession = !$hasStaffSession && !empty($_SESSION['logged_in']) && !empty($_SESSION['application_id']);
+
+$incomingApiKey = get_header_value('X-API-Key');
+$hasApiKey = $incomingApiKey !== '';
+$apiKeyOk = shared_api_key_valid();
+if ($hasApiKey && !$apiKeyOk) {
+    shared_endpoint_log('auth failure method=api-key');
+    http_response_code(401);
+    echo json_encode(['status' => 0, 'message' => 'Unauthorized']);
+    exit;
+}
+
+$authViaApiKey = $apiKeyOk;
+shared_endpoint_log('hit auth_method=' . ($authViaApiKey ? 'api-key' : 'session') . ' auth=' . ($authViaApiKey ? 'success' : 'pending'));
+
+if (!$isCandidatePortalSession && !$authViaApiKey) {
+    integration_resolve_actor(true);
 }
 
 function norm_item_key(string $k): string {
@@ -53,7 +83,7 @@ function norm_item_key(string $k): string {
 }
 
 function item_key_for_row(string $componentKey, array $row, int $idx): string {
-    $k = norm_component_key($componentKey);
+    $k = ws_norm_component_key($componentKey);
     $seq = $idx + 1;
     if ($k === 'id') {
         $v = $row['document_index'] ?? '';
@@ -70,24 +100,6 @@ function item_key_for_row(string $componentKey, array $row, int $idx): string {
     return $k . ':' . (string)$seq;
 }
 
-function compute_component_stage_label(array $stages): string {
-    $cand = strtolower(trim((string)($stages['candidate'] ?? '')));
-    $val = strtolower(trim((string)($stages['validator'] ?? '')));
-    $ver = strtolower(trim((string)($stages['verifier'] ?? '')));
-    $qa = strtolower(trim((string)($stages['qa'] ?? '')));
-
-    if ($qa === 'rejected') return 'QA Rejected';
-    if ($qa === 'approved') return 'Completed';
-    if ($ver === 'rejected') return 'Verifier Rejected';
-    if ($val === 'rejected') return 'Validator Rejected';
-    if ($cand === 'rejected') return 'Candidate Rejected';
-
-    if ($ver === 'approved') return 'Pending QA';
-    if ($val === 'approved') return 'Pending Verifier';
-    if ($cand === 'approved') return 'Pending Validator';
-    return 'Pending Candidate';
-}
-
 function parse_allowed_sections(string $raw): array {
     $raw = strtolower(trim($raw));
     if ($raw === '*') return ['*' => true];
@@ -95,7 +107,7 @@ function parse_allowed_sections(string $raw): array {
     $parts = preg_split('/[\s,|]+/', $raw) ?: [];
     $out = [];
     foreach ($parts as $p) {
-        $k = norm_component_key((string)$p);
+        $k = ws_norm_component_key((string)$p);
         if ($k === '') continue;
         $out[$k] = true;
     }
@@ -104,6 +116,10 @@ function parse_allowed_sections(string $raw): array {
 
 function session_allowed_sections(?PDO $pdo = null): array {
     if (session_status() === PHP_SESSION_NONE) session_start();
+    $role = session_role_norm();
+    if ($role === 'validator' || $role === 'qa') {
+        return ['*' => true];
+    }
     $raw = isset($_SESSION['auth_allowed_sections']) ? (string)$_SESSION['auth_allowed_sections'] : '';
 
     // Prefer latest DB value (avoids stale session after admin updates).
@@ -130,93 +146,6 @@ function can_section(array $allowedSet, string $key): bool {
     return $k !== '' && isset($allowedSet[$k]);
 }
 
-function group_components(string $groupKey): array {
-    $g = strtoupper(trim($groupKey));
-    if ($g === 'BASIC') return ['basic', 'id', 'contact'];
-    if ($g === 'EDUCATION') return ['education', 'employment', 'reference'];
-    if ($g === 'ADDITIONAL') return ['socialmedia', 'ecourt'];
-    return [];
-}
-
-function str_contains_ci(string $haystack, string $needle): bool {
-    return stripos($haystack, $needle) !== false;
-}
-
-function map_verification_type_to_components(string $typeName, string $typeCategory): array {
-    $typeName = trim($typeName);
-    $typeCategory = trim($typeCategory);
-    $hay = strtolower(trim(($typeName !== '' ? $typeName : '') . ' ' . ($typeCategory !== '' ? $typeCategory : '')));
-
-    $out = [];
-
-    if (
-        str_contains_ci($hay, 'education')
-        || str_contains_ci($hay, 'qualification')
-        || str_contains_ci($hay, 'degree')
-        || str_contains_ci($hay, 'college')
-        || str_contains_ci($hay, 'university')
-    ) {
-        $out[] = 'education';
-    }
-
-    if (
-        str_contains_ci($hay, 'employment')
-        || str_contains_ci($hay, 'employer')
-        || str_contains_ci($hay, 'experience')
-        || str_contains_ci($hay, 'work history')
-    ) {
-        $out[] = 'employment';
-    }
-
-    if (str_contains_ci($hay, 'reference')) {
-        $out[] = 'reference';
-    }
-
-    if (
-        str_contains_ci($hay, 'social')
-        || str_contains_ci($hay, 'linkedin')
-        || str_contains_ci($hay, 'facebook')
-        || str_contains_ci($hay, 'instagram')
-        || str_contains_ci($hay, 'twitter')
-        || str_contains_ci($hay, 'world check')
-        || str_contains_ci($hay, 'worldcheck')
-    ) {
-        $out[] = 'socialmedia';
-    }
-
-    if (
-        str_contains_ci($hay, 'ecourt')
-        || str_contains_ci($hay, 'e-court')
-        || str_contains_ci($hay, 'court')
-        || str_contains_ci($hay, 'litigation')
-        || str_contains_ci($hay, 'judis')
-        || str_contains_ci($hay, 'judicial')
-        || str_contains_ci($hay, 'manupatra')
-    ) {
-        $out[] = 'ecourt';
-    }
-
-    // Backward compatibility for older role assignment setups.
-    // UI sections are ecourt/socialmedia; keep database tag only when explicitly tagged.
-    if (
-        str_contains_ci($hay, 'database')
-    ) {
-        $out[] = 'database';
-    }
-
-    if (
-        str_contains_ci($hay, 'driving')
-        || str_contains_ci($hay, 'driver')
-        || str_contains_ci($hay, 'licence')
-        || str_contains_ci($hay, 'license')
-        || str_contains_ci($hay, 'dl')
-    ) {
-        $out[] = 'driving_licence';
-    }
-
-    return array_values(array_unique($out));
-}
-
 function get_int(string $key, int $default = 0): int {
     return isset($_GET[$key]) && $_GET[$key] !== '' ? (int)$_GET[$key] : $default;
 }
@@ -225,10 +154,41 @@ function get_str(string $key, string $default = ''): string {
     return trim((string)($_GET[$key] ?? $default));
 }
 
+function norm_case_stage(string $stage): string {
+    $s = strtolower(trim($stage));
+    if ($s === 'p1' || $s === 'pre_interview') return 'p1';
+    if ($s === 'p2' || $s === 'post_interview') return 'p2';
+    if ($s === 'p3' || $s === 'employee_pool') return 'p3';
+    return $s;
+}
+
+function normalize_staff_role(string $role): string {
+    $r = strtolower(trim($role));
+    if ($r === 'customer_admin') return 'client_admin';
+    if ($r === 'component verifier' || $r === 'component_verifier') return 'verifier';
+    if ($r === 'component validator' || $r === 'component_validator') return 'validator';
+    if ($r === 'db verifier' || $r === 'db-verifier') return 'db_verifier';
+    if ($r === 'gss admin') return 'gss_admin';
+    if ($r === 'team lead' || $r === 'team_lead') return 'team_lead';
+    return $r;
+}
+
 function session_role_norm(): string {
     if (session_status() === PHP_SESSION_NONE) session_start();
-    $role = isset($_SESSION['auth_moduleAccess']) ? strtolower(trim((string)$_SESSION['auth_moduleAccess'])) : '';
-    if ($role === 'customer_admin') $role = 'client_admin';
+    // Staff session must take priority when both staff and candidate keys coexist.
+    $role = isset($_SESSION['auth_moduleAccess']) ? normalize_staff_role((string)$_SESSION['auth_moduleAccess']) : '';
+    if ($role === '' && isset($_SESSION['auth_role'])) {
+        $role = normalize_staff_role((string)$_SESSION['auth_role']);
+    }
+    if ($role === '' && isset($_SESSION['role'])) {
+        $role = normalize_staff_role((string)$_SESSION['role']);
+    }
+    if ($role !== '') {
+        return $role;
+    }
+    if (!empty($_SESSION['logged_in']) && !empty($_SESSION['application_id'])) {
+        return 'candidate';
+    }
     return $role;
 }
 
@@ -287,6 +247,28 @@ function sp_call_exists(PDO $pdo, string $sql, array $params): bool {
     return $ok;
 }
 
+function build_file_url(string $file, string $folder = ''): ?string {
+    $file = trim($file);
+    if ($file === '') return null;
+    $normalized = str_replace('\\', '/', $file);
+    if (preg_match('~^https?://~i', $normalized)) return $normalized;
+
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host = trim((string)($_SERVER['HTTP_HOST'] ?? 'localhost'));
+    $base = $scheme . '://' . $host;
+
+    if (strpos($normalized, '/GSS/uploads/') === 0) return $base . $normalized;
+    if (strpos($normalized, '/uploads/') === 0) return $base . '/GSS' . $normalized;
+    if (strpos($normalized, 'uploads/') === 0) return $base . '/GSS/' . ltrim($normalized, '/');
+    if (strpos($normalized, '/') !== false) return $base . '/GSS/' . ltrim($normalized, '/');
+
+    $folder = trim($folder, '/');
+    if ($folder !== '') {
+        return $base . '/GSS/uploads/' . $folder . '/' . rawurlencode($normalized);
+    }
+    return $base . '/GSS/uploads/' . rawurlencode($normalized);
+}
+
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
         http_response_code(405);
@@ -294,19 +276,13 @@ try {
         exit;
     }
 
-    $role = strtolower(get_str('role', ''));
-    if ($role === 'customer_admin') {
-        $role = 'client_admin';
-    }
-    if ($role === '') {
-        $role = session_role_norm();
-    }
+    // Authorization role must come from server-side session only unless trusted API-key is used.
+    $role = $authViaApiKey ? 'service' : session_role_norm();
     if (session_status() === PHP_SESSION_NONE) session_start();
     $userId = isset($_SESSION['auth_user_id']) ? (int)$_SESSION['auth_user_id'] : 0;
     $clientId = resolve_client_id();
     $applicationId = integration_normalize_application_id(get_str('application_id', ''));
     $caseId = get_int('case_id', 0);
-    $groupKey = strtoupper(get_str('group', ''));
 
     $pdo = getDB();
 
@@ -319,6 +295,31 @@ try {
         http_response_code(400);
         echo json_encode(['status' => 0, 'message' => 'application_id is required']);
         exit;
+    }
+
+    // Candidate must be logged in via candidate session and can access only own application.
+    if (!$authViaApiKey && $role === 'candidate') {
+        $isLoggedIn = !empty($_SESSION['logged_in']) && $_SESSION['logged_in'] === true;
+        $sessionAppId = integration_normalize_application_id((string)($_SESSION['application_id'] ?? ''));
+        if (!$isLoggedIn || $sessionAppId === '' || $sessionAppId !== $applicationId) {
+            http_response_code(401);
+            echo json_encode(['status' => 0, 'message' => 'Unauthorized access to application']);
+            exit;
+        }
+    } elseif (!$authViaApiKey) {
+        // Staff: enforce authenticated session and strict role allowlist.
+        if ($userId <= 0) {
+            http_response_code(401);
+            echo json_encode(['status' => 0, 'message' => 'Unauthorized']);
+            exit;
+        }
+        if (!in_array($role, ['verifier', 'validator', 'qa', 'client_admin', 'gss_admin', 'db_verifier'], true)) {
+            http_response_code(403);
+            echo json_encode(['status' => 0, 'message' => 'Invalid role']);
+            exit;
+        }
+    } else {
+        shared_endpoint_log('auth success method=api-key');
     }
 
     // Fetch report bundle (single SP call, multiple result sets)
@@ -401,6 +402,55 @@ try {
         exit;
     }
 
+    // Stage/level context for item-level and presentation filtering.
+    $selectedLevel = strtolower(trim((string)($case['selected_level'] ?? '')));
+    $selectedStage = norm_case_stage((string)($case['selected_stage'] ?? ''));
+
+    // Item-level filter for reference content to avoid cross-type mixing.
+    if (is_array($reference) && isset($reference[0]) && is_array($reference[0])) {
+        $reference = array_values(array_filter($reference, function ($item) use ($selectedStage) {
+            $type = strtolower(trim((string)($item['reference_type'] ?? ($item['type'] ?? ''))));
+            if ($selectedStage === 'p1') {
+                return $type === '' || $type === 'education reference';
+            }
+            return true;
+        }));
+    } elseif (is_array($reference)) {
+        $type = strtolower(trim((string)($reference['reference_type'] ?? ($reference['type'] ?? ''))));
+        if ($selectedStage === 'p1' && $type !== '' && $type !== 'education reference') {
+            $reference = [];
+        }
+    }
+
+    // Presentation-only dynamic label for the contact/address section by case level.
+    $contactLabel = 'Address Details';
+    if ($selectedLevel === 'l1') {
+        $contactLabel = 'Current Address';
+    } elseif ($selectedLevel === 'l2') {
+        $contactLabel = 'Current OR Permanent Address';
+    } elseif ($selectedLevel === 'l3') {
+        $contactLabel = 'Full Address Details';
+    }
+    if (is_array($contact)) {
+        $contact['label'] = $contactLabel;
+        $contact['address_proof_url'] = build_file_url((string)($contact['address_proof_file'] ?? ($contact['proof_file'] ?? '')), 'address');
+        error_log('Address label set: ' . $contactLabel . ' for level ' . $selectedLevel);
+    }
+
+    foreach ($education as $i => $row) {
+        if (!is_array($row)) continue;
+        $education[$i]['marksheet_url'] = build_file_url((string)($row['marksheet_file'] ?? ''), 'education');
+        $education[$i]['degree_url'] = build_file_url((string)($row['degree_file'] ?? ''), 'education');
+    }
+
+    if (is_array($ecourt)) {
+        $ecourt['document_url'] = build_file_url((string)($ecourt['document'] ?? ($ecourt['evidence_document'] ?? '')), 'ecourt');
+    }
+
+    if (is_array($authorization)) {
+        $authorization['file_url'] = build_file_url((string)($authorization['authorization_file'] ?? ($authorization['file_name'] ?? '')), 'verification');
+    }
+
     foreach ($identification as $i => $row) {
         if (!is_array($row)) continue;
         $identification[$i]['item_key'] = item_key_for_row('id', $row, (int)$i);
@@ -416,148 +466,63 @@ try {
 
     $caseClientId = isset($case['client_id']) ? (int)$case['client_id'] : 0;
 
-    // Component model:
-    // Basic + Identification are common (always part of case)
-    $requiredComponents = ['basic', 'id'];
-    try {
-        $jobRoleName = trim((string)($case['job_role'] ?? ''));
-        $jobRoleId = 0;
-        if ($caseClientId > 0 && $jobRoleName !== '') {
-            $jr = $pdo->prepare('SELECT job_role_id FROM Vati_Payfiller_Job_Roles WHERE client_id = ? AND LOWER(TRIM(role_name)) = LOWER(TRIM(?)) LIMIT 1');
-            $jr->execute([$caseClientId, $jobRoleName]);
-            $jobRoleId = (int)($jr->fetchColumn() ?: 0);
-        }
-
-        if ($jobRoleId > 0) {
-            $types = [];
-            try {
-                $stmt = $pdo->prepare('CALL SP_Vati_Payfiller_GetVerificationTypesByJobRole(?)');
-                $stmt->execute([$jobRoleId]);
-                $types = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-                while ($stmt->nextRowset()) {
-                }
-            } catch (Throwable $e) {
-                $types = [];
-            }
-
-            foreach ($types as $t) {
-                $name = (string)($t['type_name'] ?? '');
-                $cat = (string)($t['type_category'] ?? '');
-                $isEnabled = isset($t['is_enabled']) ? (int)$t['is_enabled'] : 1;
-                if ($isEnabled !== 1) continue;
-                $mapped = map_verification_type_to_components($name, $cat);
-                foreach ($mapped as $ck) {
-                    $requiredComponents[] = $ck;
-                }
-            }
-        }
-    } catch (Throwable $e) {
+    // Snapshot model: report view must read only existing case component snapshot rows.
+    // visible_sections must be derived strictly from this snapshot.
+    $contract = ws_build_snapshot_contract($pdo, $applicationId);
+    $requiredComponents = $contract['visible_sections'];
+    $outAssigned = $contract['assigned_components'];
+    $componentWorkflowOut = $contract['component_workflow'];
+    $mappingStatus = (string)($contract['mapping_status'] ?? 'ok');
+    error_log('SNAPSHOT_COMPONENTS: ' . json_encode($requiredComponents));
+    if ($mappingStatus !== 'ok') {
+        error_log('WARNING: Minimal components detected. Possible missing DB mapping for this case.');
     }
 
-    $requiredComponents = array_values(array_unique($requiredComponents));
-
+    // Legacy self-heal: if snapshot is still minimal for an existing case,
+    // rebuild snapshot/workflow using current binding logic.
     try {
-        $caseIdInt = isset($case['case_id']) ? (int)$case['case_id'] : 0;
-        if ($caseIdInt > 0) {
-            $bindingConfig = case_component_binding_sync_case_components($pdo, $caseIdInt, $applicationId);
-            if (!empty($bindingConfig['required_components']) && is_array($bindingConfig['required_components'])) {
-                $requiredComponents = array_values(array_unique(array_merge($requiredComponents, $bindingConfig['required_components'])));
+        $caseIdForHeal = isset($case['case_id']) ? (int)$case['case_id'] : 0;
+        if ($caseIdForHeal > 0 && count($requiredComponents) <= 2) {
+            error_log('SNAPSHOT_HEAL: triggering sync for application_id=' . $applicationId . ', case_id=' . $caseIdForHeal);
+            case_component_binding_sync_case_components($pdo, $caseIdForHeal, $applicationId);
+
+            $healedKeys = [];
+            $ckStmt2 = $pdo->prepare(
+                'SELECT DISTINCT LOWER(TRIM(component_key)) AS component_key '
+                . 'FROM Vati_Payfiller_Case_Components '
+                . 'WHERE application_id = ?'
+            );
+            $ckStmt2->execute([$applicationId]);
+            $ckRows2 = $ckStmt2->fetchAll(PDO::FETCH_ASSOC) ?: [];
+            foreach ($ckRows2 as $r2) {
+                $k2 = ws_norm_component_key((string)($r2['component_key'] ?? ''));
+                if ($k2 !== '') $healedKeys[] = $k2;
+            }
+            $healedKeys = array_values(array_unique($healedKeys));
+            if (count($healedKeys) > count($requiredComponents)) {
+                $requiredComponents = $healedKeys;
+                $mappingStatus = 'ok';
+                error_log('SNAPSHOT_HEAL: success components=' . json_encode($requiredComponents));
+            } else {
+                error_log('SNAPSHOT_HEAL: no expansion after sync');
             }
         }
     } catch (Throwable $e) {
+        error_log('SNAPSHOT_HEAL: failed ' . $e->getMessage());
     }
 
     $allowedSet = session_allowed_sections($pdo);
-
-    // Best-effort: ensure required components exist in DB table (if installed)
-    try {
-        $caseIdInt = isset($case['case_id']) ? (int)$case['case_id'] : 0;
-        if ($caseIdInt > 0) {
-            $ins = $pdo->prepare(
-                'INSERT IGNORE INTO Vati_Payfiller_Case_Components (case_id, application_id, component_key, is_required, status) '
-                . 'VALUES (?, ?, ?, 1, \'pending\')'
-            );
-            foreach ($requiredComponents as $ck) {
-                $k = strtolower(trim((string)$ck));
-                if ($k === '') continue;
-                $ins->execute([$caseIdInt, $applicationId, $k]);
-            }
-        }
-    } catch (Throwable $e) {
-        // ignore
-    }
-
-    // Optional: load assignments/status from component table if available
-    $assignedComponents = [];
-    try {
-        $cc = $pdo->prepare(
-            'SELECT component_key, is_required, assigned_role, assigned_user_id, status, completed_at '
-            . 'FROM Vati_Payfiller_Case_Components '
-            . 'WHERE application_id = ?'
-        );
-        $cc->execute([$applicationId]);
-        $assignedComponents = $cc->fetchAll(PDO::FETCH_ASSOC) ?: [];
-    } catch (Throwable $e) {
-        $assignedComponents = [];
-    }
-
-    // Ensure all required components exist in response (even if DB table not filled yet)
-    $assignedMap = [];
-    foreach ($assignedComponents as $r) {
-        $k = strtolower(trim((string)($r['component_key'] ?? '')));
-        if ($k !== '') $assignedMap[$k] = $r;
-    }
-
-    $outAssigned = [];
-    foreach ($requiredComponents as $ck) {
-        $k = strtolower(trim((string)$ck));
-        $row = $assignedMap[$k] ?? null;
-        $outAssigned[] = [
-            'component_key' => $k,
-            'is_required' => $row && isset($row['is_required']) ? (int)$row['is_required'] : 1,
-            'assigned_role' => $row ? ($row['assigned_role'] ?? null) : null,
-            'assigned_user_id' => $row && isset($row['assigned_user_id']) ? (int)$row['assigned_user_id'] : null,
-            'status' => $row ? (string)($row['status'] ?? 'pending') : 'pending',
-            'completed_at' => $row ? ($row['completed_at'] ?? null) : null,
-        ];
-    }
-
-    // Load per-stage workflow status when table exists
-    $workflowByComponent = [];
-    if (workflow_table_available($pdo)) {
-        try {
-            $w = $pdo->prepare(
-                'SELECT component_key, stage, status, completed_at, updated_at '
-                . 'FROM Vati_Payfiller_Case_Component_Workflow '
-                . 'WHERE application_id = ?'
-            );
-            $w->execute([$applicationId]);
-            $rows = $w->fetchAll(PDO::FETCH_ASSOC) ?: [];
-            foreach ($rows as $r) {
-                $ck = norm_component_key((string)($r['component_key'] ?? ''));
-                $st = strtolower(trim((string)($r['stage'] ?? '')));
-                if ($ck === '' || $st === '') continue;
-                if (!isset($workflowByComponent[$ck])) $workflowByComponent[$ck] = [];
-                $workflowByComponent[$ck][$st] = [
-                    'status' => (string)($r['status'] ?? ''),
-                    'completed_at' => $r['completed_at'] ?? null,
-                    'updated_at' => $r['updated_at'] ?? null,
-                ];
-            }
-        } catch (Throwable $e) {
-            $workflowByComponent = [];
-        }
-    }
+    $assignedComponents = $outAssigned;
 
     // Enrich assigned_components with stage labels
     foreach ($outAssigned as &$it) {
-        $ck = norm_component_key((string)($it['component_key'] ?? ''));
-        $st = $workflowByComponent[$ck] ?? [];
+        $ck = ws_norm_component_key((string)($it['component_key'] ?? ''));
+        $st = $componentWorkflowOut[$ck] ?? [];
         $stSimple = [
-            'candidate' => isset($st['candidate']['status']) ? (string)$st['candidate']['status'] : '',
-            'validator' => isset($st['validator']['status']) ? (string)$st['validator']['status'] : '',
-            'verifier' => isset($st['verifier']['status']) ? (string)$st['verifier']['status'] : '',
-            'qa' => isset($st['qa']['status']) ? (string)$st['qa']['status'] : '',
+            'candidate' => isset($st['candidate']['status']) ? (string)$st['candidate']['status'] : 'pending',
+            'validator' => isset($st['validator']['status']) ? (string)$st['validator']['status'] : 'pending',
+            'verifier' => isset($st['verifier']['status']) ? (string)$st['verifier']['status'] : 'pending',
+            'qa' => isset($st['qa']['status']) ? (string)$st['qa']['status'] : 'pending',
         ];
         // Fallback: when workflow row is missing but component row is rejected,
         // treat it as validator rejection for verifier-facing status.
@@ -568,11 +533,11 @@ try {
             }
         }
         $it['workflow'] = $stSimple;
-        $it['current_stage'] = compute_component_stage_label($stSimple);
+        $it['current_stage'] = ws_compute_component_stage_label($stSimple);
     }
 
     $itemWorkflowByComponent = [];
-    if (component_item_workflow_table_available($pdo)) {
+    if (ws_component_item_workflow_table_available($pdo)) {
         try {
             $iw = $pdo->prepare(
                 'SELECT component_key, item_key, stage, status, completed_at, updated_at '
@@ -582,7 +547,7 @@ try {
             $iw->execute([$applicationId]);
             $rows = $iw->fetchAll(PDO::FETCH_ASSOC) ?: [];
             foreach ($rows as $r) {
-                $ck = norm_component_key((string)($r['component_key'] ?? ''));
+                $ck = ws_norm_component_key((string)($r['component_key'] ?? ''));
                 $ik = norm_item_key((string)($r['item_key'] ?? ''));
                 $st = strtolower(trim((string)($r['stage'] ?? '')));
                 if ($ck === '' || $ik === '' || $st === '') continue;
@@ -600,7 +565,7 @@ try {
     }
 
     $applyItemWorkflow = function (array $rows, string $componentKey) use ($itemWorkflowByComponent): array {
-        $ck = norm_component_key($componentKey);
+        $ck = ws_norm_component_key($componentKey);
         $out = [];
         foreach ($rows as $idx => $row) {
             if (!is_array($row)) {
@@ -620,7 +585,7 @@ try {
                 'qa' => isset($st['qa']['status']) ? (string)$st['qa']['status'] : '',
             ];
             $row['workflow'] = $stSimple;
-            $row['current_stage'] = compute_component_stage_label($stSimple);
+            $row['current_stage'] = ws_compute_component_stage_label($stSimple);
             $out[] = $row;
         }
         return $out;
@@ -633,16 +598,26 @@ try {
 
     $clientRequiredMap = [];
     foreach ($requiredComponents as $ck) {
-        $k = norm_component_key((string)$ck);
+        $k = ws_norm_component_key((string)$ck);
         if ($k === '') continue;
         $clientRequiredMap[$k] = true;
+    }
+
+    // Snapshot integrity for report payload: workflow keys must be subset of snapshot keys.
+    if (!empty($componentWorkflowOut)) {
+        foreach (array_keys($componentWorkflowOut) as $wk) {
+            $nk = ws_norm_component_key((string)$wk);
+            if ($nk === '' || !isset($clientRequiredMap[$nk])) {
+                unset($componentWorkflowOut[$wk]);
+            }
+        }
     }
 
     $visibleSections = [];
     if ($role === 'verifier') {
         $verifierAssignedMap = [];
         foreach ($assignedComponents as $r) {
-            $k = norm_component_key((string)($r['component_key'] ?? ''));
+            $k = ws_norm_component_key((string)($r['component_key'] ?? ''));
             if ($k === '') continue;
             $ar = strtolower(trim((string)($r['assigned_role'] ?? '')));
             $au = isset($r['assigned_user_id']) ? (int)$r['assigned_user_id'] : 0;
@@ -651,18 +626,19 @@ try {
             }
         }
 
-        // Legacy fallback: when per-component assignment is absent, use verifier group mapping.
-        if (count($verifierAssignedMap) === 0 && in_array($groupKey, ['BASIC', 'EDUCATION', 'ADDITIONAL'], true)) {
-            foreach (group_components($groupKey) as $gk) {
-                $nk = norm_component_key((string)$gk);
-                if ($nk !== '') $verifierAssignedMap[$nk] = true;
+        if (count($verifierAssignedMap) > 0) {
+            foreach ($clientRequiredMap as $k => $_v) {
+                if (!isset($verifierAssignedMap[$k])) continue;
+                if (!can_section($allowedSet, $k)) continue;
+                $visibleSections[] = $k;
             }
-        }
-
-        foreach ($clientRequiredMap as $k => $_v) {
-            if (!isset($verifierAssignedMap[$k])) continue;
-            if (!can_section($allowedSet, $k)) continue;
-            $visibleSections[] = $k;
+        } else {
+            // Backward compatibility: when explicit component assignments are absent,
+            // expose all snapshot components within allowed_sections scope.
+            foreach ($clientRequiredMap as $k => $_v) {
+                if (!can_section($allowedSet, $k)) continue;
+                $visibleSections[] = $k;
+            }
         }
     } elseif ($role === 'validator' || $role === 'db_verifier') {
         foreach ($clientRequiredMap as $k => $_v) {
@@ -675,6 +651,10 @@ try {
         }
     }
     $visibleSections = array_values(array_unique($visibleSections));
+    if ($role === 'candidate') {
+        // Candidate review must show full submitted profile data.
+        $visibleSections = ['basic', 'id', 'contact', 'education', 'employment', 'reference', 'socialmedia', 'ecourt', 'reports'];
+    }
     $visibleSectionsMap = [];
     foreach ($visibleSections as $k) {
         $visibleSectionsMap[$k] = true;
@@ -683,9 +663,9 @@ try {
     // Staff views should respect allowed section scope in assigned components payload.
     // Action APIs still enforce assignment/rejection rules.
     $visibleAssigned = $outAssigned;
-    if ($role === 'verifier' || $role === 'db_verifier' || $role === 'validator') {
+    if ($role === 'verifier' || $role === 'db_verifier') {
         $visibleAssigned = array_values(array_filter($outAssigned, function ($it) use ($visibleSectionsMap) {
-            $k = norm_component_key((string)($it['component_key'] ?? ''));
+            $k = ws_norm_component_key((string)($it['component_key'] ?? ''));
             if ($k === '') return false;
             return isset($visibleSectionsMap[$k]);
         }));
@@ -714,32 +694,13 @@ try {
             exit;
         }
 
-        // New component-based assignment: if component table has assignments, enforce that at least one component is assigned to this user.
-        // Backward compatible: if no component assignments exist yet, fall back to legacy group-based assignment.
+        // Snapshot-driven assignment: verifier should have explicit component assignments when configured.
+        // If component assignments are not configured in this environment, allow snapshot fallback.
         $hasComponentAssignment = false;
         foreach ($outAssigned as $it) {
             if (($it['assigned_role'] ?? '') === 'verifier' && (int)($it['assigned_user_id'] ?? 0) === (int)$userId) {
                 $hasComponentAssignment = true;
                 break;
-            }
-        }
-
-        if (!$hasComponentAssignment) {
-            if (!in_array($groupKey, ['BASIC', 'EDUCATION', 'ADDITIONAL'], true)) {
-                http_response_code(400);
-                echo json_encode(['status' => 0, 'message' => 'Valid group is required']);
-                exit;
-            }
-
-            $ok = sp_call_exists(
-                $pdo,
-                'CALL SP_Vati_Payfiller_ReportCheckVerifierAssignment(?, ?, ?)',
-                [(int)($case['case_id'] ?? 0), $userId, $groupKey]
-            );
-            if (!$ok) {
-                http_response_code(403);
-                echo json_encode(['status' => 0, 'message' => 'Forbidden']);
-                exit;
             }
         }
     }
@@ -818,7 +779,7 @@ try {
     if ($role === 'verifier') {
         $visibleMap = [];
         foreach ($visibleAssigned as $it) {
-            $k = norm_component_key((string)($it['component_key'] ?? ''));
+            $k = ws_norm_component_key((string)($it['component_key'] ?? ''));
             if ($k !== '') $visibleMap[$k] = true;
         }
         if (!isset($visibleMap['basic'])) {
@@ -847,6 +808,17 @@ try {
         }
     }
 
+    // Final strict clamp: response payload must never include sections outside visible_sections.
+    $allowed = array_flip($visibleSections ?? []);
+    if (!isset($allowed['basic'])) $basic = null;
+    if (!isset($allowed['id'])) $identification = [];
+    if (!isset($allowed['contact'])) $contact = null;
+    if (!isset($allowed['education'])) $education = [];
+    if (!isset($allowed['employment'])) $employment = [];
+    if (!isset($allowed['reference'])) $reference = null;
+    if (!isset($allowed['socialmedia'])) $socialMedia = null;
+    if (!isset($allowed['ecourt'])) $ecourt = null;
+
     $case['application_id'] = integration_normalize_application_id((string)($case['application_id'] ?? $applicationId));
     if (isset($case['candidate_email'])) {
         $case['candidate_email'] = integration_normalize_email((string)$case['candidate_email']);
@@ -859,7 +831,8 @@ try {
     }
     $links = integration_deep_links($case['application_id'], isset($case['case_id']) ? (int)$case['case_id'] : null);
 
-    echo json_encode([
+    $isStaffDebugRole = in_array($role, ['gss_admin', 'client_admin', 'verifier', 'validator', 'db_verifier'], true);
+    $response = [
         'status' => 1,
         'message' => 'ok',
         'data' => [
@@ -881,15 +854,23 @@ try {
             'visibleSections' => $visibleSections,
             'assigned_components' => $visibleAssigned,
             'assignedComponents' => $visibleAssigned,
-            'component_workflow' => $workflowByComponent,
-            'componentWorkflow' => $workflowByComponent,
+            'component_workflow' => $componentWorkflowOut,
+            'componentWorkflow' => $componentWorkflowOut,
             'component_item_workflow' => $itemWorkflowByComponent,
             'componentItemWorkflow' => $itemWorkflowByComponent,
             'applicationUrl' => $links['applicationUrl'],
             'candidateUrl' => $links['candidateUrl'],
             'timelineUrl' => $links['timelineUrl']
         ]
-    ]);
+    ];
+    $appEnv = function_exists('env_get') ? strtolower(trim((string)(env_get('APP_ENV', 'production') ?? 'production'))) : 'production';
+    if ($isStaffDebugRole && in_array($appEnv, ['dev', 'development', 'local'], true)) {
+        $response['debug'] = [
+            'visible_sections' => $visibleSections,
+            'mapping_status' => $mappingStatus
+        ];
+    }
+    echo json_encode($response);
 
 } catch (PDOException $e) {
     http_response_code(500);

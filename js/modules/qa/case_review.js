@@ -336,7 +336,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function buildReportUrl() {
         var appId = getAppId();
         var cid = getClientId();
-        var href = '../shared/candidate_report.php?role=qa&embed=1&application_id=' + encodeURIComponent(appId);
+        var href = '../shared/candidate_report.php?role=qa&application_id=' + encodeURIComponent(appId);
         if (cid > 0) {
             href += '&client_id=' + encodeURIComponent(String(cid));
         }
@@ -634,25 +634,7 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }
 
-        audit('view', { source: 'qa_case_review', embed: 1 });
-    }
-
-    function applyEmbeddedReportCompactMode() {
-    if (!frame) return;
-    try {
-        var doc = frame.contentDocument || (frame.contentWindow ? frame.contentWindow.document : null);
-        if (!doc) return;
-
-        var root = doc.querySelector('.cr-report-root');
-        if (!root) return;
-
-        // ONLY responsibility of JS:
-        // tell iframe it is in QA mode
-        root.classList.add('qa-case-review-mode');
-
-    } catch (e) {
-        // silent fail (iframe not ready)
-    }
+        audit('view', { source: 'qa_case_review', embed: 0 });
     }
 
 
@@ -667,13 +649,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
     bindFilterMenu();
     setActiveFilter('all');
-
-    if (frame && !frame.dataset.compactBound) {
-        frame.dataset.compactBound = '1';
-        frame.addEventListener('load', function () {
-            applyEmbeddedReportCompactMode();
-        });
-    }
 
     if (frame) {
         var appId = getAppId();

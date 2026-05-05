@@ -24,12 +24,22 @@ ensureApplicationExists($application_id);
         <div id="candidateReviewContent" class="candidate-review-sections" style="display:none;"></div>
     </div>
 
+    <div id="filePreviewModal" class="modal" style="display:none;">
+        <div class="modal-content" style="width:60%;margin:40px auto;background:#fff;border-radius:10px;padding:14px;position:relative;">
+            <span id="filePreviewCloseBtn" style="cursor:pointer;font-size:22px;line-height:1;position:absolute;right:12px;top:8px;">&times;</span>
+            <div id="previewContainer" style="margin-top:18px;"></div>
+        </div>
+    </div>
+
     <div class="form-footer compact-footer review-page-footer">
         <div class="review-note">
             Clicking Go Back & Edit will take you to Basic Details. You can move through the steps and correct anything before final submission.
         </div>
 
         <div class="footer-actions-right">
+            <button type="button" class="btn btn-outline-primary" id="reviewDownloadReportBtn">
+                Download Report
+            </button>
             <button type="button" class="btn btn-outline-secondary" id="reviewGoBackBtn">
                 Go Back & Edit
             </button>

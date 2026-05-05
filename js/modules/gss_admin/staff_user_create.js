@@ -10,12 +10,51 @@ document.addEventListener('DOMContentLoaded', function () {
     var tabButtons = document.querySelectorAll('.tab');
     var ALLOWED_SECTIONS_MASTER = [];
     var pendingAllowedSectionsValue = '';
+    var toastHost = null;
+
+    function ensureToastHost() {
+        if (toastHost && document.body.contains(toastHost)) return toastHost;
+        if (!document.getElementById('gss-toast-style')) {
+            var st = document.createElement('style');
+            st.id = 'gss-toast-style';
+            st.textContent =
+                '.gss-toast-host{position:fixed;top:16px;right:16px;z-index:1200;display:flex;flex-direction:column;gap:8px;max-width:min(420px,calc(100vw - 20px));}' +
+                '.gss-toast{border-radius:10px;padding:11px 14px;font-size:13px;font-weight:700;border:1px solid transparent;box-shadow:0 10px 25px rgba(2,6,23,.15);opacity:0;transform:translateY(-8px);transition:all .18s ease;}' +
+                '.gss-toast.show{opacity:1;transform:translateY(0);}' +
+                '.gss-toast.success{background:#ecfdf3;color:#065f46;border-color:#a7f3d0;}' +
+                '.gss-toast.danger,.gss-toast.error{background:#fef2f2;color:#991b1b;border-color:#fecaca;}' +
+                '.gss-toast.warning{background:#fffbeb;color:#92400e;border-color:#fde68a;}' +
+                '.gss-toast.info{background:#eff6ff;color:#1e3a8a;border-color:#bfdbfe;}';
+            document.head.appendChild(st);
+        }
+        toastHost = document.createElement('div');
+        toastHost.className = 'gss-toast-host';
+        document.body.appendChild(toastHost);
+        return toastHost;
+    }
+
+    function showToast(text, type) {
+        var msg = String(text || '').trim();
+        if (!msg) return;
+        var host = ensureToastHost();
+        var t = String(type || 'info').toLowerCase().trim();
+        var item = document.createElement('div');
+        item.className = 'gss-toast ' + t;
+        item.textContent = msg;
+        host.appendChild(item);
+        requestAnimationFrame(function () { item.classList.add('show'); });
+        setTimeout(function () {
+            item.classList.remove('show');
+            setTimeout(function () { if (item.parentNode) item.parentNode.removeChild(item); }, 220);
+        }, 3000);
+    }
 
     function setMessage(text, type) {
+        if (text) showToast(text, type || 'info');
         if (!messageEl) return;
-        messageEl.textContent = text || '';
-        messageEl.className = type ? ('alert alert-' + type) : '';
-        messageEl.style.display = text ? 'block' : 'none';
+        messageEl.textContent = '';
+        messageEl.className = '';
+        messageEl.style.display = 'none';
     }
 
     function getQueryParam(name) {
@@ -197,10 +236,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function loadAllowedSectionsForClient(clientId, selectedSections) {
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-        var cid = parseInt(clientId || '0', 10) || 0;
-        var url = cid > 0
-            ? (base + '/api/gssadmin/client_allowed_sections.php?client_id=' + encodeURIComponent(String(cid)))
-            : (base + '/api/shared/allowed_sections_master.php');
+        // GSS Admin create/update should always show full section catalog.
+        // Client-scoped narrowing causes inconsistent checkbox visibility.
+        var url = base + '/api/shared/allowed_sections_master.php';
         return fetch(url, { credentials: 'same-origin' })
             .then(function (res) { return res.json(); })
             .then(function (data) {

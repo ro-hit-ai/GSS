@@ -297,64 +297,282 @@ function app_mail_apply_application_subject_tag(string $subject, string $applica
     return '[' . $applicationId . '] ' . $subject;
 }
 
+function app_mail_truthy(string $value): bool {
+    $v = strtolower(trim($value));
+    if ($v === '') {
+        return false;
+    }
+    return in_array($v, ['1', 'true', 'yes', 'on'], true);
+}
+
+function app_mail_smtp_config(): array {
+    $host = trim((string)(env_get('APP_MAIL_HOST', '') ?? ''));
+    $portRaw = trim((string)(env_get('APP_MAIL_PORT', '') ?? ''));
+    $port = (int)$portRaw;
+    if ($port <= 0) {
+        $port = 587;
+    }
+
+    $secure = strtolower(trim((string)(env_get('APP_MAIL_ENCRYPTION', '') ?? '')));
+    if ($secure === '') {
+        if ($port === 465) {
+            $secure = 'ssl';
+        } elseif ($port === 587) {
+            $secure = 'tls';
+        } else {
+            $secure = '';
+        }
+    }
+
+    $username = trim((string)(env_get('APP_MAIL_USERNAME', '') ?? ''));
+    $password = (string)(env_get('APP_MAIL_PASSWORD', '') ?? '');
+    $fromEmail = trim((string)(env_get('APP_MAIL_FROM', '') ?? ''));
+    $fromName = trim((string)(env_get('APP_MAIL_FROM_NAME', 'VATI GSS') ?? 'VATI GSS'));
+    $smtpAuth = app_mail_truthy((string)(env_get('APP_MAIL_SMTP_AUTH', '1') ?? '1'));
+    $timeout = (int)(env_get('APP_MAIL_SMTP_TIMEOUT', '30') ?? '30');
+    if ($timeout <= 0) {
+        $timeout = 30;
+    }
+
+    return [
+        'host' => $host,
+        'port' => $port,
+        'secure' => $secure,
+        'username' => $username,
+        'password' => $password,
+        'from_email' => $fromEmail,
+        'from_name' => $fromName,
+        'smtp_auth' => $smtpAuth,
+        'timeout' => $timeout
+    ];
+}
+
+function app_mail_smtp_is_ready(array $smtp): bool {
+    return $smtp['host'] !== ''
+        && $smtp['port'] > 0
+        && $smtp['from_email'] !== ''
+        && filter_var((string)$smtp['from_email'], FILTER_VALIDATE_EMAIL) !== false
+        && (
+            !$smtp['smtp_auth']
+            || (
+                $smtp['username'] !== ''
+                && $smtp['password'] !== ''
+            )
+        );
+}
+
+function app_mail_transport_order(array $options, array $smtp): array {
+    $norm = static function (?string $v): string {
+        $v = strtolower(trim((string)$v));
+        if ($v === 'mail') {
+            return 'php_mail';
+        }
+        if ($v === 'php' || $v === 'php_fallback' || $v === 'php-mail') {
+            return 'php_mail';
+        }
+        return $v;
+    };
+
+    $forced = $norm($options['transport'] ?? ($options['driver'] ?? ''));
+    if (in_array($forced, ['smtp', 'node', 'php_mail'], true)) {
+        return [$forced];
+    }
+
+    $driver = $norm((string)(env_get('APP_MAIL_DRIVER', 'smtp') ?? 'smtp'));
+    if (!in_array($driver, ['smtp', 'node', 'php_mail'], true)) {
+        $driver = 'smtp';
+    }
+
+    $allowNode = app_mail_truthy((string)(env_get('USE_NODE_EMAIL', '1') ?? '1'));
+    $allowPhpFallback = app_mail_truthy((string)(env_get('FALLBACK_TO_PHP_MAIL', '1') ?? '1'));
+    $allowNodeFallback = app_mail_truthy((string)(env_get('APP_MAIL_SMTP_FALLBACK_NODE', '1') ?? '1'));
+
+    $order = [];
+    if ($driver === 'smtp') {
+        $order[] = 'smtp';
+        if ($allowNodeFallback && $allowNode) {
+            $order[] = 'node';
+        }
+    } elseif ($driver === 'node') {
+        if ($allowNode) {
+            $order[] = 'node';
+        }
+        if (app_mail_truthy((string)(env_get('APP_MAIL_NODE_FALLBACK_SMTP', '1') ?? '1'))) {
+            $order[] = 'smtp';
+        }
+    } else {
+        $order[] = 'php_mail';
+    }
+
+    if ($allowPhpFallback && !in_array('php_mail', $order, true)) {
+        $order[] = 'php_mail';
+    }
+
+    // If SMTP is chosen but config is incomplete, push it out and let other transports try first.
+    if (!app_mail_smtp_is_ready($smtp)) {
+        $order = array_values(array_filter($order, static function (string $transport): bool {
+            return $transport !== 'smtp';
+        }));
+        if ($driver === 'smtp' && !in_array('php_mail', $order, true)) {
+            $order[] = 'php_mail';
+        }
+    }
+
+    if (empty($order)) {
+        $order = ['php_mail'];
+    }
+
+    return $order;
+}
+
+function app_mail_send_via_smtp(
+    string $to,
+    string $subject,
+    string $htmlBody,
+    ?string $fromName,
+    array $smtpConfig,
+    array $headersMap
+): array {
+    if (!class_exists('\\PHPMailer\\PHPMailer\\PHPMailer')) {
+        return ['success' => false, 'error' => 'PHPMailer is not available'];
+    }
+
+    $effectiveFromName = trim((string)($fromName ?? ''));
+    if ($effectiveFromName === '') {
+        $effectiveFromName = (string)$smtpConfig['from_name'];
+    }
+
+    try {
+        $mailer = new \PHPMailer\PHPMailer\PHPMailer(true);
+        $mailer->isSMTP();
+        $mailer->Host = (string)$smtpConfig['host'];
+        $mailer->Port = (int)$smtpConfig['port'];
+        $mailer->SMTPAuth = (bool)$smtpConfig['smtp_auth'];
+        if ($mailer->SMTPAuth) {
+            $mailer->Username = (string)$smtpConfig['username'];
+            $mailer->Password = (string)$smtpConfig['password'];
+        }
+        if ((string)$smtpConfig['secure'] === 'ssl') {
+            $mailer->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS;
+        } elseif ((string)$smtpConfig['secure'] === 'tls') {
+            $mailer->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+        } else {
+            $mailer->SMTPSecure = '';
+        }
+        $mailer->Timeout = (int)$smtpConfig['timeout'];
+        $mailer->CharSet = 'UTF-8';
+        $mailer->isHTML(true);
+        $mailer->setFrom((string)$smtpConfig['from_email'], $effectiveFromName);
+        $mailer->addAddress($to);
+        $mailer->Subject = $subject;
+        $mailer->Body = $htmlBody;
+        foreach ($headersMap as $headerName => $headerValue) {
+            $safeName = trim(str_replace(["\r", "\n"], '', (string)$headerName));
+            $safeValue = trim(str_replace(["\r", "\n"], '', (string)$headerValue));
+            if ($safeName === '' || $safeValue === '') {
+                continue;
+            }
+            $mailer->addCustomHeader($safeName, $safeValue);
+        }
+
+        $mailer->send();
+        return ['success' => true, 'error' => null];
+    } catch (\Throwable $e) {
+        $errorInfo = isset($mailer) ? trim((string)$mailer->ErrorInfo) : '';
+        $message = trim($e->getMessage());
+        $finalError = $message;
+        if ($errorInfo !== '' && stripos($message, $errorInfo) === false) {
+            $finalError = $message !== '' ? ($message . ' | ErrorInfo: ' . $errorInfo) : ('ErrorInfo: ' . $errorInfo);
+        }
+        if ($finalError === '') {
+            $finalError = 'Unknown SMTP error';
+        }
+        return ['success' => false, 'error' => $finalError];
+    }
+}
+
 function send_app_mail(string $to, string $subject, string $htmlBody, ?string $fromName = null, array $options = []): bool {
     $to = trim($to);
     $meta = app_mail_get_log_meta();
-    $driver = 'node';
     $applicationId = app_mail_resolve_application_id($meta, $options);
     $subject = app_mail_apply_application_subject_tag($subject, $applicationId);
     $headersMap = integration_mail_headers($meta, $options);
+    $smtp = app_mail_smtp_config();
+    $order = app_mail_transport_order($options, $smtp);
+    $primaryDriver = $order[0] ?? 'php_mail';
 
     if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL)) {
-        mail_log_event('failed', $driver, (string)(env_get('APP_MAIL_FROM', '') ?? ''), $to, $subject, $meta, 'Invalid recipient email');
+        mail_log_event('failed', $primaryDriver, (string)(env_get('APP_MAIL_FROM', '') ?? ''), $to, $subject, $meta, 'Invalid recipient email');
         return false;
     }
 
-    $fromEmail = (string)(env_get('APP_MAIL_FROM', '') ?? '');
+    $fromEmail = (string)$smtp['from_email'];
     if ($fromEmail === '' || !filter_var($fromEmail, FILTER_VALIDATE_EMAIL)) {
-        mail_log_event('failed', $driver, $fromEmail, $to, $subject, $meta, 'Invalid from email');
+        mail_log_event('failed', $primaryDriver, $fromEmail, $to, $subject, $meta, 'Invalid from email');
         return false;
     }
 
-    // Check if Node service is available
-    $useNode = env_get('USE_NODE_EMAIL', '1') === '1';
-    
-    if ($useNode && NODE_API_KEY) {
-        app_mail_debug_log('Attempting to send via Node.js service');
-        
-        // Extract ticket ID from meta if present
-        $metadata = [
-            'template_id' => $meta['template_id'] ?? null,
-            'application_id' => $applicationId !== '' ? $applicationId : ($meta['application_id'] ?? null),
-            'case_id' => $meta['case_id'] ?? null,
-            'role' => $meta['role'] ?? null,
-            'event_type' => $meta['event_type'] ?? ($options['event_type'] ?? null),
-            'queue_id' => $meta['queue_id'] ?? ($meta['queueId'] ?? ($meta['queue'] ?? null)),
-        ];
+    app_mail_debug_log('mail.transport.order=' . implode('>', $order));
+    app_mail_debug_log('mail.smtp.config=' . json_encode([
+        'host' => $smtp['host'],
+        'port' => $smtp['port'],
+        'secure' => $smtp['secure'] === '' ? 'none' : $smtp['secure'],
+        'auth' => $smtp['smtp_auth'],
+        'username' => $smtp['username']
+    ], JSON_UNESCAPED_SLASHES));
 
-        $result = send_via_node($to, $subject, $htmlBody, $fromName, [], $metadata, $headersMap);
-        
-        if ($result['success']) {
-            app_mail_debug_log('Email sent successfully via Node.js');
-            mail_log_event('sent', $driver, $fromEmail, $to, $subject, $meta, null);
-            return true;
-        } else {
-            $error = $result['error'] ?? ($result['response']['error'] ?? 'Unknown error');
-            app_mail_debug_log('Node.js service failed: ' . $error);
-            
-            // Fallback to PHP mail if configured
-            if (env_get('FALLBACK_TO_PHP_MAIL', '0') === '1') {
-                app_mail_debug_log('Falling back to PHP mail()');
-                return send_app_mail_php_fallback($to, $subject, $htmlBody, $fromName, $fromEmail, $meta, $headersMap);
+    $lastTransport = end($order);
+    reset($order);
+    foreach ($order as $transport) {
+        if ($transport === 'smtp') {
+            app_mail_debug_log('mail.transport.chosen=smtp');
+            $smtpResult = app_mail_send_via_smtp($to, $subject, $htmlBody, $fromName, $smtp, $headersMap);
+            if ($smtpResult['success']) {
+                mail_log_event('sent', 'smtp', $fromEmail, $to, $subject, $meta, null);
+                return true;
             }
-            
-            mail_log_event('failed', $driver, $fromEmail, $to, $subject, $meta, 'Node service error: ' . $error);
-            return false;
+            $smtpError = (string)($smtpResult['error'] ?? 'Unknown SMTP error');
+            app_mail_debug_log('mail.smtp.error=' . $smtpError);
+            if ($transport === $lastTransport) {
+                mail_log_event('failed', 'smtp', $fromEmail, $to, $subject, $meta, $smtpError);
+                return false;
+            }
+            continue;
         }
-    } else {
-        // Use PHP mail directly
-        return send_app_mail_php_fallback($to, $subject, $htmlBody, $fromName, $fromEmail, $meta, $headersMap);
+
+        if ($transport === 'node') {
+            app_mail_debug_log('mail.transport.chosen=node');
+            $metadata = [
+                'template_id' => $meta['template_id'] ?? null,
+                'application_id' => $applicationId !== '' ? $applicationId : ($meta['application_id'] ?? null),
+                'case_id' => $meta['case_id'] ?? null,
+                'role' => $meta['role'] ?? null,
+                'event_type' => $meta['event_type'] ?? ($options['event_type'] ?? null),
+                'queue_id' => $meta['queue_id'] ?? ($meta['queueId'] ?? ($meta['queue'] ?? null)),
+            ];
+
+            $result = send_via_node($to, $subject, $htmlBody, $fromName, [], $metadata, $headersMap);
+            if (($result['success'] ?? false) === true) {
+                mail_log_event('sent', 'node', $fromEmail, $to, $subject, $meta, null);
+                return true;
+            }
+            $error = (string)($result['error'] ?? ($result['response']['error'] ?? 'Unknown Node error'));
+            app_mail_debug_log('mail.node.error=' . $error);
+            if ($transport === $lastTransport) {
+                mail_log_event('failed', 'node', $fromEmail, $to, $subject, $meta, $error);
+                return false;
+            }
+            continue;
+        }
+
+        if ($transport === 'php_mail') {
+            app_mail_debug_log('mail.transport.chosen=php_mail');
+            return send_app_mail_php_fallback($to, $subject, $htmlBody, $fromName, $fromEmail, $meta, $headersMap);
+        }
     }
+
+    mail_log_event('failed', $primaryDriver, $fromEmail, $to, $subject, $meta, 'No mail transport available');
+    return false;
 }
 
 /**
@@ -389,8 +607,28 @@ function send_app_mail_php_fallback(string $to, string $subject, string $htmlBod
     }
 
     $params = '-f' . $fromEmail;
-    $ok = @mail($to, $encodedSubject, $htmlBody, implode("\r\n", $headers), $params);
-    
-    mail_log_event($ok ? 'sent' : 'failed', 'php_fallback', $fromEmail, $to, $subject, $meta, $ok ? null : 'mail() returned false');
+    $mailWarning = '';
+    $previousError = error_get_last();
+    set_error_handler(static function (int $severity, string $message, string $file = '', int $line = 0) use (&$mailWarning): bool {
+        $mailWarning = trim($message);
+        return true;
+    });
+    $ok = mail($to, $encodedSubject, $htmlBody, implode("\r\n", $headers), $params);
+    restore_error_handler();
+    $lastError = error_get_last();
+    $errorInfo = '';
+    if (!$ok) {
+        if ($mailWarning !== '') {
+            $errorInfo = $mailWarning;
+        } elseif (is_array($lastError) && $lastError !== $previousError && !empty($lastError['message'])) {
+            $errorInfo = trim((string)$lastError['message']);
+        }
+        if ($errorInfo === '') {
+            $errorInfo = 'mail() returned false';
+        }
+    }
+
+    app_mail_debug_log('mail.php_fallback.result=' . ($ok ? 'true' : 'false') . ($errorInfo !== '' ? '; error=' . $errorInfo : ''));
+    mail_log_event($ok ? 'sent' : 'failed', 'php_fallback', $fromEmail, $to, $subject, $meta, $ok ? null : $errorInfo);
     return $ok;
 }

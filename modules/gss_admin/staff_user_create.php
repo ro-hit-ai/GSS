@@ -6,6 +6,10 @@ require_once __DIR__ . '/../../includes/auth.php';
 auth_require_login('gss_admin');
 
 $menu = gss_admin_menu();
+$sessionClientId = isset($_SESSION['auth_client_id']) ? (int)$_SESSION['auth_client_id'] : 0;
+if ($sessionClientId <= 0) {
+    $sessionClientId = 1;
+}
 
 ob_start();
 ?>
@@ -23,7 +27,7 @@ ob_start();
     <form id="staffUserCreateForm" style="margin-top: 6px;">
         <input type="hidden" name="user_id" id="staffUserId" value="">
         <input type="hidden" name="form_action" id="staffUserFormAction" value="save">
-        <input type="hidden" name="client_id" id="staffUserClientId" value="">
+        <input type="hidden" name="client_id" id="staffUserClientId" value="<?php echo (int)$sessionClientId; ?>">
         <div id="tab-personal" class="tab-panel active">
             <div class="form-grid">
                 <div class="form-control">

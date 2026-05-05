@@ -4,6 +4,7 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/integration.php';
+require_once __DIR__ . '/../shared/case_component_binding.php';
 
 auth_require_login('team_lead');
 auth_session_start();
@@ -132,6 +133,9 @@ try {
         . 'WHERE case_id = ? AND application_id = ? AND LOWER(TRIM(component_key)) = ?'
     );
     $upd->execute([$assignedRole, $assignedUserId, $caseId, $applicationId, $componentKey]);
+
+    // Ensure stage workflow rows exist whenever a component is explicitly assigned/activated.
+    ensure_component_workflow_rows($pdo, $applicationId, $componentKey);
 
     // Best-effort: log to case timeline
     try {

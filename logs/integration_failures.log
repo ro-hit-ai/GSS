@@ -1,0 +1,12 @@
+[2026-05-04 11:03:28 UTC] Database connection failed: SQLSTATE[HY000] [2002] A socket operation was attempted to an unreachable host
+[2026-05-04 11:03:29 UTC] Database connection failed: SQLSTATE[HY000] [2002] A socket operation was attempted to an unreachable host
+[2026-05-04 11:03:33 UTC] Database connection failed: SQLSTATE[HY000] [2002] A socket operation was attempted to an unreachable host
+[2026-05-04 11:03:42 UTC] Database connection failed: SQLSTATE[HY000] [2002] A socket operation was attempted to an unreachable host
+[2026-05-04 11:04:23 UTC] Database connection failed: SQLSTATE[HY000] [2002] A socket operation was attempted to an unreachable host
+[2026-05-04 11:04:25 UTC] Database connection failed: SQLSTATE[HY000] [2002] A socket operation was attempted to an unreachable host
+[2026-05-04 11:06:15 UTC] Database connection failed: SQLSTATE[HY000] [2002] A socket operation was attempted to an unreachable host
+[2026-05-04 11:06:17 UTC] Database connection failed: SQLSTATE[HY000] [2002] A socket operation was attempted to an unreachable host
+[2026-05-04 11:32:59 UTC] Database connection failed: SQLSTATE[HY000] [2002] A connection attempt failed because the connected party did not properly respond after a period of time, or established connection failed because connected host has failed to respond
+[2026-05-04 11:46:12 UTC] Database connection failed: SQLSTATE[HY000] [2002] A connection attempt failed because the connected party did not properly respond after a period of time, or established connection failed because connected host has failed to respond
+[2026-05-04 11:46:33 UTC] Database connection failed: SQLSTATE[HY000] [2002] A connection attempt failed because the connected party did not properly respond after a period of time, or established connection failed because connected host has failed to respond
+[2026-05-04 11:48:27 UTC] Database connection failed: SQLSTATE[HY000] [2002] A connection attempt failed because the connected party did not properly respond after a period of time, or established connection failed because connected host has failed to respond

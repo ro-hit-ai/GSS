@@ -11,7 +11,8 @@ $isEmbedded = isset($_GET['embedded']) && $_GET['embedded'] == '1';
 
 // For non-embedded mode, check authentication
 if (!$isEmbedded) {
-    if (!isset($_SESSION['candidate_id']) && !isset($_GET['bypass'])) {
+    $isCandidateSession = !empty($_SESSION['logged_in']) && !empty($_SESSION['application_id']);
+    if (!isset($_SESSION['candidate_id']) && !$isCandidateSession && !isset($_GET['bypass'])) {
         http_response_code(401);
         die('Unauthorized access. Please login again.');
     }
@@ -21,6 +22,14 @@ if (!$isEmbedded) {
 $applicationId = $_SESSION['application_id'] ?? $_GET['application_id'] ?? null;
 if (!$applicationId || $applicationId == 'N/A') {
     die('Application ID not found or invalid.');
+}
+
+// Candidate-style session must not access other application IDs.
+if (!empty($_SESSION['logged_in']) && !empty($_SESSION['application_id']) && isset($_GET['application_id'])) {
+    if ((string)$_SESSION['application_id'] !== (string)$_GET['application_id']) {
+        http_response_code(401);
+        die('Unauthorized access to application.');
+    }
 }
 
 require_once __DIR__ . '/../../config/env.php';

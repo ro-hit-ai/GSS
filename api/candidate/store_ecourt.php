@@ -4,6 +4,7 @@ session_start();
 
 require_once __DIR__ . "/../../config/env.php";
 require_once __DIR__ . "/../../config/db.php";
+require_once __DIR__ . "/../shared/case_component_binding.php";
 
 class ValidationException extends Exception {}
 class FileUploadException extends Exception {}
@@ -300,7 +301,10 @@ try {
         } catch (Throwable $_e) {
         }
     }
-    
+
+    // Ensure workflow rows always exist for ecourt component.
+    ensure_component_workflow_rows($pdo, (string)$application_id, 'ecourt');
+
     // Commit transaction
     $pdo->commit();
     

@@ -130,12 +130,11 @@ class Contact {
             const hasGenericContact = parseInt(counts.contact || '0', 10) > 0
                 || !!(config && Array.isArray(config.components) && config.components.some((item) => String(item && item.candidate_page ? item.candidate_page : '') === 'contact'));
             if (hasGenericContact) {
-                out.push('current_address', 'permanent_address');
+                out.push('current_address');
             }
         }
 
-        // Default: validate both sections (permanent can still be "same as current").
-        return out.length ? out : ['current_address', 'permanent_address'];
+        return out.length ? out : ['current_address'];
     }
 
     static activateTab(tabId) {

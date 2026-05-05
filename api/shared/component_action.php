@@ -112,6 +112,37 @@ function role_to_stage(string $role): string {
     return $role;
 }
 
+function allowed_actions_for_status(string $status): array {
+    $s = strtolower(trim($status));
+    if ($s === '') $s = 'pending';
+    if ($s === 'in_progress' || $s === 'in-progress' || $s === 'submitted') $s = 'pending';
+
+    switch ($s) {
+        case 'pending':
+            return ['hold', 'insufficient_documents', 'reject', 'approve'];
+        case 'hold':
+            return ['approve', 'reject', 'insufficient_documents'];
+        case 'insufficient_documents':
+            return ['approve', 'hold', 'reject'];
+        case 'approved':
+            return ['hold', 'insufficient_documents', 'reject'];
+        case 'rejected':
+            return ['hold', 'insufficient_documents', 'approve'];
+        default:
+            return ['hold', 'insufficient_documents', 'reject', 'approve'];
+    }
+}
+
+function is_action_allowed_for_status(string $status, string $action): bool {
+    $allowed = allowed_actions_for_status($status);
+    return in_array(strtolower(trim($action)), $allowed, true);
+}
+
+function is_stage_approved_equivalent(string $status): bool {
+    $s = strtolower(trim($status));
+    return in_array($s, ['approved', 'completed', 'clear', 'verified'], true);
+}
+
 function prev_stage(string $stage): string {
     $stage = strtolower(trim($stage));
     if ($stage === 'validator') return 'candidate';
@@ -208,11 +239,25 @@ function verifier_group_components(string $groupKey): array {
     return [];
 }
 
-function sync_verifier_group_queue(PDO $pdo, int $caseId, int $userId, string $componentKey): void {
+function sync_verifier_group_queue(PDO $pdo, int $caseId, int $userId, string $componentKey, array $allowedSet = []): void {
     $groupKey = verifier_group_for_component($componentKey);
     if ($caseId <= 0 || $userId <= 0 || $groupKey === '') return;
 
     $parts = verifier_group_components($groupKey);
+    if (!$parts) return;
+
+    // Important: evaluate "pending" only within verifier-actionable sections.
+    // Otherwise limited-section verifiers can never complete a mixed group.
+    if (!isset($allowedSet['*'])) {
+        $filtered = [];
+        foreach ($parts as $p) {
+            $k = norm_component_key((string)$p);
+            if ($k !== '' && isset($allowedSet[$k])) {
+                $filtered[] = $k;
+            }
+        }
+        $parts = array_values(array_unique($filtered));
+    }
     if (!$parts) return;
     $ph = implode(',', array_fill(0, count($parts), '?'));
 
@@ -276,7 +321,7 @@ function sync_validator_queue(PDO $pdo, int $caseId, int $userId, bool $useWorkf
             . "LEFT JOIN Vati_Payfiller_Case_Component_Workflow val ON val.case_id = c.case_id AND LOWER(TRIM(val.component_key)) = LOWER(TRIM(c.component_key)) AND val.stage = 'validator' "
             . 'WHERE c.case_id = ? AND c.is_required = 1 '
             . "AND LOWER(TRIM(c.component_key)) <> 'reports' "
-            . "AND COALESCE(LOWER(TRIM(cand.status)), '') = 'approved' "
+            . "AND COALESCE(LOWER(TRIM(cand.status)), '') IN ('approved','completed','clear','verified') "
             . "AND COALESCE(LOWER(TRIM(val.status)), '') NOT IN ('approved','rejected')";
         $st = $pdo->prepare($sqlPending);
         $st->execute([$caseId]);
@@ -523,16 +568,22 @@ try {
     $stage = role_to_stage($role);
     $overrideReasonContext = '';
 
-    // Ensure component row exists
+    // Snapshot contract: action is allowed only for components present in case snapshot.
     try {
-        $ins = $pdo->prepare(
-            'INSERT IGNORE INTO Vati_Payfiller_Case_Components (case_id, application_id, component_key, is_required, status) '
-            . 'VALUES (?, ?, ?, 1, \'pending\')'
+        $exists = $pdo->prepare(
+            'SELECT 1 FROM Vati_Payfiller_Case_Components '
+            . 'WHERE case_id = ? AND application_id = ? AND LOWER(TRIM(component_key)) = ? LIMIT 1'
         );
-        $ins->execute([$caseId, $applicationId, $componentKey]);
+        $exists->execute([$caseId, $applicationId, $componentKey]);
+        $hasSnapshotComponent = (bool)$exists->fetchColumn();
+        if (!$hasSnapshotComponent) {
+            http_response_code(400);
+            echo json_encode(['status' => 0, 'message' => 'Component is not part of case snapshot']);
+            exit;
+        }
     } catch (Throwable $e) {
         http_response_code(500);
-        echo json_encode(['status' => 0, 'message' => 'Component table not installed']);
+        echo json_encode(['status' => 0, 'message' => 'Component snapshot check failed']);
         exit;
     }
 
@@ -588,14 +639,18 @@ try {
         try {
             $insCand = $pdo->prepare(
                 'INSERT INTO Vati_Payfiller_Case_Component_Workflow (case_id, application_id, component_key, stage, status, updated_by_user_id, updated_by_role, completed_at) '
-                . 'VALUES (?, ?, ?, \'candidate\', \'approved\', NULL, \'candidate\', NOW()) '
-                . 'ON DUPLICATE KEY UPDATE stage = stage'
+                . 'VALUES (?, ?, ?, \'candidate\', \'completed\', NULL, \'candidate\', NOW()) '
+                . 'ON DUPLICATE KEY UPDATE '
+                . 'status = \'completed\', '
+                . 'completed_at = COALESCE(completed_at, NOW()), '
+                . 'updated_by_role = \'candidate\', '
+                . 'updated_at = NOW()'
             );
             $insCand->execute([$caseId, $applicationId, $componentKey]);
         } catch (Throwable $e) {
         }
 
-        // Lock: do not allow changing final stage decisions
+        // Stage transition policy (reversible model)
         try {
             if ($useItemWorkflow) {
                 $cs = $pdo->prepare(
@@ -611,9 +666,24 @@ try {
                 $cs->execute([$caseId, $componentKey, $stage]);
             }
             $cur = strtolower(trim((string)($cs->fetchColumn() ?: '')));
-            if ($cur === 'approved' || $cur === 'rejected') {
-                http_response_code(400);
-                echo json_encode(['status' => 0, 'message' => 'Action already finalized: ' . $cur]);
+            if (!is_action_allowed_for_status($cur, $action)) {
+                http_response_code(409);
+                echo json_encode([
+                    'status' => 0,
+                    'message' => 'Action not allowed from current status: ' . ($cur !== '' ? $cur : 'pending'),
+                    'data' => [
+                        'current_status' => ($cur !== '' ? $cur : 'pending'),
+                        'allowed_actions' => allowed_actions_for_status($cur),
+                    ]
+                ]);
+                exit;
+            }
+            if ($cur === 'rejected' && $action === 'approve' && $reason === '') {
+                http_response_code(409);
+                echo json_encode([
+                    'status' => 0,
+                    'message' => 'Reason is required to approve a rejected item.'
+                ]);
                 exit;
             }
         } catch (Throwable $e) {
@@ -636,7 +706,7 @@ try {
                     $ps->execute([$caseId, $componentKey, $prev]);
                 }
                 $prevStatus = strtolower(trim((string)($ps->fetchColumn() ?: '')));
-                if ($prevStatus !== 'approved') {
+                if (!is_stage_approved_equivalent($prevStatus)) {
                     if ($useItemWorkflow) {
                         // Fallback to section-level previous-stage status when item-level
                         // status has not been captured yet (backward-compatible rollout).
@@ -655,7 +725,7 @@ try {
                         }
                     }
                 }
-                if ($prevStatus !== 'approved') {
+                if (!is_stage_approved_equivalent($prevStatus)) {
                     if ($prevStatus === 'rejected') {
                         if ($stage === 'verifier' && $prev === 'validator' && $action === 'approve') {
                             if ($reason === '') {
@@ -698,7 +768,7 @@ try {
         }
     }
 
-    // Legacy lock: if component already approved/rejected, block
+    // Legacy transition policy for non-workflow deployments.
     if (!$useWorkflow) {
         try {
             $cs = $pdo->prepare(
@@ -707,9 +777,24 @@ try {
             );
             $cs->execute([$caseId, $applicationId, $componentKey]);
             $cur = strtolower(trim((string)($cs->fetchColumn() ?: '')));
-            if ($cur === 'approved' || $cur === 'rejected') {
-                http_response_code(400);
-                echo json_encode(['status' => 0, 'message' => 'Action already finalized: ' . $cur]);
+            if (!is_action_allowed_for_status($cur, $action)) {
+                http_response_code(409);
+                echo json_encode([
+                    'status' => 0,
+                    'message' => 'Action not allowed from current status: ' . ($cur !== '' ? $cur : 'pending'),
+                    'data' => [
+                        'current_status' => ($cur !== '' ? $cur : 'pending'),
+                        'allowed_actions' => allowed_actions_for_status($cur),
+                    ]
+                ]);
+                exit;
+            }
+            if ($cur === 'rejected' && $action === 'approve' && $reason === '') {
+                http_response_code(409);
+                echo json_encode([
+                    'status' => 0,
+                    'message' => 'Reason is required to approve a rejected item.'
+                ]);
                 exit;
             }
         } catch (Throwable $e) {
@@ -1014,7 +1099,7 @@ try {
         && ($action === 'approve' || $action === 'reject')
         && ($componentStatusToPersist === 'approved' || $componentStatusToPersist === 'rejected')) {
         try {
-            sync_verifier_group_queue($pdo, $caseId, $userId, $componentKey);
+            sync_verifier_group_queue($pdo, $caseId, $userId, $componentKey, session_allowed_sections());
         } catch (Throwable $e) {
         }
     }
