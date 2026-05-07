@@ -213,13 +213,22 @@ class EmploymentManager extends TabManager {
         }
 
         // Handle insufficient documents checkbox
-        const insufficientCheckbox = card.querySelector('input[name="insufficient_employment_docs[]"]');
+        const insufficientCheckbox = card.querySelector('.insufficient-emp-checkbox');
+        const insufficientHidden = card.querySelector('.insufficient-emp-hidden');
+        if (insufficientHidden) {
+            insufficientHidden.name = `insufficient_employment_docs[${index}]`;
+            insufficientHidden.value = '0';
+        }
         if (insufficientCheckbox) {
+            insufficientCheckbox.name = `insufficient_employment_docs[${index}]`;
             const isInsufficient = employmentDoc === 'INSUFFICIENT_DOCUMENTS' ||
                                  data.insufficient_documents == 1 || 
                                  data.insufficient_documents === true;
             
             insufficientCheckbox.checked = isInsufficient;
+            if (insufficientHidden) {
+                insufficientHidden.value = isInsufficient ? '1' : '0';
+            }
             this.toggleEmploymentFileInput(card, isInsufficient);
             console.log(`   Set insufficient_employment_docs for card ${index}: ${isInsufficient}`);
         }
@@ -304,12 +313,16 @@ class EmploymentManager extends TabManager {
         console.log('🔧 Setting up insufficient documents handlers');
         
         document.addEventListener('change', (e) => {
-            if (e.target.matches('input[name="insufficient_employment_docs[]"]')) {
+            if (e.target.matches('.insufficient-emp-checkbox')) {
                 const checkbox = e.target;
                 const card = checkbox.closest('.employment-card');
                 if (card) {
                     const cardIndex = card.dataset.cardIndex || 'unknown';
                     console.log(`🔘 Insufficient employment docs checkbox changed in card ${cardIndex}: ${checkbox.checked}`);
+                    const hidden = card.querySelector('.insufficient-emp-hidden');
+                    if (hidden) {
+                        hidden.value = checkbox.checked ? '1' : '0';
+                    }
                     this.toggleEmploymentFileInput(card, checkbox.checked);
                 }
             }
@@ -404,7 +417,7 @@ class EmploymentManager extends TabManager {
                 }
 
                 const allowed = ['pdf', 'jpg', 'jpeg', 'png'];
-                const validation = this.validateUploadFile(file, allowed, 10 * 1024 * 1024);
+                const validation = this.validateUploadFile(file, allowed, 5 * 1024 * 1024);
                 if (file && !validation.ok) {
                     if (window.CandidateNotify) {
                         window.CandidateNotify.error(validation.message, {
@@ -427,7 +440,7 @@ class EmploymentManager extends TabManager {
                 if (card && input.files.length > 0) {
                     console.log(`📄 Employment file selected in card:`, input.files[0].name);
                     const insufficientCheckbox =
-                        card.querySelector('input[name="insufficient_employment_docs[]"]');
+                        card.querySelector('.insufficient-emp-checkbox');
                     if (insufficientCheckbox) {
                         insufficientCheckbox.checked = false;
                         this.toggleEmploymentFileInput(card, false);
@@ -717,7 +730,7 @@ class EmploymentManager extends TabManager {
 if (isFinalSubmit) {
 
     const insufficientCheckbox =
-        card.querySelector('input[name="insufficient_employment_docs[]"]');
+        card.querySelector('.insufficient-emp-checkbox');
 
         const employmentDocType =
             card.querySelector('[name="employment_doc_type[]"]');
@@ -942,6 +955,10 @@ if (isFinalSubmit) {
             }
 
             const formData = new FormData(form);
+            this.cards.forEach((card, index) => {
+                const checkbox = card.querySelector('.insufficient-emp-checkbox');
+                formData.set(`insufficient_employment_docs[${index}]`, checkbox && checkbox.checked ? '1' : '0');
+            });
             formData.set('draft', isDraft ? '1' : '0');
 
             console.log('📦 Form data prepared:', {
@@ -1084,3 +1101,4 @@ if (typeof window !== 'undefined') {
 }
 
 console.log('✅ Employment.js module loaded');
+

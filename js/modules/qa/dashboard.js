@@ -13,6 +13,7 @@
         var asgHost = document.getElementById('qaAssignmentsBody');
 
         var timer = null;
+        var DASH_POLL_MS = 15000;
 
         function setMessage(text, type) {
             if (!msgEl) return;
@@ -93,7 +94,7 @@
         function load() {
             setMessage('', '');
             var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-            fetch(base + '/api/qa/dashboard_stats.php', { credentials: 'same-origin' })
+            fetch(base + '/api/qa/dashboard_stats.php?_ts=' + Date.now(), { credentials: 'same-origin' })
                 .then(function (res) { return res.json(); })
                 .then(function (data) {
                     if (!data || data.status !== 1) throw new Error((data && data.message) ? data.message : 'Failed');
@@ -116,18 +117,24 @@
         }
 
         function applyAuto() {
-            var on = !!(autoEl && autoEl.checked);
+            var on = !autoEl || !!autoEl.checked;
             if (timer) {
                 clearInterval(timer);
                 timer = null;
             }
             if (on) {
-                timer = setInterval(load, 15000);
+                timer = setInterval(function () {
+                    if (document.visibilityState === 'hidden') return;
+                    load();
+                }, DASH_POLL_MS);
             }
         }
 
         if (refreshBtn) refreshBtn.addEventListener('click', load);
         if (autoEl) autoEl.addEventListener('change', applyAuto);
+        document.addEventListener('visibilitychange', function () {
+            if (document.visibilityState === 'visible') load();
+        });
 
         load();
         applyAuto();

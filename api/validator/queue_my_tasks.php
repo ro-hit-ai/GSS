@@ -67,6 +67,8 @@ try {
     }
 
     $pdo = getDB();
+    // Queue completion is projection-owned (WorkflowProjectionService). Do not auto-close here.
+
     $stmt = $pdo->prepare(
         "SELECT q.case_id, q.application_id, q.client_id, q.status, q.assigned_user_id, q.claimed_at, q.completed_at,\n" .
         "       c.candidate_first_name, c.candidate_last_name, c.candidate_email, c.candidate_mobile, c.case_status, c.created_at\n" .

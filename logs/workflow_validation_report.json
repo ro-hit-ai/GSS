@@ -1,0 +1,95 @@
+{
+    "application_id": "APP-20260505140839550",
+    "case_id": 125,
+    "executed_at": "2026-05-06T11:42:11+02:00",
+    "results": [
+        {
+            "scenario": "normal_validator_approve",
+            "expected": "approved + version+1",
+            "actual": "approved v11",
+            "pass": "PASS",
+            "version_before": 10,
+            "version_after": 11,
+            "latency_ms": 699,
+            "code": "WF_OK",
+            "http": 200
+        },
+        {
+            "scenario": "invalid_stage_verifier_before_validator",
+            "expected": "WF_PREVIOUS_STAGE_PENDING + no version change",
+            "actual": "WF_PREVIOUS_STAGE_PENDING v20",
+            "pass": "PASS",
+            "version_before": 20,
+            "version_after": 20,
+            "latency_ms": 138,
+            "code": "WF_PREVIOUS_STAGE_PENDING",
+            "http": 400
+        },
+        {
+            "scenario": "stale_version_conflict",
+            "expected": "WF_VERSION_CONFLICT",
+            "actual": "WF_VERSION_CONFLICT",
+            "pass": "PASS",
+            "version_before": 30,
+            "version_after": 30,
+            "latency_ms": 118,
+            "code": "WF_VERSION_CONFLICT",
+            "http": 409
+        },
+        {
+            "scenario": "unauthorized_role",
+            "expected": "WF_FORBIDDEN_ROLE",
+            "actual": "WF_FORBIDDEN_ROLE",
+            "pass": "PASS",
+            "version_before": 40,
+            "version_after": 40,
+            "latency_ms": 67,
+            "code": "WF_FORBIDDEN_ROLE",
+            "http": 403
+        },
+        {
+            "scenario": "assignment_mismatch",
+            "expected": "WF_NOT_ASSIGNED",
+            "actual": "WF_NOT_ASSIGNED",
+            "pass": "PASS",
+            "version_before": 50,
+            "version_after": 50,
+            "latency_ms": 122,
+            "code": "WF_NOT_ASSIGNED",
+            "http": 403
+        },
+        {
+            "scenario": "invalid_status_transition",
+            "expected": "WF_INVALID_TRANSITION",
+            "actual": "WF_INVALID_TRANSITION",
+            "pass": "PASS",
+            "version_before": 60,
+            "version_after": 60,
+            "latency_ms": 125,
+            "code": "WF_INVALID_TRANSITION",
+            "http": 409
+        },
+        {
+            "scenario": "idempotent_replay_duplicate_request_id",
+            "expected": "first WF_OK, second WF_IDEMPOTENT_REPLAY, one version increment",
+            "actual": "WF_OK,WF_IDEMPOTENT_REPLAY,v71",
+            "pass": "PASS",
+            "version_before": 70,
+            "version_after": 71,
+            "latency_ms": 0,
+            "code": "WF_IDEMPOTENT_REPLAY",
+            "http": 200
+        },
+        {
+            "scenario": "qa_invariant_failure_verifier_not_final",
+            "expected": "blocked + rollback/no bump",
+            "actual": "WF_PREVIOUS_STAGE_PENDING v80",
+            "pass": "PASS",
+            "version_before": 80,
+            "version_after": 80,
+            "latency_ms": 143,
+            "code": "WF_PREVIOUS_STAGE_PENDING",
+            "http": 400
+        }
+    ]
+}

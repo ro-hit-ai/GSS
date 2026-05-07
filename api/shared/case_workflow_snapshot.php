@@ -123,7 +123,10 @@ try {
     }
 
     $pdo = getDB();
-    enforce_client_admin_application_scope($pdo, $applicationId);
+    // Trusted server-to-server API key calls must bypass session/client scope checks.
+    if (!$authViaApiKey) {
+        enforce_client_admin_application_scope($pdo, $applicationId);
+    }
 
     $sql = "SELECT
                 c.case_id,

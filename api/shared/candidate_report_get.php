@@ -280,7 +280,8 @@ try {
     $role = $authViaApiKey ? 'service' : session_role_norm();
     if (session_status() === PHP_SESSION_NONE) session_start();
     $userId = isset($_SESSION['auth_user_id']) ? (int)$_SESSION['auth_user_id'] : 0;
-    $clientId = resolve_client_id();
+    // Trusted server-to-server API key calls must bypass session/client-id gate.
+    $clientId = $authViaApiKey ? 0 : resolve_client_id();
     $applicationId = integration_normalize_application_id(get_str('application_id', ''));
     $caseId = get_int('case_id', 0);
 
@@ -397,6 +398,7 @@ try {
     }
 
     if (!$case) {
+        shared_endpoint_log('case lookup failed application_id=' . $applicationId . ' auth_method=' . ($authViaApiKey ? 'api-key' : 'session'));
         http_response_code(404);
         echo json_encode(['status' => 0, 'message' => 'Case not found for this application_id']);
         exit;

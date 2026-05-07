@@ -2779,7 +2779,7 @@ if (uploadInput) {
 
             frameHost.innerHTML = '<div style="padding:10px; color:#0f172a; font-size:12px;">' +
                 '<div style="font-weight:900; margin-bottom:6px;">Preview not available</div>' +
-                '<a href="' + esc(href) + '" target="_blank" style="text-decoration:none; color:#2563eb; font-weight:800;">Open document</a>' +
+                '<a href="' + esc(href) + '" class="js-cv-doc-view" data-doc-label="' + esc(label || 'Document') + '" style="text-decoration:none; color:#2563eb; font-weight:800;">Open document</a>' +
                 '</div>';
         }
         listHost.__cvDocSetActive = setActive;
@@ -2814,7 +2814,7 @@ if (uploadInput) {
                         itemKey: context.itemKey || '',
                         mimeType: row && row.mime_type ? String(row.mime_type) : ''
                     })) return;
-                    try { window.open(href, '_blank'); } catch (_e) {}
+                    showCrToast('Unable to open preview for this file.', 'warning');
                 }
             });
         }
@@ -2921,6 +2921,10 @@ if (uploadInput) {
         if (low === 'pendingverifier') return 'VE Pending'
         if (low === 'pendingvalidator') return 'VA Pending';
         if (low === 'pendingqa') return 'Pending QA';
+        if (low === 'in_progress' || low === 'in progress') return 'In Progress';
+        if (low === 'insufficient_documents') return 'Need Docs';
+        if (low === 'waiting_candidate') return 'Waiting Candidate';
+        if (low === 'blocked') return 'Blocked';
         return raw;
     }
 
@@ -2979,34 +2983,6 @@ if (uploadInput) {
                 return normalizeStageLabelForRole(stageStatus);
             }
 
-            var list = Array.isArray(d && d.assigned_components) ? d.assigned_components : [];
-            for (var i = 0; i < list.length; i++) {
-                var r = list[i] || {};
-                var k = r.component_key ? normSection(r.component_key) : '';
-                if (k === componentKey) {
-                    var wf = r.workflow && typeof r.workflow === 'object' ? r.workflow : null;
-                    if (wf) {
-                        var rr = String(getRole() || '').toLowerCase().trim();
-                        var st = '';
-                        if (rr === 'validator') st = String(wf.validator || '');
-                        else if (rr === 'verifier') st = String(wf.verifier || '');
-                        else if (rr === 'qa') st = String(wf.qa || '');
-                        else st = String(wf.candidate || '');
-                        var low2 = st.toLowerCase().trim();
-                        if (!low2 || low2 === 'pending') {
-                            if (rr === 'validator') return 'VA Pending';
-                            if (rr === 'verifier') return 'Verifier Pending';
-                            if (rr === 'qa') return 'QA Pending';
-                            return 'Candidate Pending';
-                        }
-                        if (low2 === 'approved') return 'Approved';
-                        if (low2 === 'rejected') return 'Rejected';
-                        if (low2 === 'hold') return 'On Hold';
-                        return normalizeStageLabelForRole(st);
-                    }
-                    return normalizeStageLabelForRole(r.current_stage ? String(r.current_stage) : '');
-                }
-            }
             return '';
         } catch (e) {
             return '';
@@ -3023,8 +2999,16 @@ if (uploadInput) {
             setBadge(badgeId, 'rejected', stageLabel);
             return true;
         }
+        if (low === 'approved' || low === 'completed') {
+            setBadge(badgeId, 'done', 'Completed');
+            return true;
+        }
         if (low === 'completed') {
             setBadge(badgeId, 'done', 'Completed');
+            return true;
+        }
+        if (low === 'on hold' || low === 'need docs' || low === 'blocked' || low === 'in progress' || low === 'waiting candidate') {
+            setBadge(badgeId, 'wip', stageLabel);
             return true;
         }
         if (low.indexOf('pending') === 0) {
@@ -3094,14 +3078,6 @@ if (uploadInput) {
         var education = Array.isArray(d.education) ? d.education : [];
         var employment = Array.isArray(d.employment) ? d.employment : [];
 
-        var basicDone = isFilled(basic.first_name) || isFilled(basic.last_name) || isFilled(basic.dob);
-        var idDone = identification.length > 0;
-        var contactDone = isFilled(contact.address1) || isFilled(contact.permanent_address1) || isFilled(contact.city) || isFilled(contact.state);
-        var eduDone = education.length > 0;
-        var empDone = employment.length > 0;
-        var refDone = isFilled(ref.reference_name) || isFilled(ref.reference_mobile) || isFilled(ref.reference_email);
-        var socialDone = isFilled(social.linkedin_url) || isFilled(social.facebook_url) || isFilled(social.instagram_url) || isFilled(social.twitter_url) || isFilled(social.other_url);
-        var ecourtDone = isFilled(ecourt.current_address) || isFilled(ecourt.permanent_address) || isFilled(ecourt.evidence_document);
         var reportsDone = isFilled(app.submitted_at) || isFilled(auth.file_name) || isFilled(auth.uploaded_at);
 
         // Show Validator Rejected only while verifier/qa has not finalized that component.
@@ -3136,15 +3112,15 @@ if (uploadInput) {
         if (!forcedRejected.ecourt) usedWorkflow = setStageBadge('cvNavBadgeEcourt', getWorkflowStageLabel(d, 'ecourt')) || usedWorkflow;
 
         if (!usedWorkflow) {
-            var pendingLabel = (role === 'validator') ? 'VA Pending' : 'Candidate Pending';
-            setBadge('cvNavBadgeBasic', basicDone ? 'wip' : 'pending', basicDone ? pendingLabel : 'Pending');
-            setBadge('cvNavBadgeId', idDone ? 'wip' : 'pending', idDone ? pendingLabel : 'Pending');
-            setBadge('cvNavBadgeContact', contactDone ? 'wip' : 'pending', contactDone ? pendingLabel : 'Pending');
-            setBadge('cvNavBadgeEducation', eduDone ? 'wip' : 'pending', eduDone ? pendingLabel : 'Pending');
-            setBadge('cvNavBadgeEmployment', empDone ? 'wip' : 'pending', empDone ? pendingLabel : 'Pending');
-            setBadge('cvNavBadgeReference', refDone ? 'wip' : 'pending', refDone ? pendingLabel : 'Pending');
-            setBadge('cvNavBadgeSocialmedia', socialDone ? 'wip' : 'pending', socialDone ? pendingLabel : 'Pending');
-            setBadge('cvNavBadgeEcourt', ecourtDone ? 'wip' : 'pending', ecourtDone ? pendingLabel : 'Pending');
+            var pendingLabel = (role === 'validator') ? 'VA Pending' : ((role === 'verifier') ? 'Verifier Pending' : ((role === 'qa') ? 'QA Pending' : 'Candidate Pending'));
+            setBadge('cvNavBadgeBasic', 'wip', pendingLabel);
+            setBadge('cvNavBadgeId', 'wip', pendingLabel);
+            setBadge('cvNavBadgeContact', 'wip', pendingLabel);
+            setBadge('cvNavBadgeEducation', 'wip', pendingLabel);
+            setBadge('cvNavBadgeEmployment', 'wip', pendingLabel);
+            setBadge('cvNavBadgeReference', 'wip', pendingLabel);
+            setBadge('cvNavBadgeSocialmedia', 'wip', pendingLabel);
+            setBadge('cvNavBadgeEcourt', 'wip', pendingLabel);
         }
 
         if (reportsDone) {
@@ -3175,8 +3151,8 @@ if (uploadInput) {
 
             var a = document.createElement('a');
             a.href = href;
-            a.target = '_blank';
-            a.rel = 'noopener';
+            a.className = 'js-cv-doc-view';
+            a.setAttribute('data-doc-label', v);
             a.textContent = 'View';
             a.style.textDecoration = 'none';
             a.style.color = '#2563eb';
@@ -3831,6 +3807,11 @@ if (uploadInput) {
             if (!b) return;
             b.disabled = !!disabled;
         });
+        try {
+            var proxyBtns = document.querySelectorAll('.cr-sec-action[data-proxy-action]');
+            proxyBtns.forEach(function (b) { b.disabled = !!disabled; });
+        } catch (_e) {
+        }
     }
 
     function canTakeCaseAction() {
@@ -3851,6 +3832,9 @@ if (uploadInput) {
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
         var url = base + '/api/shared/case_action.php';
         var compUrl = base + '/api/shared/component_action.php';
+        var actionInFlight = false;
+        var lastActionFingerprint = '';
+        var lastActionTs = 0;
 
         function roleToStage(role) {
             role = String(role || '').toLowerCase().trim();
@@ -4279,6 +4263,17 @@ function askActionConfirm(label) {
 
         async function run(action, label) {
             if (!applicationId) return;
+            var dedupeKey = [String(action || ''), String(currentSectionKey() || ''), String(getActiveItemKeyForSection(currentSectionKey()) || '')].join('|');
+            var nowTs = Date.now();
+            if (lastActionFingerprint === dedupeKey && (nowTs - lastActionTs) < 1200) {
+                return;
+            }
+            lastActionFingerprint = dedupeKey;
+            lastActionTs = nowTs;
+            if (actionInFlight) {
+                showCrToast('Action already in progress. Please wait.', 'info');
+                return;
+            }
 
             try {
                 if (!canTakeCaseAction()) {
@@ -4360,6 +4355,7 @@ function askActionConfirm(label) {
                     if (!ok) return;
                 }
 
+                actionInFlight = true;
                 setActionsDisabled(true);
                 setBoxMessage('cvTopMessage', '', '');
 
@@ -4369,6 +4365,10 @@ function askActionConfirm(label) {
                     if (role === 'verifier') {
                         group2 = getVerifierGroup() || null;
                     }
+                    var expectedVersion = REPORT_PAYLOAD && REPORT_PAYLOAD.case && REPORT_PAYLOAD.case.workflow_version != null
+                        ? parseInt(REPORT_PAYLOAD.case.workflow_version, 10)
+                        : null;
+                    var transitionRequestId = 'trn-' + applicationId + '-' + (componentKey || 'case') + '-' + (itemKey || 'na') + '-' + action + '-' + Date.now();
                     out = await postJson(compUrl, {
                         application_id: applicationId,
                         case_id: caseId || null,
@@ -4377,7 +4377,9 @@ function askActionConfirm(label) {
                         action: action,
                         group: group2,
                         reason: overrideReason || null,
-                        override_reason: overrideReason || null
+                        override_reason: overrideReason || null,
+                        expected_workflow_version: (Number.isFinite(expectedVersion) ? expectedVersion : -1),
+                        transition_request_id: transitionRequestId
                     });
                 } else {
                     var group = getVerifierGroup();
@@ -4433,8 +4435,10 @@ function askActionConfirm(label) {
 
                 // Update local workflow state so buttons lock immediately without reload
                 if (isComponentRole && (action === 'hold' || action === 'reject' || action === 'approve' || action === 'insufficient_documents')) {
-                    var componentKey2 = currentSectionKey();
-                    var itemKey2 = getActiveItemKeyForSection(componentKey2);
+                    // Use the exact acted keys from request context to avoid UI drift
+                    // when nav focus/currentSection changes during async action flow.
+                    var componentKey2 = normSection(componentKey || currentSectionKey());
+                    var itemKey2 = String(itemKey || getActiveItemKeyForSection(componentKey2) || '').toLowerCase().trim();
                     var stage2 = roleToStage(role);
                     var stageStatusForItem = actionToWorkflowStatus(action);
                     var stageStatusForComponent = String((d && d.component_status) ? d.component_status : stageStatusForItem).toLowerCase().trim();
@@ -4480,11 +4484,16 @@ function askActionConfirm(label) {
                     applyComponentActionLock();
                     updateValidatorWorkspace(componentKey2);
                 }
+                // Canonical re-sync to eliminate stale derived local state after mutation.
+                try {
+                    await loadReport();
+                } catch (_syncErr) {}
                 setBoxMessage('cvTopMessage', 'Updated successfully.', 'success');
             } catch (e) {
                 setBoxMessage('cvTopMessage', (e && e.message) ? e.message : 'Action failed.', 'danger');
             } finally {
                 setActionsDisabled(false);
+                actionInFlight = false;
             }
         }
 
@@ -4976,7 +4985,7 @@ function askActionConfirm(label) {
         })) {
             return;
         }
-        try { window.open(href, '_blank'); } catch (_e) {}
+        showCrToast('Unable to open preview for this file.', 'warning');
     }
 
     function initDocViewModal() {
@@ -5135,9 +5144,6 @@ function askActionConfirm(label) {
         }
 
         var role2 = getRole();
-        if (role2) {
-            url += '&role=' + encodeURIComponent(role2);
-        }
         if (role2 === 'verifier') {
             var g = getVerifierGroup();
             if (g) {
@@ -5160,19 +5166,6 @@ function askActionConfirm(label) {
             return vis && asg && wf;
         }
 
-        async function fetchWorkflowFallback(appId) {
-            if (!appId) return null;
-            try {
-                var fbUrl = base + '/api/shared/case_workflow_snapshot.php?application_id=' + encodeURIComponent(appId);
-                var fbRes = await fetch(fbUrl, { credentials: 'same-origin' });
-                var fbPayload = await fbRes.json().catch(function () { return null; });
-                if (!fbRes.ok || !fbPayload || fbPayload.status !== 1 || !fbPayload.data) return null;
-                return fbPayload.data;
-            } catch (_e) {
-                return null;
-            }
-        }
-
         var res = await fetch(url, { credentials: 'same-origin' });
         var payload = await res.json().catch(function () { return null; });
 
@@ -5192,21 +5185,8 @@ function askActionConfirm(label) {
 
         var d = payload.data || {};
         if (!hasSnapshotContract(d)) {
-            var fallbackData = await fetchWorkflowFallback(applicationId || (d.case && d.case.application_id) || '');
-            if (fallbackData) {
-                if (!Array.isArray(d.visible_sections) && Array.isArray(fallbackData.visible_sections || fallbackData.visibleSections)) {
-                    d.visible_sections = fallbackData.visible_sections || fallbackData.visibleSections;
-                }
-                if (!Array.isArray(d.assigned_components) && Array.isArray(fallbackData.assigned_components || fallbackData.assignedComponents)) {
-                    d.assigned_components = fallbackData.assigned_components || fallbackData.assignedComponents;
-                }
-                if ((!d.component_workflow || typeof d.component_workflow !== 'object') && (fallbackData.component_workflow || fallbackData.componentWorkflow)) {
-                    d.component_workflow = fallbackData.component_workflow || fallbackData.componentWorkflow;
-                }
-                try {
-                    console.warn('[candidate_report] snapshot fallback used via case_workflow_snapshot');
-                } catch (_e2) {}
-            }
+            setText('cvTopMessage', 'Workflow snapshot is unavailable for this case. Please refresh.');
+            return;
         }
         REPORT_PAYLOAD = d;
         resetComponentTableRenderState(d);

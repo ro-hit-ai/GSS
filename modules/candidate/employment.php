@@ -314,11 +314,15 @@ $maxCount = 5;
                 </div>
             </div> -->
 
-            <!-- <div class="form-row-1 compact-row mb-2">
+            <div class="form-row-1 compact-row mb-2">
                 <div class="form-field">
                     <div class="form-check normal-checkbox compact-checkbox">
+                        <input type="hidden"
+                               name="insufficient_employment_docs[0]"
+                               class="insufficient-emp-hidden"
+                               value="0">
                         <input type="checkbox" 
-                               name="insufficient_employment_docs[]" 
+                               name="insufficient_employment_docs[0]" 
                                class="form-check-input insufficient-emp-checkbox" 
                                value="1">
                         <label class="form-check-label compact-checkbox-label">
@@ -330,7 +334,7 @@ $maxCount = 5;
                     </div>
                 </div>
                 <div class="form-field"></div>
-            </div> -->
+            </div>
         </div>
     </div>
 </template>

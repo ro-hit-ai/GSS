@@ -154,7 +154,6 @@ try {
         :joining_date,
         :relieving_date,
         :reason_leaving,
-        :employer_address,
         :hr_manager_name,
         :hr_manager_phone,
         :hr_manager_email,
@@ -162,6 +161,7 @@ try {
         :manager_phone,
         :manager_email,
         :employment_doc,
+        :employment_doc_type,
         :insufficient_documents
     )");
 
@@ -180,16 +180,19 @@ try {
     $mgrNames = $_POST['manager_name'] ?? [];
     $mgrPhones = $_POST['manager_phone'] ?? [];
     $mgrEmails = $_POST['manager_email'] ?? [];
+    $uploadNames = $_FILES['employment_doc']['name'] ?? [];
 
     $count = max(
         count($employerNames),
         count($jobTitles),
         count($employeeIds),
         count($joiningDates),
+        count($relievingDates),
         count($documentTypes),
         count($reasons),
         count($hrNames),
-        count($mgrNames)
+        count($mgrNames),
+        count($uploadNames)
     );
 
     for ($i = 0; $i < $count; $i++) {
@@ -284,7 +287,6 @@ try {
             ':joining_date'           => $data['joining_date'],
             ':relieving_date'         => $relieving,
             ':reason_leaving'         => $data['reason_leaving'] ?: null,
-            ':employer_address'       => null,
             ':hr_manager_name'        => $data['hr_manager_name'] ?: null,
             ':hr_manager_phone'       => $data['hr_manager_phone'] ?: null,
             ':hr_manager_email'       => $data['hr_manager_email'] ?: null,
@@ -292,6 +294,7 @@ try {
             ':manager_phone'          => $data['manager_phone'] ?: null,
             ':manager_email'          => $data['manager_email'] ?: null,
             ':employment_doc'         => $doc ?: null,
+            ':employment_doc_type'    => ($isInsufficient ? null : ($data['employment_doc_type'] ?: null)),
             ':insufficient_documents' => $isInsufficient ? 1 : 0
         ]);
 

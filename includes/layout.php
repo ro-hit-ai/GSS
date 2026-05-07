@@ -288,9 +288,10 @@ function render_layout(string $title, string $roleLabel, array $menu, string $co
                 var txt = String(el.textContent || '').trim();
                 if (!txt) return;
                 var sig = txt + '|' + String(el.className || '');
-                if (el.dataset.toastSig === sig) return;
-                el.dataset.toastSig = sig;
-                showToast(txt, el.className || '');
+                if (el.dataset.toastSig !== sig) {
+                    el.dataset.toastSig = sig;
+                    showToast(txt, el.className || '');
+                }
                 el.style.display = 'none';
                 el.textContent = '';
             }

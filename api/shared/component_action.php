@@ -6,6 +6,8 @@ require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/integration.php';
 require_once __DIR__ . '/../../includes/mail.php';
 require_once __DIR__ . '/case_component_binding.php';
+require_once __DIR__ . '/../../config/env.php';
+require_once __DIR__ . '/workflow/WorkflowTransitionService.php';
 
 auth_require_login(null);
 
@@ -317,11 +319,9 @@ function sync_validator_queue(PDO $pdo, int $caseId, int $userId, bool $useWorkf
         $sqlPending =
             'SELECT COUNT(*) AS pending_count '
             . 'FROM Vati_Payfiller_Case_Components c '
-            . "LEFT JOIN Vati_Payfiller_Case_Component_Workflow cand ON cand.case_id = c.case_id AND LOWER(TRIM(cand.component_key)) = LOWER(TRIM(c.component_key)) AND cand.stage = 'candidate' "
             . "LEFT JOIN Vati_Payfiller_Case_Component_Workflow val ON val.case_id = c.case_id AND LOWER(TRIM(val.component_key)) = LOWER(TRIM(c.component_key)) AND val.stage = 'validator' "
             . 'WHERE c.case_id = ? AND c.is_required = 1 '
             . "AND LOWER(TRIM(c.component_key)) <> 'reports' "
-            . "AND COALESCE(LOWER(TRIM(cand.status)), '') IN ('approved','completed','clear','verified') "
             . "AND COALESCE(LOWER(TRIM(val.status)), '') NOT IN ('approved','rejected')";
         $st = $pdo->prepare($sqlPending);
         $st->execute([$caseId]);
@@ -521,6 +521,8 @@ try {
     $groupKey = isset($input['group']) ? strtoupper(trim((string)$input['group'])) : '';
     $overrideReason = isset($input['override_reason']) ? trim((string)$input['override_reason']) : '';
     $reason = isset($input['reason']) ? trim((string)$input['reason']) : '';
+    $expectedWorkflowVersion = isset($input['expected_workflow_version']) ? (int)$input['expected_workflow_version'] : -1;
+    $transitionRequestId = isset($input['transition_request_id']) ? trim((string)$input['transition_request_id']) : '';
     if ($reason === '' && $overrideReason !== '') {
         $reason = $overrideReason;
     }
@@ -567,6 +569,74 @@ try {
         && component_supports_item_workflow($componentKey);
     $stage = role_to_stage($role);
     $overrideReasonContext = '';
+
+    $useTransitionEngine = trim((string)(env_get('WF_TRANSITION_ENGINE', '0') ?? '0')) === '1';
+    if ($useTransitionEngine) {
+        $svc = new WorkflowTransitionService($pdo);
+        $res = $svc->applyTransition([
+            'application_id' => $applicationId,
+            'case_id' => $caseId,
+            'component_key' => $componentKey,
+            'action' => $action,
+            'reason' => $reason,
+            'actor_user_id' => $userId,
+            'actor_role' => $role,
+            'expected_workflow_version' => $expectedWorkflowVersion,
+            'transition_request_id' => $transitionRequestId,
+            'group' => $groupKey,
+            'item_key' => $itemKey,
+        ]);
+
+        if (!($res['ok'] ?? false)) {
+            http_response_code((int)($res['http'] ?? 500));
+            echo json_encode([
+                'status' => 0,
+                'code' => (string)($res['code'] ?? 'WF_INTERNAL_ERROR'),
+                'message' => (string)($res['message'] ?? 'Workflow transition failed'),
+            ]);
+            exit;
+        }
+
+        $transitionData = (array)($res['data'] ?? []);
+        $newStatus = (string)($transitionData['component_status'] ?? '');
+        $caseStatus = (string)($transitionData['case_status'] ?? '');
+        $workflowVersion = (int)($transitionData['workflow_version'] ?? 0);
+
+        save_component_action_log($pdo, $caseId, $applicationId, $componentKey, $stage, $action, $newStatus, $reason, $userId, $role);
+
+        $mailSent = false;
+        $mailError = null;
+        $shouldAttemptMail = trim((string)(env_get('APP_SEND_HOLD_EMAIL', '0') ?? '0')) === '1';
+        if ($shouldAttemptMail || in_array($action, ['hold', 'insufficient_documents', 'reject'], true)) {
+            try {
+                $mailSent = send_component_action_email($pdo, $applicationId, $componentKey, $action, $reason, $role);
+            } catch (Throwable $mailEx) {
+                $mailError = $mailEx->getMessage();
+            }
+        }
+
+        echo json_encode([
+            'status' => 1,
+            'message' => 'Action updated successfully',
+            'data' => [
+                'application_id' => $applicationId,
+                'case_id' => $caseId,
+                'component_key' => $componentKey,
+                'item_key' => ($itemKey !== '' ? $itemKey : null),
+                'stage' => $stage,
+                'action' => $action,
+                'component_status' => $newStatus,
+                'workflow_status' => $newStatus,
+                'case_status' => $caseStatus,
+                'application_status' => $caseStatus,
+                'workflow_version' => $workflowVersion,
+                'transition_request_id' => $transitionRequestId !== '' ? $transitionRequestId : null,
+                'mail_sent' => $mailSent,
+                'mail_error' => $mailError,
+            ]
+        ]);
+        exit;
+    }
 
     // Snapshot contract: action is allowed only for components present in case snapshot.
     try {

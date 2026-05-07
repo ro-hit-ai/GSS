@@ -114,3 +114,24 @@
 [2026-05-05 08:30:24] submit notify: candidate_email=256testingtest123@gmail.com client_id=3 job_role=SDE
 [2026-05-05 08:30:55] submit notify: candidate_confirmation_sent=no
 [2026-05-05 08:30:59] submit notify: internal_recipient_count=1 internal_sent_count=1
+[2026-05-05 14:24:50] candidate workflow transition: rows updated=8; application_id=APP-20260505140839550
+[2026-05-05 14:24:50] validator workflow ready: rows updated=8; application_id=APP-20260505140839550
+[2026-05-05 14:24:50] submit notify: start application_id=APP-20260505140839550
+[2026-05-05 14:24:50] submit notify: row_found=yes
+[2026-05-05 14:24:50] submit notify: candidate_email=256testingtest123@gmail.com client_id=3 job_role=SDE
+[2026-05-05 14:24:54] submit notify: candidate_confirmation_sent=yes
+[2026-05-05 14:25:00] submit notify: internal_recipient_count=1 internal_sent_count=1
+[2026-05-06 11:31:22] candidate workflow transition: rows updated=8; application_id=APP-20260506111615897
+[2026-05-06 11:31:22] validator workflow ready: rows updated=8; application_id=APP-20260506111615897
+[2026-05-06 11:31:22] submit notify: start application_id=APP-20260506111615897
+[2026-05-06 11:31:22] submit notify: row_found=yes
+[2026-05-06 11:31:22] submit notify: candidate_email=256testingtest123@gmail.com client_id=3 job_role=SDE
+[2026-05-06 11:31:27] submit notify: candidate_confirmation_sent=yes
+[2026-05-06 11:31:33] submit notify: internal_recipient_count=1 internal_sent_count=1
+[2026-05-06 12:10:48] candidate workflow transition: rows updated=8; application_id=APP-20260506120322457
+[2026-05-06 12:10:48] validator workflow ready: rows updated=8; application_id=APP-20260506120322457
+[2026-05-06 12:10:48] submit notify: start application_id=APP-20260506120322457
+[2026-05-06 12:10:48] submit notify: row_found=yes
+[2026-05-06 12:10:48] submit notify: candidate_email=256testingtest123@gmail.com client_id=3 job_role=SDE
+[2026-05-06 12:10:52] submit notify: candidate_confirmation_sent=yes
+[2026-05-06 12:10:55] submit notify: internal_recipient_count=1 internal_sent_count=1

@@ -1,6 +1,7 @@
 document.addEventListener('DOMContentLoaded', function () {
     var refreshDashboardBtn = document.getElementById('refreshDashboard');
     var refreshing = false;
+    var startNextInFlight = false;
     var DASH_POLL_MS = 15000;
 
     var ALLOWED_GROUPS = null;
@@ -182,8 +183,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
         function fmtStatus(row) {
         if (!row) return badge('Pending', 'vr-badge-p');
-        if (row.completed_at) return badge('Completed', 'vr-badge-d');
-        if (row.assigned_user_id) return badge('In Progress', 'vr-badge-i');
+        var s = String(row.status || '').toLowerCase();
+        if (s === 'done' || s === 'completed') return badge('Completed', 'vr-badge-d');
+        if (s === 'waiting_candidate') return badge('Waiting Candidate', 'vr-badge-p');
+        if (s === 'blocked' || s === 'hold' || s === 'insufficient_documents') return badge('Blocked', 'vr-badge-i');
+        if (s === 'in_progress') return badge('In Progress', 'vr-badge-i');
         return badge('Pending', 'vr-badge-p');
         }
 
@@ -320,11 +324,13 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         function startNext(group) {
+        if (startNextInFlight) return;
         setMessage('', '');
         if (Array.isArray(ALLOWED_GROUPS) && ALLOWED_GROUPS.length && ALLOWED_GROUPS.indexOf(String(group || '').toUpperCase()) === -1) {
             setMessage('Access denied: module not assigned.', 'danger');
             return;
         }
+        startNextInFlight = true;
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
 
         var payload = { group: group };
@@ -360,6 +366,9 @@ document.addEventListener('DOMContentLoaded', function () {
             })
             .catch(function () {
                 setMessage('Network error. Please try again.', 'danger');
+            })
+            .finally(function () {
+                startNextInFlight = false;
             });
         }
 

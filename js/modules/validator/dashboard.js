@@ -25,9 +25,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function fmtStatus(row) {
         if (!row) return 'pending';
-        if (row.completed_at) return 'completed';
-        if (row.assigned_user_id) return 'in_progress';
-        return String(row.status || row.case_status || 'pending');
+        var s = String(row.status || '').toLowerCase().trim();
+        if (row.completed_at || s === 'done' || s === 'completed') return 'completed';
+        if (s === 'waiting_candidate') return 'waiting_candidate';
+        if (s === 'blocked' || s === 'hold' || s === 'insufficient_documents') return 'blocked';
+        if (s === 'in_progress') return 'in_progress';
+        return 'pending';
     }
 
     function buildOpenUrl(row) {
@@ -92,6 +95,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function startNext() {
         setMessage('', '');
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
+        if (startBtn) startBtn.disabled = true;
         fetch(base + '/api/validator/queue_next.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -109,11 +113,15 @@ document.addEventListener('DOMContentLoaded', function () {
                     setMessage(data.message || 'No pending cases.', 'info');
                     loadStats();
                     loadMyTasks();
+                    if (startBtn) startBtn.disabled = false;
                     return;
                 }
                 window.location.href = url;
             })
-            .catch(function () { setMessage('Network error. Please try again.', 'danger'); });
+            .catch(function () { setMessage('Network error. Please try again.', 'danger'); })
+            .finally(function () {
+                if (startBtn) startBtn.disabled = false;
+            });
     }
 
     if (startBtn) startBtn.addEventListener('click', startNext);
@@ -121,4 +129,5 @@ document.addEventListener('DOMContentLoaded', function () {
 
     loadStats();
     loadMyTasks();
+    setInterval(function () { loadStats(); loadMyTasks(); }, 15000);
 });
