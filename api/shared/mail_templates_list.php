@@ -4,7 +4,7 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../config/db.php';
 
-auth_require_login();
+auth_require_login(null);
 
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'GET') {

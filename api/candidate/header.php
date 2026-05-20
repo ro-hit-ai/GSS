@@ -11,7 +11,7 @@
                             <i class="fas fa-shield-alt fa-lg text-white"></i>
                         </div>
                         <div>
-                            <h4 class="text-danger mb-0 fw-bold">ATTEST360</h4>
+                            <h4 class="text-danger mb-0 fw-bold">VATI GSS</h4>
                             <small class="text-muted">Background Verification System</small>
                         </div>
                     </div>

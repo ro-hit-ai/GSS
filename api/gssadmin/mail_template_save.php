@@ -3,6 +3,7 @@ header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../shared/template_governance.php';
 
 auth_require_login('gss_admin');
 
@@ -31,7 +32,7 @@ try {
     }
 
     $templateId = isset($data['template_id']) ? (int)$data['template_id'] : 0;
-    $name = arr_str($data['template_name'] ?? '');
+    $name = tmpl_normalize_key(arr_str($data['template_name'] ?? ''));
     $type = strtolower(arr_str($data['template_type'] ?? ''));
     $subject = arr_str($data['subject'] ?? '');
     $body = (string)($data['body'] ?? '');
@@ -40,6 +41,11 @@ try {
     if ($name === '') {
         http_response_code(400);
         echo json_encode(['status' => 0, 'message' => 'template_name is required']);
+        exit;
+    }
+    if (!tmpl_is_allowed_key($name)) {
+        http_response_code(400);
+        echo json_encode(['status' => 0, 'message' => 'template_name is not in canonical template registry']);
         exit;
     }
 
@@ -56,6 +62,31 @@ try {
     }
 
     $pdo = getDB();
+    $existingStmt = $pdo->prepare('CALL SP_Vati_Payfiller_MailTemplates_List(?, ?)');
+    $existingStmt->execute([$type !== '' ? $type : null, 1]);
+    $existingActiveRows = $existingStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    while ($existingStmt->nextRowset()) {}
+
+    foreach ($existingActiveRows as $er) {
+        $existingName = tmpl_normalize_key((string)($er['template_name'] ?? ''));
+        $existingId = (int)($er['template_id'] ?? 0);
+        if ($existingName === $name && $isActive === 1 && $existingId !== $templateId) {
+            http_response_code(400);
+            echo json_encode(['status' => 0, 'message' => 'Duplicate active template key is not allowed']);
+            exit;
+        }
+    }
+
+    $ph = tmpl_validate_placeholders_for_key($name, $subject, $body);
+    if (!empty($ph['invalid_placeholders'])) {
+        tmpl_log_warning('admin_template_invalid_placeholders', [
+            'template_key' => $name,
+            'invalid_placeholders' => $ph['invalid_placeholders'],
+            'allowed_placeholders' => $ph['allowed_placeholders'],
+            'template_id' => $templateId,
+        ]);
+    }
+
     $stmt = $pdo->prepare('CALL SP_Vati_Payfiller_MailTemplate_Upsert(?,?,?,?,?,?)');
     $stmt->execute([$templateId > 0 ? $templateId : null, $name, $type, $subject, $body, $isActive]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
@@ -67,7 +98,14 @@ try {
         throw new RuntimeException('Failed to save template');
     }
 
-    echo json_encode(['status' => 1, 'message' => 'Saved', 'data' => ['template_id' => $newId]]);
+    $resp = ['status' => 1, 'message' => 'Saved', 'data' => ['template_id' => $newId]];
+    if (!empty($ph['invalid_placeholders'])) {
+        $resp['warnings'] = [
+            'invalid_placeholders' => $ph['invalid_placeholders'],
+            'allowed_placeholders' => $ph['allowed_placeholders'],
+        ];
+    }
+    echo json_encode($resp);
 
 } catch (PDOException $e) {
     http_response_code(500);

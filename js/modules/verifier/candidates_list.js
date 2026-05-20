@@ -1,7 +1,13 @@
 (function () {
+    if (window.__vrCandidatesListModuleInit) {
+        return;
+    }
+    window.__vrCandidatesListModuleInit = true;
+
     document.addEventListener('DOMContentLoaded', function () {
         var groupSelect = document.getElementById('vrCasesGroupSelect');
         var viewSelect = document.getElementById('vrCasesViewSelect');
+        var stateFilterEl = document.getElementById('vrCasesStateFilter');
         var searchEl = document.getElementById('vrCasesListSearch');
         var refreshBtn = document.getElementById('vrCasesListRefreshBtn');
         var tableEl = document.getElementById('vrCasesListTable');
@@ -9,6 +15,9 @@
         var messageEl = document.getElementById('vrCasesListMessage');
         var assignedHost = document.getElementById('vrCasesAssignedModules');
         var dataTable = null;
+        var reloadInFlight = false;
+        var AUTO_REFRESH_MS = 15000;
+        var LIST_STATE_KEY = 'vr_candidates_list_state_v1';
 
         var HOLIDAY_SET = {};
         var HOLIDAYS_LOADED = false;
@@ -29,10 +38,23 @@
                 .replace(/'/g, '&#039;');
         }
 
+        function renderSecondaryContext(text) {
+            var raw = String(text || '').trim();
+            if (!raw) return '';
+            var parts = raw.split('|').map(function (part) {
+                return String(part || '').trim();
+            }).filter(Boolean);
+            if (!parts.length) return '';
+            return parts.map(function (part) {
+                return '<div style="font-size:11px;color:#64748b;line-height:1.25;margin-top:2px;">' + escapeHtml(part) + '</div>';
+            }).join('');
+        }
+
         function fmtGroup(g) {
             g = String(g || '').toUpperCase();
             if (g === 'BASIC') return 'Basic';
             if (g === 'EDUCATION') return 'Education';
+            if (g === 'ADDITIONAL') return 'Additional';
             return g || '-';
         }
 
@@ -180,8 +202,113 @@
             var v = String(viewSelect.value || 'mine').toLowerCase();
             if (v === 'available') return 'available';
             if (v === 'followup') return 'followup';
+            if (v === 'participated') return 'participated';
+            if (v === 'history') return 'history';
             if (v === 'completed') return 'completed';
             return 'mine';
+        }
+
+        function isParticipatedMode(v) {
+            var x = String(v || '').toLowerCase().trim();
+            return x === 'participated' || x === 'history' || x === 'completed';
+        }
+
+        function getQueryParam(name) {
+            try {
+                return new URLSearchParams(window.location.search || '').get(name);
+            } catch (_e) {
+                return null;
+            }
+        }
+
+        function normalizeView(v) {
+            var x = String(v || '').toLowerCase().trim();
+            if (x === 'available' || x === 'mine' || x === 'followup' || x === 'participated' || x === 'history' || x === 'completed') {
+                return x;
+            }
+            return '';
+        }
+
+        function readStoredState() {
+            try {
+                if (!window.sessionStorage) return {};
+                var raw = window.sessionStorage.getItem(LIST_STATE_KEY);
+                if (!raw) return {};
+                var parsed = JSON.parse(raw);
+                return (parsed && typeof parsed === 'object') ? parsed : {};
+            } catch (_e) {
+                return {};
+            }
+        }
+
+        function writeStoredState(extra) {
+            try {
+                if (!window.sessionStorage) return;
+                var next = {
+                    group: getSelectedGroup(),
+                    view: getSelectedView(),
+                    filter: stateFilterEl ? String(stateFilterEl.value || 'all') : 'all',
+                    search: searchEl ? String(searchEl.value || '').trim() : '',
+                    ts: Date.now()
+                };
+                if (extra && typeof extra === 'object') {
+                    Object.keys(extra).forEach(function (k) { next[k] = extra[k]; });
+                }
+                window.sessionStorage.setItem(LIST_STATE_KEY, JSON.stringify(next));
+            } catch (_e) {
+            }
+        }
+
+        function applyQueryFilters() {
+            var qGroup = String(getQueryParam('group') || '').toUpperCase().trim();
+            var qView = normalizeView(getQueryParam('view'));
+            var qSearch = String(getQueryParam('search') || '').trim();
+            var qFilter = String(getQueryParam('filter') || '').toLowerCase().trim();
+            var hasQueryView = !!qView;
+            var stored = readStoredState();
+            var sView = normalizeView(stored.view || '');
+            var sGroup = String(stored.group || '').toUpperCase().trim();
+            var sFilter = String(stored.filter || '').toLowerCase().trim();
+            var sSearch = String(stored.search || '').trim();
+
+            if (groupSelect && qGroup) {
+                var hasGroup = Array.prototype.some.call(groupSelect.options || [], function (o) {
+                    return String(o.value || '').toUpperCase() === qGroup;
+                });
+                if (hasGroup) groupSelect.value = qGroup;
+            } else if (groupSelect && sGroup) {
+                var hasStoredGroup = Array.prototype.some.call(groupSelect.options || [], function (o) {
+                    return String(o.value || '').toUpperCase() === sGroup;
+                });
+                if (hasStoredGroup) groupSelect.value = sGroup;
+            }
+            if (viewSelect && qView) {
+                viewSelect.value = qView;
+            } else if (viewSelect && sView) {
+                viewSelect.value = sView;
+            }
+            if (searchEl && qSearch) {
+                searchEl.value = qSearch;
+            } else if (searchEl && sSearch) {
+                searchEl.value = sSearch;
+            }
+            if (stateFilterEl) {
+                if (qFilter) {
+                    stateFilterEl.value = qFilter;
+                } else if (sFilter) {
+                    stateFilterEl.value = sFilter;
+                } else if (isParticipatedMode(qView || getSelectedView())) {
+                    stateFilterEl.value = 'all';
+                }
+                if (isParticipatedMode(getSelectedView()) && !qFilter && !sFilter) {
+                    stateFilterEl.value = 'all';
+                }
+            }
+
+            if (!hasQueryView && isParticipatedMode(getSelectedView())) {
+                // Preserve semantic context for return journeys when URL lacks explicit view.
+                writeStoredState({ source: 'restore_participated_context' });
+            }
         }
 
         function buildReportHref(applicationId) {
@@ -195,6 +322,16 @@
             var g = getSelectedGroup();
             if (g) {
                 href += (href.indexOf('?') === -1 ? '?' : '&') + 'group=' + encodeURIComponent(g);
+            }
+            var v = getSelectedView();
+            if (v) {
+                href += (href.indexOf('?') === -1 ? '?' : '&') + 'view=' + encodeURIComponent(v);
+                href += (href.indexOf('?') === -1 ? '?' : '&') + 'list_view=' + encodeURIComponent(v);
+            }
+            if (stateFilterEl && stateFilterEl.value) {
+                var fv = String(stateFilterEl.value || '');
+                href += (href.indexOf('?') === -1 ? '?' : '&') + 'filter=' + encodeURIComponent(fv);
+                href += (href.indexOf('?') === -1 ? '?' : '&') + 'list_filter=' + encodeURIComponent(fv);
             }
             return href;
         }
@@ -243,8 +380,31 @@
         }
 
         function reloadTable() {
+            if (reloadInFlight) return;
             if (dataTable) {
+                reloadInFlight = true;
                 dataTable.ajax.reload(null, false);
+                setTimeout(function () { reloadInFlight = false; }, 400);
+            }
+        }
+
+        function bindAutoRefresh() {
+            try {
+                if (window.__vrCasesAutoTimer) {
+                    clearInterval(window.__vrCasesAutoTimer);
+                    window.__vrCasesAutoTimer = null;
+                }
+                window.__vrCasesAutoTimer = setInterval(function () {
+                    if (document.visibilityState === 'hidden') return;
+                    reloadTable();
+                }, AUTO_REFRESH_MS);
+            } catch (_e) {
+            }
+            if (!document.body.dataset.vrCasesVisBound) {
+                document.body.dataset.vrCasesVisBound = '1';
+                document.addEventListener('visibilitychange', function () {
+                    if (document.visibilityState === 'visible') reloadTable();
+                });
             }
         }
 
@@ -260,6 +420,18 @@
             if (!window.jQuery || !jQuery.fn || !jQuery.fn.DataTable) {
                 setMessage('DataTables is not available. Please refresh.', 'danger');
                 return;
+            }
+
+            try {
+                if (jQuery.fn.DataTable.isDataTable(tableEl)) {
+                    dataTable = jQuery(tableEl).DataTable();
+                    if (dataTable && dataTable.ajax) {
+                        return;
+                    }
+                    dataTable.destroy();
+                    jQuery(tableEl).find('tbody').empty();
+                }
+            } catch (_e) {
             }
 
             ensureButtonsStyles();
@@ -287,7 +459,9 @@
                         callback({ data: [] });
                         return;
                     }
-                    var url = base + '/api/verifier/cases_list.php?group=' + encodeURIComponent(group || '') + '&view=' + encodeURIComponent(view) + '&search=' + encodeURIComponent(search || '');
+                    var filterKey = stateFilterEl ? String(stateFilterEl.value || 'all') : 'all';
+                    var url = base + '/api/verifier/cases_list.php?group=' + encodeURIComponent(group || '') + '&view=' + encodeURIComponent(view) + '&search=' + encodeURIComponent(search || '') + '&filter=' + encodeURIComponent(filterKey) + '&src=' + encodeURIComponent('verifier_candidates_list');
+                    writeStoredState({ source: 'ajax_load', resolved_view: view });
 
                     loadHolidaysOnce().then(function () {
                         return fetch(url, { credentials: 'same-origin' });
@@ -299,7 +473,12 @@
                                 callback({ data: [] });
                                 return;
                             }
-                            callback({ data: data.data || [] });
+                            var rows = Array.isArray(data.data) ? data.data : [];
+                            var filterKey = stateFilterEl ? String(stateFilterEl.value || 'all') : 'all';
+                            if (window.WF_UI && typeof window.WF_UI.matchesFilter === 'function') {
+                                rows = rows.filter(function (r) { return window.WF_UI.matchesFilter(r, filterKey); });
+                            }
+                            callback({ data: rows });
                         })
                         .catch(function () {
                             setMessage('Network error. Please try again.', 'danger');
@@ -345,8 +524,40 @@
                     {
                         data: null,
                         render: function (_d, _t, row) {
+                            var viewMode = getSelectedView();
+                            if (isParticipatedMode(viewMode)) {
+                                var pLabel = String((row && row.participation_status_label) || '').trim();
+                                var primaryP = '';
+                                if (pLabel) {
+                                    primaryP = pLabel;
+                                } else {
+                                    var opLabel = String((row && (row.stage_status_label || row.operational_status_label)) || '').trim();
+                                    var up = opLabel.toUpperCase();
+                                    if (up.indexOf('VE ') === 0 || up === 'NEED DOCS' || up === 'CANDIDATE PENDING' || up === 'MAIL SENT') {
+                                        primaryP = opLabel;
+                                    } else {
+                                        primaryP = 'VE PENDING';
+                                    }
+                                }
+                                var secP = String((row && row.operational_status_secondary) || '').trim();
+                                var outP = escapeHtml(primaryP);
+                                outP += renderSecondaryContext(secP);
+                                return outP;
+                            }
+                            if (row && (row.stage_status_label || row.operational_status_label)) {
+                                var primary = escapeHtml(String(row.stage_status_label || row.operational_status_label));
+                                var secondaryRaw = row.operational_status_secondary ? String(row.operational_status_secondary) : '';
+                                var secondary = renderSecondaryContext(secondaryRaw);
+                                if (secondary) {
+                                    return primary + secondary;
+                                }
+                                return primary;
+                            }
                             var qs = row && row.status ? String(row.status) : '';
                             var cs = row && row.case_status ? String(row.case_status) : '';
+                            if (window.WF_UI && typeof window.WF_UI.labelByRole === 'function') {
+                                return escapeHtml(window.WF_UI.labelByRole(qs || cs || '', 'verifier'));
+                            }
                             return escapeHtml(qs || cs || '');
                         }
                     },
@@ -400,8 +611,21 @@
                 });
         }
 
-        if (groupSelect) groupSelect.addEventListener('change', reloadTable);
-        if (viewSelect) viewSelect.addEventListener('change', reloadTable);
+        if (groupSelect) groupSelect.addEventListener('change', function () {
+            writeStoredState({ source: 'group_change' });
+            reloadTable();
+        });
+        if (viewSelect) viewSelect.addEventListener('change', function () {
+            if (stateFilterEl && isParticipatedMode(getSelectedView())) {
+                stateFilterEl.value = 'all';
+            }
+            writeStoredState({ source: 'view_change' });
+            reloadTable();
+        });
+        if (stateFilterEl) stateFilterEl.addEventListener('change', function () {
+            writeStoredState({ source: 'filter_change' });
+            reloadTable();
+        });
 
         if (refreshBtn) {
             refreshBtn.addEventListener('click', reloadTable);
@@ -411,7 +635,10 @@
             var t = null;
             searchEl.addEventListener('input', function () {
                 clearTimeout(t);
-                t = setTimeout(reloadTable, 250);
+                t = setTimeout(function () {
+                    writeStoredState({ source: 'search_change' });
+                    reloadTable();
+                }, 250);
             });
         }
 
@@ -429,6 +656,9 @@
             loadCss(css1),
             loadCss(css2)
         ])
+            .then(function () {
+                applyQueryFilters();
+            })
             .then(function () { return loadScript(js1); })
             .then(function () { return loadScript(jsZip); })
             .then(function () { return loadScript(js2); })
@@ -439,6 +669,7 @@
                 initDataTable();
                 if (dataTable) {
                     dataTable.ajax.reload(null, false);
+                    bindAutoRefresh();
                 }
             })
             .catch(function (e) {

@@ -63,12 +63,7 @@ function app_mail_pick_queue_id(array $metadata): ?string {
         return $isObjectId($s) ? $s : null;
     };
 
-    // Priority:
-    // 1) metadata['queueId']
-    // 2) metadata['queue_id']
-    // 3) metadata['queue']
-    // 4) NODE_QUEUE_ID
-    // 5) NODE_DEFAULT_QUEUE_ID
+   
     foreach (['queueId', 'queue_id', 'queue'] as $k) {
         if (array_key_exists($k, $metadata)) {
             $picked = $normalize($metadata[$k]);
@@ -466,10 +461,32 @@ function app_mail_send_via_smtp(
         $mailer->addAddress($to);
         $mailer->Subject = $subject;
         $mailer->Body = $htmlBody;
+
+        $normalizeMessageId = static function (string $value): string {
+            $value = trim($value);
+            if ($value === '') {
+                return '';
+            }
+            if ($value[0] !== '<') {
+                $value = '<' . $value;
+            }
+            if (substr($value, -1) !== '>') {
+                $value .= '>';
+            }
+            return $value;
+        };
+
         foreach ($headersMap as $headerName => $headerValue) {
             $safeName = trim(str_replace(["\r", "\n"], '', (string)$headerName));
             $safeValue = trim(str_replace(["\r", "\n"], '', (string)$headerValue));
             if ($safeName === '' || $safeValue === '') {
+                continue;
+            }
+            if (strcasecmp($safeName, 'Message-ID') === 0) {
+                $normalizedMessageId = $normalizeMessageId($safeValue);
+                if ($normalizedMessageId !== '') {
+                    $mailer->MessageID = $normalizedMessageId;
+                }
                 continue;
             }
             $mailer->addCustomHeader($safeName, $safeValue);
@@ -497,6 +514,14 @@ function send_app_mail(string $to, string $subject, string $htmlBody, ?string $f
     $applicationId = app_mail_resolve_application_id($meta, $options);
     $subject = app_mail_apply_application_subject_tag($subject, $applicationId);
     $headersMap = integration_mail_headers($meta, $options);
+    if (isset($options['headers']) && is_array($options['headers'])) {
+        foreach ($options['headers'] as $hk => $hv) {
+            $k = trim((string)$hk);
+            $v = trim((string)$hv);
+            if ($k === '' || $v === '') continue;
+            $headersMap[$k] = $v;
+        }
+    }
     $smtp = app_mail_smtp_config();
     $order = app_mail_transport_order($options, $smtp);
     $primaryDriver = $order[0] ?? 'php_mail';

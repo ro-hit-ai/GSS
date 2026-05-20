@@ -1,12 +1,14 @@
 (function () {
     document.addEventListener('DOMContentLoaded', function () {
         var viewSelect = document.getElementById('valCasesViewSelect');
+        var stateFilterEl = document.getElementById('valCasesStateFilter');
         var searchEl = document.getElementById('valCasesListSearch');
         var refreshBtn = document.getElementById('valCasesListRefreshBtn');
         var tableEl = document.getElementById('valCasesListTable');
         var exportButtonsHostEl = document.getElementById('valCasesListExportButtons');
         var messageEl = document.getElementById('valCasesListMessage');
         var dataTable = null;
+        var reloadInFlight = false;
 
         function setMessage(text, type) {
             if (!messageEl) return;
@@ -25,15 +27,23 @@
         }
 
         function getSelectedView() {
-            if (!viewSelect) return 'available';
-            var v = String(viewSelect.value || 'available').toLowerCase();
+            if (!viewSelect) return 'all_cases';
+            var v = String(viewSelect.value || 'all_cases').toLowerCase();
+            if (v === 'all_cases' || v === 'all') return 'all_cases';
             if (v === 'available') return 'available';
+            if (v === 'history') return 'history';
             if (v === 'completed') return 'completed';
             return 'mine';
         }
 
         function statusLabelForValidator(row) {
             row = row || {};
+            if (row.stage_status_label) {
+                return String(row.stage_status_label);
+            }
+            if (row.operational_status_label) {
+                return String(row.operational_status_label);
+            }
             var raw = String(row.status || '').trim();
             var caseStatus = String(row.case_status || '').trim();
             var appStatus = String(row.__app_status || '').toLowerCase().trim();
@@ -51,8 +61,11 @@
                 return 'VA Pending';
             }
 
-            if (lowRaw === 'in_progress') return 'In Progress';
-            if (lowRaw === 'completed') return 'Completed';
+            if (window.WF_UI && typeof window.WF_UI.labelByRole === 'function') {
+                return window.WF_UI.labelByRole(lowRaw || raw, 'validator');
+            }
+            if (lowRaw === 'in_progress') return 'Under Evaluation';
+            if (lowRaw === 'completed') return 'Review Complete';
             if (lowRaw === 'followup') return 'Follow Up';
             if (lowRaw === 'stop_bgv' || lowCase === 'stop_bgv') return 'Stopped BGV';
 
@@ -116,7 +129,12 @@
         }
 
         function reloadTable() {
-            if (dataTable) dataTable.ajax.reload(null, false);
+            if (reloadInFlight) return;
+            if (dataTable) {
+                reloadInFlight = true;
+                dataTable.ajax.reload(null, false);
+                setTimeout(function () { reloadInFlight = false; }, 400);
+            }
         }
 
         function initDataTable() {
@@ -167,15 +185,21 @@
                                 callback({ data: [] });
                                 return;
                             }
-                            var rows = data.data || [];
-                            if (!Array.isArray(rows) || rows.length === 0) {
-                                var v = getSelectedView();
+                    var rows = data.data || [];
+                    var filterKey = stateFilterEl ? String(stateFilterEl.value || 'all') : 'all';
+                    if (window.WF_UI && typeof window.WF_UI.matchesFilter === 'function') {
+                        rows = rows.filter(function (r) { return window.WF_UI.matchesFilter(r, filterKey); });
+                    }
+                    if (!Array.isArray(rows) || rows.length === 0) {
+                        var v = getSelectedView();
                                 if (v === 'mine') {
-                                    setMessage('No cases in My Tasks. Switch View to Available to see pending queue.', 'info');
+                                    setMessage('No cases in My Visibility. Switch to Active Work to see actionable queue.', 'info');
                                 } else if (v === 'available') {
-                                    setMessage('No pending cases available right now.', 'info');
+                                    setMessage('No active work available right now.', 'info');
+                                } else if (v === 'all_cases') {
+                                    setMessage('No visible cases found for the selected filters.', 'info');
                                 } else {
-                                    setMessage('No completed cases found for the selected filter.', 'info');
+                                    setMessage('No evaluated cases found for the selected filter.', 'info');
                                 }
                             }
                             callback({ data: rows });
@@ -224,6 +248,7 @@
         }
 
         if (viewSelect) viewSelect.addEventListener('change', reloadTable);
+        if (stateFilterEl) stateFilterEl.addEventListener('change', reloadTable);
         if (refreshBtn) refreshBtn.addEventListener('click', reloadTable);
 
         if (searchEl) {

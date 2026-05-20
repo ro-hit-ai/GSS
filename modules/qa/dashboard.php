@@ -16,7 +16,7 @@ ob_start();
 ?>
 <div class="card">
     <h3 style="margin-bottom:4px;">QA Dashboard</h3>
-    <p class="card-subtitle" style="margin-bottom:0; color:#64748b;">Live workload, users, and active case handling.</p>
+    <p class="card-subtitle" style="margin-bottom:0; color:#64748b;">Live QA governance workload, users, and review handling.</p>
 </div>
 
 <div class="card" id="qaDashMessage" style="display:none; margin-bottom:10px;"></div>
@@ -25,7 +25,7 @@ ob_start();
     <div class="qa-dash-head">
         <div>
             <div class="qa-dash-title">Live Dashboard</div>
-            <div class="qa-dash-subtitle">Auto-refresh shows current open workload and assignments.</div>
+            <div class="qa-dash-subtitle">Auto-refresh shows current QA workload and review assignments.</div>
         </div>
         <div class="qa-dash-controls">
             <label class="qa-dash-autorefresh">
@@ -46,12 +46,31 @@ ob_start();
             <div id="qaKpiQaUsers" class="qa-kpi-value">-</div>
         </div>
         <div class="qa-kpi-card">
-            <div class="qa-kpi-label">VR OPEN ITEMS</div>
+            <div class="qa-kpi-label">VR UNDER REVIEW</div>
             <div id="qaKpiVrOpen" class="qa-kpi-value">-</div>
         </div>
         <div class="qa-kpi-card">
-            <div class="qa-kpi-label">DBV OPEN CASES</div>
+            <div class="qa-kpi-label">DBV UNDER REVIEW</div>
             <div id="qaKpiDbvOpen" class="qa-kpi-value">-</div>
+        </div>
+    </div>
+
+    <div class="qa-kpi-grid" style="margin-top:10px;">
+        <div class="qa-kpi-card">
+            <div class="qa-kpi-label">SUPERVISORY REOPENS TODAY</div>
+            <div id="qaKpiSupervisoryReopens" class="qa-kpi-value">-</div>
+        </div>
+        <div class="qa-kpi-card">
+            <div class="qa-kpi-label">VERIFIER INVALIDATED</div>
+            <div id="qaKpiInvalidatedVerifier" class="qa-kpi-value">-</div>
+        </div>
+        <div class="qa-kpi-card">
+            <div class="qa-kpi-label">QA INVALIDATED</div>
+            <div id="qaKpiInvalidatedQa" class="qa-kpi-value">-</div>
+        </div>
+        <div class="qa-kpi-card">
+            <div class="qa-kpi-label">REOPENED WORKFLOWS</div>
+            <div id="qaKpiReopenedWorkflows" class="qa-kpi-value">-</div>
         </div>
     </div>
 

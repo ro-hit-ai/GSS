@@ -7,7 +7,47 @@ require_once __DIR__ . '/../../includes/integration.php';
 require_once __DIR__ . '/../../includes/mail.php';
 require_once __DIR__ . '/case_component_binding.php';
 require_once __DIR__ . '/../../config/env.php';
+require_once __DIR__ . '/application_status_guard.php';
 require_once __DIR__ . '/workflow/WorkflowTransitionService.php';
+require_once __DIR__ . '/workflow_communication_service.php';
+
+function projection_debug_log(string $event, array $data = []): void {
+    if ((string)getenv('WF_PERF_DEBUG_LOGS') !== '1') {
+        return;
+    }
+    $entry = [
+        'ts' => date('c'),
+        'event' => $event,
+        'data' => $data,
+    ];
+    @file_put_contents(__DIR__ . '/../../logs/validator_queue_debug.log', json_encode($entry, JSON_UNESCAPED_SLASHES) . PHP_EOL, FILE_APPEND);
+}
+
+function run_workflow_projection_sync(PDO $pdo, int $caseId, int $userId, string $componentKey, string $stage, string $source): void {
+    try {
+        $repo = new WorkflowRepository($pdo);
+        $projection = new WorkflowProjectionService($repo);
+        $before = $repo->loadValidatorQueueState($caseId);
+        $projection->syncQueues($caseId, $userId, $componentKey, $stage);
+        $after = $repo->loadValidatorQueueState($caseId);
+        projection_debug_log('projection_sync', [
+            'source' => $source,
+            'case_id' => $caseId,
+            'component_key' => strtolower(trim($componentKey)),
+            'stage' => strtolower(trim($stage)),
+            'before' => $before,
+            'after' => $after,
+        ]);
+    } catch (Throwable $e) {
+        projection_debug_log('projection_sync_failed', [
+            'source' => $source,
+            'case_id' => $caseId,
+            'component_key' => strtolower(trim($componentKey)),
+            'stage' => strtolower(trim($stage)),
+            'error' => $e->getMessage(),
+        ]);
+    }
+}
 
 auth_require_login(null);
 
@@ -122,14 +162,24 @@ function allowed_actions_for_status(string $status): array {
     switch ($s) {
         case 'pending':
             return ['hold', 'insufficient_documents', 'reject', 'approve'];
+        case 'waiting_candidate':
+        case 'blocked':
+            return ['hold', 'insufficient_documents', 'reject', 'approve'];
         case 'hold':
             return ['approve', 'reject', 'insufficient_documents'];
         case 'insufficient_documents':
-            return ['approve', 'hold', 'reject'];
+            return ['approve', 'hold', 'reject', 'insufficient_documents'];
         case 'approved':
             return ['hold', 'insufficient_documents', 'reject'];
         case 'rejected':
             return ['hold', 'insufficient_documents', 'approve'];
+        case 'completed':
+        case 'clear':
+        case 'verified':
+            return ['hold', 'insufficient_documents', 'reject', 'approve'];
+        case 'invalidated_by_validator_reopen':
+        case 'invalidated_by_verifier_reopen':
+            return ['hold', 'insufficient_documents', 'reject', 'approve'];
         default:
             return ['hold', 'insufficient_documents', 'reject', 'approve'];
     }
@@ -142,7 +192,7 @@ function is_action_allowed_for_status(string $status, string $action): bool {
 
 function is_stage_approved_equivalent(string $status): bool {
     $s = strtolower(trim($status));
-    return in_array($s, ['approved', 'completed', 'clear', 'verified'], true);
+    return in_array($s, ['approved', 'rejected', 'hold', 'insufficient_documents', 'completed', 'clear', 'verified'], true);
 }
 
 function prev_stage(string $stage): string {
@@ -263,15 +313,15 @@ function sync_verifier_group_queue(PDO $pdo, int $caseId, int $userId, string $c
     if (!$parts) return;
     $ph = implode(',', array_fill(0, count($parts), '?'));
 
-    // Group is "pending" for verifier only when validator approved and verifier not finalized.
+    // Group is pending for verifier when validator stage is evaluated and verifier stage not yet evaluated.
     $sqlPending =
         'SELECT COUNT(*) AS pending_count '
         . 'FROM Vati_Payfiller_Case_Components c '
         . "LEFT JOIN Vati_Payfiller_Case_Component_Workflow v ON v.case_id = c.case_id AND LOWER(TRIM(v.component_key)) = LOWER(TRIM(c.component_key)) AND v.stage = 'validator' "
         . "LEFT JOIN Vati_Payfiller_Case_Component_Workflow w ON w.case_id = c.case_id AND LOWER(TRIM(w.component_key)) = LOWER(TRIM(c.component_key)) AND w.stage = 'verifier' "
         . 'WHERE c.case_id = ? AND c.is_required = 1 AND LOWER(TRIM(c.component_key)) IN (' . $ph . ') '
-        . "AND COALESCE(LOWER(TRIM(v.status)), '') = 'approved' "
-        . "AND COALESCE(LOWER(TRIM(w.status)), '') NOT IN ('approved','rejected')";
+        . "AND COALESCE(LOWER(TRIM(v.status)), '') IN ('approved','rejected','hold','insufficient_documents','completed','clear','verified') "
+        . "AND COALESCE(LOWER(TRIM(w.status)), '') NOT IN ('approved','rejected','hold','insufficient_documents','completed','clear','verified')";
 
     $params = array_merge([$caseId], $parts);
     $st = $pdo->prepare($sqlPending);
@@ -284,10 +334,10 @@ function sync_verifier_group_queue(PDO $pdo, int $caseId, int $userId, string $c
             "UPDATE Vati_Payfiller_Verifier_Group_Queue
              SET assigned_user_id = COALESCE(assigned_user_id, ?),
                  claimed_at = COALESCE(claimed_at, NOW()),
+                 completed_at = NULL,
                  status = CASE
                      WHEN COALESCE(LOWER(TRIM(status)), '') = 'followup' THEN status
-                     WHEN completed_at IS NULL THEN 'in_progress'
-                     ELSE status
+                     ELSE 'in_progress'
                  END
              WHERE case_id = ?
                AND UPPER(TRIM(group_key)) = ?"
@@ -315,56 +365,82 @@ function sync_validator_queue(PDO $pdo, int $caseId, int $userId, bool $useWorkf
     if ($caseId <= 0 || $userId <= 0) return;
 
     $pending = 0;
+    $active = 0;
+    $evaluated = 0;
+    $total = 0;
     if ($useWorkflow) {
         $sqlPending =
-            'SELECT COUNT(*) AS pending_count '
+            'SELECT '
+            . "SUM(CASE WHEN COALESCE(LOWER(TRIM(val.status)), 'pending') IN ('hold','insufficient_documents','waiting_candidate','reopened','blocked') THEN 1 ELSE 0 END) AS active_count, "
+            . "SUM(CASE WHEN COALESCE(LOWER(TRIM(val.status)), 'pending') IN ('approved','rejected','hold','insufficient_documents','completed','clear','verified') THEN 1 ELSE 0 END) AS evaluated_count, "
+            . "SUM(CASE WHEN COALESCE(LOWER(TRIM(val.status)), 'pending') NOT IN ('approved','rejected','hold','insufficient_documents','completed','clear','verified') THEN 1 ELSE 0 END) AS pending_count, "
+            . "COUNT(*) AS total_count "
             . 'FROM Vati_Payfiller_Case_Components c '
             . "LEFT JOIN Vati_Payfiller_Case_Component_Workflow val ON val.case_id = c.case_id AND LOWER(TRIM(val.component_key)) = LOWER(TRIM(c.component_key)) AND val.stage = 'validator' "
             . 'WHERE c.case_id = ? AND c.is_required = 1 '
             . "AND LOWER(TRIM(c.component_key)) <> 'reports' "
-            . "AND COALESCE(LOWER(TRIM(val.status)), '') NOT IN ('approved','rejected')";
+        ;
         $st = $pdo->prepare($sqlPending);
         $st->execute([$caseId]);
-        $pending = (int)($st->fetchColumn() ?: 0);
+        $row = $st->fetch(PDO::FETCH_ASSOC) ?: [];
+        $pending = (int)($row['pending_count'] ?? 0);
+        $active = (int)($row['active_count'] ?? 0);
+        $evaluated = (int)($row['evaluated_count'] ?? 0);
+        $total = (int)($row['total_count'] ?? 0);
     } else {
         $sqlPending =
-            'SELECT COUNT(*) AS pending_count '
+            'SELECT '
+            . "SUM(CASE WHEN COALESCE(LOWER(TRIM(status)), 'pending') IN ('hold','insufficient_documents','waiting_candidate','reopened','blocked') THEN 1 ELSE 0 END) AS active_count, "
+            . "SUM(CASE WHEN COALESCE(LOWER(TRIM(status)), 'pending') IN ('approved','rejected','hold','insufficient_documents','completed','clear','verified') THEN 1 ELSE 0 END) AS evaluated_count, "
+            . "SUM(CASE WHEN COALESCE(LOWER(TRIM(status)), 'pending') NOT IN ('approved','rejected','hold','insufficient_documents','completed','clear','verified') THEN 1 ELSE 0 END) AS pending_count, "
+            . "COUNT(*) AS total_count "
             . 'FROM Vati_Payfiller_Case_Components '
             . 'WHERE case_id = ? AND is_required = 1 '
-            . "AND LOWER(TRIM(component_key)) <> 'reports' "
-            . "AND COALESCE(LOWER(TRIM(status)), '') NOT IN ('approved','rejected')";
+            . "AND LOWER(TRIM(component_key)) <> 'reports' ";
         $st = $pdo->prepare($sqlPending);
         $st->execute([$caseId]);
-        $pending = (int)($st->fetchColumn() ?: 0);
+        $row = $st->fetch(PDO::FETCH_ASSOC) ?: [];
+        $pending = (int)($row['pending_count'] ?? 0);
+        $active = (int)($row['active_count'] ?? 0);
+        $evaluated = (int)($row['evaluated_count'] ?? 0);
+        $total = (int)($row['total_count'] ?? 0);
     }
 
-    if ($pending > 0) {
+    if ($active > 0 || $pending > 0) {
+        $nextStatus = 'in_progress';
+        if ($active > 0) {
+            $nextStatus = 'blocked';
+            if ($pending > 0) {
+                $nextStatus = 'waiting_candidate';
+            }
+        }
         $touch = $pdo->prepare(
             "UPDATE Vati_Payfiller_Validator_Queue
-             SET assigned_user_id = COALESCE(assigned_user_id, ?),
+             SET assigned_user_id = ?,
                  claimed_at = COALESCE(claimed_at, NOW()),
+                 completed_at = NULL,
                  status = CASE
                      WHEN COALESCE(LOWER(TRIM(status)), '') = 'followup' THEN status
-                     WHEN completed_at IS NULL THEN 'in_progress'
-                     ELSE status
+                     ELSE ?
                  END
-             WHERE case_id = ?
-               AND completed_at IS NULL"
+             WHERE case_id = ?"
         );
-        $touch->execute([$userId, $caseId]);
+        $touch->execute([$userId, $nextStatus, $caseId]);
         return;
     }
 
+    if ($total > 0 && $evaluated === $total) {
     $upd = $pdo->prepare(
         "UPDATE Vati_Payfiller_Validator_Queue
          SET status = 'done',
              completed_at = COALESCE(completed_at, NOW()),
-             assigned_user_id = COALESCE(assigned_user_id, ?),
+             assigned_user_id = ?,
              claimed_at = COALESCE(claimed_at, NOW())
          WHERE case_id = ?
            AND completed_at IS NULL"
     );
     $upd->execute([$userId, $caseId]);
+    }
 }
 
 function html_escape(string $text): string {
@@ -473,11 +549,50 @@ function send_component_action_email(PDO $pdo, string $applicationId, string $co
         'section' => $componentKey,
         'action' => $action
     ]);
+    $caseId = isset($ctx['case_id']) ? (int)$ctx['case_id'] : 0;
+    $threadId = 'app:' . strtolower($applicationId);
+    $messageId = 'wc.' . strtolower(preg_replace('/[^a-zA-Z0-9]+/', '', $applicationId)) . '.' . bin2hex(random_bytes(8)) . '@payfiller.com';
     $ok = send_app_mail($to, $subject, $body, 'VATI GSS', [
         'application_id' => $applicationId,
         'event_type' => 'component.action.email',
+        'headers' => [
+            'Message-ID' => '<' . $messageId . '>',
+            'X-Workflow-Thread-Id' => $threadId,
+        ]
     ]);
     app_mail_clear_log_meta();
+    if ($ok) {
+        try {
+            wc_ensure_tables($pdo);
+            $uid = resolve_user_id();
+            $uname = trim((string)($_SESSION['auth_user_name'] ?? ''));
+            $requestId = 'comp-mail-' . $applicationId . '-' . $componentKey . '-' . $action . '-' . md5($subject . '|' . $reason . '|' . $role);
+            $ins = $pdo->prepare("INSERT IGNORE INTO workflow_communications
+                (application_id, case_id, component_key, role_key, action_key, subject, body, notes, sent_by_user_id, sent_by_name, sent_at, delivery_status, communication_type, direction, actor_role, actor_name, workflow_stage, request_id, message_id, thread_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'sent', ?, 'outgoing', ?, ?, ?, ?, ?, ?)");
+            $ins->execute([
+                $applicationId,
+                $caseId > 0 ? $caseId : null,
+                strtolower(trim($componentKey)),
+                strtolower(trim($role)),
+                strtolower(trim($action)),
+                $subject,
+                strip_tags($body),
+                $reason !== '' ? $reason : null,
+                $uid > 0 ? $uid : null,
+                $uname !== '' ? $uname : null,
+                strtolower(trim($action)),
+                strtolower(trim($role)),
+                $uname !== '' ? $uname : null,
+                strtolower(trim($role)),
+                $requestId,
+                $messageId,
+                $threadId
+            ]);
+            wc_thread_upsert($pdo, $applicationId, $caseId, $threadId, $messageId, $messageId);
+        } catch (Throwable $e) {
+        }
+    }
     return $ok;
 }
 
@@ -521,7 +636,10 @@ try {
     $groupKey = isset($input['group']) ? strtoupper(trim((string)$input['group'])) : '';
     $overrideReason = isset($input['override_reason']) ? trim((string)$input['override_reason']) : '';
     $reason = isset($input['reason']) ? trim((string)$input['reason']) : '';
+    $sendMailFlagRaw = isset($input['send_mail']) ? strtolower(trim((string)$input['send_mail'])) : '';
+    $sendMailRequested = in_array($sendMailFlagRaw, ['1', 'true', 'yes', 'on'], true);
     $expectedWorkflowVersion = isset($input['expected_workflow_version']) ? (int)$input['expected_workflow_version'] : -1;
+    $expectedVersionAutoResolved = false;
     $transitionRequestId = isset($input['transition_request_id']) ? trim((string)$input['transition_request_id']) : '';
     if ($reason === '' && $overrideReason !== '') {
         $reason = $overrideReason;
@@ -561,6 +679,34 @@ try {
     }
 
     $pdo = getDB();
+    if ($expectedWorkflowVersion < 0) {
+        try {
+            $vf = $pdo->prepare(
+                'SELECT workflow_version
+                   FROM Vati_Payfiller_Cases
+                  WHERE case_id = ? AND application_id = ?
+                  LIMIT 1'
+            );
+            $vf->execute([$caseId, $applicationId]);
+            $vv = $vf->fetchColumn();
+            if ($vv !== false && $vv !== null) {
+                $expectedWorkflowVersion = (int)$vv;
+                $expectedVersionAutoResolved = true;
+                projection_debug_log('expected_version_autoresolved', [
+                    'case_id' => $caseId,
+                    'application_id' => $applicationId,
+                    'workflow_version' => $expectedWorkflowVersion,
+                    'source' => 'component_action_fallback',
+                ]);
+            }
+        } catch (Throwable $e) {
+            projection_debug_log('expected_version_autoresolve_failed', [
+                'case_id' => $caseId,
+                'application_id' => $applicationId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
     ensure_component_item_workflow_table($pdo);
 
     $useWorkflow = workflow_table_available($pdo);
@@ -570,8 +716,40 @@ try {
     $stage = role_to_stage($role);
     $overrideReasonContext = '';
 
-    $useTransitionEngine = trim((string)(env_get('WF_TRANSITION_ENGINE', '0') ?? '0')) === '1';
+    // Canonical workflow engine is mandatory. Legacy/manual mutation path is retained
+    // only as dead fallback code for emergency rollback outside normal runtime.
+    $useTransitionEngine = true;
     if ($useTransitionEngine) {
+        // Surgical backfill for historical cases: reports is now canonical snapshot
+        // participation. Heal missing snapshot/workflow rows before strict transition.
+        if ($componentKey === 'reports') {
+            try {
+                $reportExists = $pdo->prepare(
+                    'SELECT 1 FROM Vati_Payfiller_Case_Components '
+                    . 'WHERE case_id = ? AND application_id = ? AND LOWER(TRIM(component_key)) = ? LIMIT 1'
+                );
+                $reportExists->execute([$caseId, $applicationId, 'reports']);
+                $hasReportsSnapshot = (bool)$reportExists->fetchColumn();
+                if (!$hasReportsSnapshot) {
+                    case_component_binding_sync_case_components($pdo, $caseId, $applicationId);
+                    ensure_component_workflow_rows($pdo, $applicationId, 'reports');
+                    projection_debug_log('reports_snapshot_autobackfill', [
+                        'case_id' => $caseId,
+                        'application_id' => $applicationId,
+                        'component_key' => 'reports',
+                        'source' => 'component_action_transition_precheck',
+                    ]);
+                }
+            } catch (Throwable $e) {
+                projection_debug_log('reports_snapshot_autobackfill_failed', [
+                    'case_id' => $caseId,
+                    'application_id' => $applicationId,
+                    'component_key' => 'reports',
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
         $svc = new WorkflowTransitionService($pdo);
         $res = $svc->applyTransition([
             'application_id' => $applicationId,
@@ -606,8 +784,8 @@ try {
 
         $mailSent = false;
         $mailError = null;
-        $shouldAttemptMail = trim((string)(env_get('APP_SEND_HOLD_EMAIL', '0') ?? '0')) === '1';
-        if ($shouldAttemptMail || in_array($action, ['hold', 'insufficient_documents', 'reject'], true)) {
+        $shouldAttemptMail = $sendMailRequested;
+        if ($shouldAttemptMail) {
             try {
                 $mailSent = send_component_action_email($pdo, $applicationId, $componentKey, $action, $reason, $role);
             } catch (Throwable $mailEx) {
@@ -630,6 +808,7 @@ try {
                 'case_status' => $caseStatus,
                 'application_status' => $caseStatus,
                 'workflow_version' => $workflowVersion,
+                'expected_version_autoresolved' => $expectedVersionAutoResolved ? 1 : 0,
                 'transition_request_id' => $transitionRequestId !== '' ? $transitionRequestId : null,
                 'mail_sent' => $mailSent,
                 'mail_error' => $mailError,
@@ -638,18 +817,22 @@ try {
         exit;
     }
 
+    $isValidatorInternalReports = ($role === 'validator' && $componentKey === 'reports');
     // Snapshot contract: action is allowed only for components present in case snapshot.
+    // Validator internal reports section is operationally managed and can exist without candidate snapshot row.
     try {
-        $exists = $pdo->prepare(
-            'SELECT 1 FROM Vati_Payfiller_Case_Components '
-            . 'WHERE case_id = ? AND application_id = ? AND LOWER(TRIM(component_key)) = ? LIMIT 1'
-        );
-        $exists->execute([$caseId, $applicationId, $componentKey]);
-        $hasSnapshotComponent = (bool)$exists->fetchColumn();
-        if (!$hasSnapshotComponent) {
-            http_response_code(400);
-            echo json_encode(['status' => 0, 'message' => 'Component is not part of case snapshot']);
-            exit;
+        if (!$isValidatorInternalReports) {
+            $exists = $pdo->prepare(
+                'SELECT 1 FROM Vati_Payfiller_Case_Components '
+                . 'WHERE case_id = ? AND application_id = ? AND LOWER(TRIM(component_key)) = ? LIMIT 1'
+            );
+            $exists->execute([$caseId, $applicationId, $componentKey]);
+            $hasSnapshotComponent = (bool)$exists->fetchColumn();
+            if (!$hasSnapshotComponent) {
+                http_response_code(400);
+                echo json_encode(['status' => 0, 'message' => 'Component is not part of case snapshot']);
+                exit;
+            }
         }
     } catch (Throwable $e) {
         http_response_code(500);
@@ -676,6 +859,18 @@ try {
         if ($assignedRole === '' || $assignedUserId <= 0) {
             $configAllowed = case_component_binding_role_allowed($pdo, $caseId, $applicationId, $componentKey, $role);
             if ($configAllowed === false) {
+                if ((string)getenv('WF_STATUS_DEBUG_LOGS') === '1') {
+                    @file_put_contents(__DIR__ . '/../../logs/workflow_transition.log', json_encode([
+                        'ts' => date('c'),
+                        'event' => 'verifier_component_action_denied',
+                        'case_id' => $caseId,
+                        'application_id' => $applicationId,
+                        'component_key' => $componentKey,
+                        'actor_user_id' => $userId,
+                        'actor_role' => $role,
+                        'reason' => 'component_binding_role_disallowed',
+                    ], JSON_UNESCAPED_SLASHES) . PHP_EOL, FILE_APPEND);
+                }
                 http_response_code(403);
                 echo json_encode(['status' => 0, 'message' => 'Not assigned to this component']);
                 exit;
@@ -683,6 +878,19 @@ try {
 
             $allowedSet = session_allowed_sections();
             if (!can_section($allowedSet, $componentKey)) {
+                if ((string)getenv('WF_STATUS_DEBUG_LOGS') === '1') {
+                    @file_put_contents(__DIR__ . '/../../logs/workflow_transition.log', json_encode([
+                        'ts' => date('c'),
+                        'event' => 'verifier_component_action_denied',
+                        'case_id' => $caseId,
+                        'application_id' => $applicationId,
+                        'component_key' => $componentKey,
+                        'actor_user_id' => $userId,
+                        'actor_role' => $role,
+                        'reason' => 'allowed_sections_denied',
+                        'allowed_sections' => array_values(array_keys($allowedSet)),
+                    ], JSON_UNESCAPED_SLASHES) . PHP_EOL, FILE_APPEND);
+                }
                 http_response_code(403);
                 echo json_encode(['status' => 0, 'message' => 'Not assigned to this component']);
                 exit;
@@ -718,6 +926,15 @@ try {
             );
             $insCand->execute([$caseId, $applicationId, $componentKey]);
         } catch (Throwable $e) {
+            projection_debug_log('lifecycle_stage_advance_failed', [
+                'case_id' => $caseId,
+                'application_id' => $applicationId,
+                'component_key' => $componentKey,
+                'stage' => $stage,
+                'action' => $action,
+                'error' => $e->getMessage(),
+            ]);
+            throw $e;
         }
 
         // Stage transition policy (reversible model)
@@ -757,6 +974,15 @@ try {
                 exit;
             }
         } catch (Throwable $e) {
+            projection_debug_log('lifecycle_open_count_advance_failed', [
+                'case_id' => $caseId,
+                'application_id' => $applicationId,
+                'component_key' => $componentKey,
+                'stage' => $stage,
+                'action' => $action,
+                'error' => $e->getMessage(),
+            ]);
+            throw $e;
         }
 
         $prev = prev_stage($stage);
@@ -878,10 +1104,11 @@ try {
     $completedAt = $action === 'approve' ? 'NOW()' : 'NULL';
     $componentStatusToPersist = $newStatus;
     $componentCompletedAtExpr = $completedAt;
+    $isFinalEvaluationStatus = in_array($newStatus, ['approved', 'rejected', 'hold', 'insufficient_documents'], true);
 
     if ($useItemWorkflow) {
         try {
-            $itemCompletedExpr = $action === 'approve' ? 'NOW()' : 'NULL';
+            $itemCompletedExpr = $isFinalEvaluationStatus ? 'NOW()' : 'NULL';
             $iw = $pdo->prepare(
                 'INSERT INTO Vati_Payfiller_Case_Component_Item_Workflow '
                 . '(case_id, application_id, component_key, item_key, stage, status, updated_by_user_id, updated_by_role, completed_at) '
@@ -900,7 +1127,7 @@ try {
                 'SELECT '
                 . "SUM(CASE WHEN LOWER(TRIM(status)) = 'rejected' THEN 1 ELSE 0 END) AS rejected_count, "
                 . "SUM(CASE WHEN LOWER(TRIM(status)) = 'approved' THEN 1 ELSE 0 END) AS approved_count, "
-                . "SUM(CASE WHEN LOWER(TRIM(status)) NOT IN ('approved','rejected') THEN 1 ELSE 0 END) AS pending_count "
+                . "SUM(CASE WHEN LOWER(TRIM(status)) NOT IN ('approved','rejected','hold','insufficient_documents','completed','clear','verified') THEN 1 ELSE 0 END) AS pending_count "
                 . 'FROM Vati_Payfiller_Case_Component_Item_Workflow '
                 . 'WHERE case_id = ? AND LOWER(TRIM(component_key)) = ? AND stage = ?'
             );
@@ -914,7 +1141,7 @@ try {
                 $componentCompletedAtExpr = 'NULL';
             } elseif ($rejectedCount > 0) {
                 $componentStatusToPersist = 'rejected';
-                $componentCompletedAtExpr = 'NULL';
+                $componentCompletedAtExpr = 'NOW()';
             } elseif ($approvedCount > 0) {
                 $componentStatusToPersist = 'approved';
                 $componentCompletedAtExpr = 'NOW()';
@@ -983,10 +1210,7 @@ try {
     save_component_action_log($pdo, $caseId, $applicationId, $componentKey, $stage, $action, $newStatus, $reason, $userId, $role);
 
     $mailSent = null;
-    $shouldAttemptMail = in_array($action, ['reject', 'insufficient_documents', 'hold'], true) && $reason !== '';
-    if ($shouldAttemptMail && $action === 'hold') {
-        $shouldAttemptMail = trim((string)(env_get('APP_SEND_HOLD_EMAIL', '0') ?? '0')) === '1';
-    }
+    $shouldAttemptMail = $sendMailRequested && in_array($action, ['reject', 'insufficient_documents', 'hold'], true) && $reason !== '';
     if ($shouldAttemptMail) {
         try {
             $mailSent = send_component_action_email($pdo, $applicationId, $componentKey, $action, $reason, $role);
@@ -998,8 +1222,9 @@ try {
     $caseStatus = null;
     $appStatus = null;
 
-    // Advance case/application status when all required components are approved at current stage.
-    if ($action === 'approve' && $componentStatusToPersist === 'approved') {
+    // Advance case/application status when all required components are evaluated at current stage.
+    if (in_array($action, ['approve', 'reject', 'hold', 'insufficient_documents'], true)
+        && in_array($componentStatusToPersist, ['approved', 'rejected', 'hold', 'insufficient_documents'], true)) {
         try {
             $pendingCount = 0;
             $excludeReports = ($stage === 'validator' || $stage === 'verifier');
@@ -1011,7 +1236,7 @@ try {
                     . 'ON w.case_id = c.case_id AND LOWER(TRIM(w.component_key)) = LOWER(TRIM(c.component_key)) AND w.stage = ? '
                     . 'WHERE c.application_id = ? AND c.is_required = 1 '
                     . ($excludeReports ? "AND LOWER(TRIM(c.component_key)) <> 'reports' " : '')
-                    . 'AND (w.status IS NULL OR LOWER(TRIM(w.status)) <> \'approved\')'
+                    . "AND (w.status IS NULL OR LOWER(TRIM(w.status)) NOT IN ('approved','rejected','hold','insufficient_documents','completed','clear','verified'))"
                 );
                 $check->execute([$stage, $applicationId]);
                 $pendingCount = (int)($check->fetchColumn() ?: 0);
@@ -1021,7 +1246,7 @@ try {
                     . 'FROM Vati_Payfiller_Case_Components '
                     . 'WHERE application_id = ? AND is_required = 1 '
                     . ($excludeReports ? "AND LOWER(TRIM(component_key)) <> 'reports' " : '')
-                    . 'AND LOWER(TRIM(status)) <> \'approved\''
+                    . "AND LOWER(TRIM(status)) NOT IN ('approved','rejected','hold','insufficient_documents','completed','clear','verified')"
                 );
                 $check->execute([$applicationId]);
                 $pendingCount = (int)($check->fetchColumn() ?: 0);
@@ -1029,12 +1254,33 @@ try {
 
             if ($pendingCount === 0) {
                 if ($stage === 'qa') {
-                    $stmt = $pdo->prepare('CALL SP_Vati_Payfiller_CaseAction(?, ?, ?)');
-                    $stmt->execute([$applicationId, 'approve', $userId]);
-                    $r = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
-                    $stmt->closeCursor();
-                    $caseStatus = (string)($r['case_status'] ?? '');
-                    $appStatus = isset($r['application_status']) ? $r['application_status'] : null;
+                    $allApproved = true;
+                    if ($useWorkflow) {
+                        $chkApproved = $pdo->prepare(
+                            'SELECT COUNT(*) FROM Vati_Payfiller_Case_Components c '
+                            . 'LEFT JOIN Vati_Payfiller_Case_Component_Workflow w '
+                            . 'ON w.case_id = c.case_id AND LOWER(TRIM(w.component_key)) = LOWER(TRIM(c.component_key)) AND w.stage = ? '
+                            . 'WHERE c.application_id = ? AND c.is_required = 1 AND LOWER(TRIM(c.component_key)) <> \'reports\' '
+                            . "AND COALESCE(LOWER(TRIM(w.status)), '') <> 'approved'"
+                        );
+                        $chkApproved->execute([$stage, $applicationId]);
+                        $allApproved = ((int)$chkApproved->fetchColumn() === 0);
+                    }
+                    $terminal = $allApproved ? 'APPROVED' : 'COMPLETED';
+                    try {
+                        $uCase = $pdo->prepare("UPDATE Vati_Payfiller_Cases SET case_status = ? WHERE application_id = ?");
+                        $uCase->execute([$terminal, $applicationId]);
+                    } catch (Throwable $e) {}
+                    try {
+                        $appTerminal = $allApproved ? 'verified' : 'submitted';
+                        $appTerminal = wf_assert_valid_application_status($appTerminal, 'component_action.qa_terminal');
+                        $uApp = $pdo->prepare("UPDATE Vati_Payfiller_Candidate_Applications SET status = ? WHERE application_id = ?");
+                        $uApp->execute([$appTerminal, $applicationId]);
+                    } catch (Throwable $e) {
+                        throw $e;
+                    }
+                    $caseStatus = $terminal;
+                    $appStatus = $appTerminal;
                 } else {
                     $nextStatus = ($stage === 'verifier') ? 'PENDING_QA' : (($stage === 'validator') ? 'PENDING_VERIFIER' : '');
                     if ($nextStatus !== '') {
@@ -1049,17 +1295,19 @@ try {
                         } catch (Throwable $e) {
                         }
                         try {
+                            $nextAppStatus = wf_assert_valid_application_status('submitted', 'component_action.stage_advance');
                             $uApp = $pdo->prepare(
                                 "UPDATE Vati_Payfiller_Candidate_Applications
                                  SET status = ?
                                  WHERE application_id = ?
-                                   AND UPPER(TRIM(COALESCE(status,''))) NOT IN ('REJECTED','STOP_BGV','APPROVED','COMPLETED')"
+                                   AND LOWER(TRIM(COALESCE(status,''))) NOT IN ('rejected','verified')"
                             );
-                            $uApp->execute([$nextStatus, $applicationId]);
+                            $uApp->execute([$nextAppStatus, $applicationId]);
                         } catch (Throwable $e) {
+                            throw $e;
                         }
                         $caseStatus = $nextStatus;
-                        $appStatus = $nextStatus;
+                        $appStatus = $nextAppStatus;
                     }
                 }
             }
@@ -1067,11 +1315,11 @@ try {
         }
     }
 
-    // When validator/verifier have no open components left (approved/rejected are both final),
+    // When validator/verifier have no open components left (evaluation complete),
     // move case/application to next stage automatically.
     if (($stage === 'validator' || $stage === 'verifier')
-        && ($action === 'approve' || $action === 'reject')
-        && ($componentStatusToPersist === 'approved' || $componentStatusToPersist === 'rejected')) {
+        && in_array($action, ['approve', 'reject', 'hold', 'insufficient_documents'], true)
+        && in_array($componentStatusToPersist, ['approved', 'rejected', 'hold', 'insufficient_documents'], true)) {
         try {
             $openCount = 0;
             if ($useWorkflow) {
@@ -1082,7 +1330,7 @@ try {
                     . 'ON w.case_id = c.case_id AND LOWER(TRIM(w.component_key)) = LOWER(TRIM(c.component_key)) AND w.stage = ? '
                     . 'WHERE c.application_id = ? AND c.is_required = 1 '
                     . "AND LOWER(TRIM(c.component_key)) <> 'reports' "
-                    . "AND COALESCE(LOWER(TRIM(w.status)), '') NOT IN ('approved','rejected')"
+                    . "AND COALESCE(LOWER(TRIM(w.status)), '') NOT IN ('approved','rejected','hold','insufficient_documents','completed','clear','verified')"
                 );
                 $checkOpen->execute([$stage, $applicationId]);
                 $openCount = (int)($checkOpen->fetchColumn() ?: 0);
@@ -1092,7 +1340,7 @@ try {
                     . 'FROM Vati_Payfiller_Case_Components '
                     . 'WHERE application_id = ? AND is_required = 1 '
                     . "AND LOWER(TRIM(component_key)) <> 'reports' "
-                    . "AND COALESCE(LOWER(TRIM(status)), '') NOT IN ('approved','rejected')"
+                    . "AND COALESCE(LOWER(TRIM(status)), '') NOT IN ('approved','rejected','hold','insufficient_documents','completed','clear','verified')"
                 );
                 $checkOpen->execute([$applicationId]);
                 $openCount = (int)($checkOpen->fetchColumn() ?: 0);
@@ -1111,17 +1359,19 @@ try {
                 } catch (Throwable $e) {
                 }
                 try {
+                    $nextAppStatus = wf_assert_valid_application_status('submitted', 'component_action.stage_advance_open_count');
                     $uApp = $pdo->prepare(
                         "UPDATE Vati_Payfiller_Candidate_Applications
                          SET status = ?
                          WHERE application_id = ?
-                           AND UPPER(TRIM(COALESCE(status,''))) NOT IN ('REJECTED','STOP_BGV','APPROVED','COMPLETED')"
+                           AND LOWER(TRIM(COALESCE(status,''))) NOT IN ('rejected','verified')"
                     );
-                    $uApp->execute([$nextStatus, $applicationId]);
+                    $uApp->execute([$nextAppStatus, $applicationId]);
                 } catch (Throwable $e) {
+                    throw $e;
                 }
                 $caseStatus = $nextStatus;
-                $appStatus = $nextStatus;
+                $appStatus = $nextAppStatus;
             }
         } catch (Throwable $e) {
         }
@@ -1150,38 +1400,25 @@ try {
         } catch (Throwable $e2) {
         }
         try {
+            $rejectedStatus = wf_assert_valid_application_status('rejected', 'component_action.qa_reject');
             $uAppRej = $pdo->prepare(
                 "UPDATE Vati_Payfiller_Candidate_Applications
-                 SET status = 'REJECTED'
+                 SET status = ?
                  WHERE application_id = ?
-                   AND UPPER(TRIM(COALESCE(status,''))) NOT IN ('APPROVED','COMPLETED','CLEAR')"
+                   AND LOWER(TRIM(COALESCE(status,''))) <> 'verified'"
             );
-            $uAppRej->execute([$applicationId]);
+            $uAppRej->execute([$rejectedStatus, $applicationId]);
         } catch (Throwable $e3) {
+            throw $e3;
         }
         $caseStatus = 'REJECTED';
-        $appStatus = 'REJECTED';
+        $appStatus = 'rejected';
     }
 
-    // Keep verifier dashboard queue KPIs in sync with the final saved component/workflow state.
-    // This must run after updates above, otherwise "last component done" isn't detected.
-    if ($stage === 'verifier'
-        && ($action === 'approve' || $action === 'reject')
-        && ($componentStatusToPersist === 'approved' || $componentStatusToPersist === 'rejected')) {
-        try {
-            sync_verifier_group_queue($pdo, $caseId, $userId, $componentKey, session_allowed_sections());
-        } catch (Throwable $e) {
-        }
-    }
-
-    // Validator queue should also auto-complete when all validator components are finalized.
-    if ($stage === 'validator'
-        && ($action === 'approve' || $action === 'reject')
-        && ($componentStatusToPersist === 'approved' || $componentStatusToPersist === 'rejected')) {
-        try {
-            sync_validator_queue($pdo, $caseId, $userId, $useWorkflow);
-        } catch (Throwable $e) {
-        }
+    // Queue lifecycle ownership is projection-owned.
+    // For legacy action path, delegate lifecycle sync to the same projection owner.
+    if ($useWorkflow && in_array($stage, ['validator', 'verifier', 'qa'], true)) {
+        run_workflow_projection_sync($pdo, $caseId, $userId, $componentKey, $stage, 'component_action_legacy_path');
     }
 
     $eventType = ($action === 'approve' && ($caseStatus !== null || $appStatus !== null))

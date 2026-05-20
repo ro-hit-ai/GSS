@@ -5,6 +5,9 @@ require_once __DIR__ . '/../../includes/integration.php';
 
 integration_bootstrap_json_api();
 auth_session_start();
+if (session_status() === PHP_SESSION_ACTIVE) {
+    session_write_close();
+}
 
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, OPTIONS');
@@ -35,6 +38,129 @@ function session_role_norm(): string {
 function session_client_id(): int {
     if (session_status() === PHP_SESSION_NONE) session_start();
     return isset($_SESSION['auth_client_id']) ? (int)$_SESSION['auth_client_id'] : 0;
+}
+
+function timeline_meta_array($raw): ?array {
+    if (!is_string($raw) || trim($raw) === '') return null;
+    $decoded = json_decode($raw, true);
+    return is_array($decoded) ? $decoded : null;
+}
+
+function timeline_actor_label(array $row, string $fallbackRole = ''): string {
+    $actorName = trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? ''));
+    if ($actorName !== '') return $actorName;
+    $username = trim((string)($row['username'] ?? ''));
+    if ($username !== '') return $username;
+    $role = trim((string)($row['actor_role'] ?? $fallbackRole));
+    return $role !== '' ? strtoupper($role) : 'System';
+}
+
+function timeline_governance_view(array $row, ?array $meta): ?array {
+    $eventType = strtolower(trim((string)($row['event_type'] ?? '')));
+    $message = trim((string)($row['message'] ?? ''));
+    $actor = timeline_actor_label($row);
+    $section = trim((string)($row['section_key'] ?? ''));
+
+    if ($eventType === 'workflow.reopen') {
+        $reason = trim((string)($meta['reason'] ?? ''));
+        $targetStage = trim((string)($meta['target_stage'] ?? ''));
+        $downstreamAware = !empty($meta['downstream_aware_reopen']);
+        return [
+            'kind' => 'decision_change',
+            'tone' => $downstreamAware ? 'amber' : 'blue',
+            'title' => 'Decision Update Initiated',
+            'summary' => $downstreamAware
+                ? ($actor . ' initiated a decision update and triggered downstream re-review.')
+                : ($actor . ' initiated a decision update for re-review.'),
+            'reason' => $reason !== '' ? $reason : null,
+            'lineage' => $targetStage !== '' ? ('Stage: ' . strtoupper($targetStage)) : null,
+        ];
+    }
+
+    if ($eventType === 'workflow.decision_change') {
+        $reason = trim((string)($meta['reason'] ?? ''));
+        $stage = trim((string)($meta['stage'] ?? ''));
+        return [
+            'kind' => 'decision_change',
+            'tone' => 'blue',
+            'title' => 'Decision Updated',
+            'summary' => $message !== '' ? $message : ($actor . ' changed a workflow decision.'),
+            'reason' => $reason !== '' ? $reason : null,
+            'lineage' => $stage !== '' ? ('Stage: ' . strtoupper($stage)) : null,
+        ];
+    }
+
+    if ($eventType === 'workflow.decision') {
+        $lowerMessage = strtolower($message);
+        $tone = 'blue';
+        if (strpos($lowerMessage, 'rejected') !== false) {
+            $tone = 'red';
+        } elseif (strpos($lowerMessage, 'hold') !== false || strpos($lowerMessage, 'insufficient_documents') !== false) {
+            $tone = 'amber';
+        } elseif (strpos($lowerMessage, 'approved') !== false) {
+            $tone = 'green';
+        }
+        return [
+            'kind' => 'decision_change',
+            'tone' => $tone,
+            'title' => 'Decision Recorded',
+            'summary' => $message !== '' ? $message : ($actor . ' recorded a workflow decision.'),
+            'reason' => null,
+            'lineage' => $section !== '' ? ('Section: ' . $section) : null,
+        ];
+    }
+
+    if ($eventType === 'workflow.invalidation') {
+        $reason = trim((string)($meta['reason'] ?? ''));
+        $sourceStage = trim((string)($meta['source_stage'] ?? ''));
+        $targetStage = trim((string)($meta['target_stage'] ?? ''));
+        return [
+            'kind' => 'invalidation',
+            'tone' => 'red',
+            'title' => 'Downstream Work Invalidated',
+            'summary' => $actor . ' invalidated stale downstream work after a decision change.',
+            'reason' => $reason !== '' ? $reason : null,
+            'lineage' => ($sourceStage !== '' || $targetStage !== '')
+                ? ('Source: ' . strtoupper($sourceStage !== '' ? $sourceStage : '-') . ' -> Target: ' . strtoupper($targetStage !== '' ? $targetStage : '-'))
+                : null,
+        ];
+    }
+
+    if ($eventType === 'workflow.relock') {
+        $relockedStage = trim((string)($meta['stage'] ?? ''));
+        return [
+            'kind' => 'decision_change',
+            'tone' => 'green',
+            'title' => 'Decision Finalized',
+            'summary' => $actor . ' finalized the updated workflow decision.',
+            'reason' => null,
+            'lineage' => $relockedStage !== '' ? ('Stage: ' . strtoupper($relockedStage)) : null,
+        ];
+    }
+
+    if ($eventType === 'candidate_correction') {
+        return [
+            'kind' => 'correction',
+            'tone' => 'amber',
+            'title' => 'Candidate Correction Loop',
+            'summary' => $message !== '' ? $message : ($actor . ' triggered a candidate correction cycle.'),
+            'reason' => null,
+            'lineage' => $section !== '' ? ('Section: ' . $section) : null,
+        ];
+    }
+
+    if (strpos($message, 'Candidate Access Resent') !== false || strpos($message, 'Verification mail') !== false) {
+        return [
+            'kind' => 'communication',
+            'tone' => 'blue',
+            'title' => 'Workflow Communication',
+            'summary' => $message !== '' ? $message : ($actor . ' sent workflow communication.'),
+            'reason' => null,
+            'lineage' => $section !== '' ? ('Section: ' . $section) : null,
+        ];
+    }
+
+    return null;
 }
 
 function enforce_client_admin_application_scope(PDO $pdo, string $applicationId): void {
@@ -93,6 +219,8 @@ try {
     $events = [];
     foreach ($rows as $row) {
         $actorName = trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? ''));
+        $metadata = timeline_meta_array((string)($row['meta_json'] ?? ''));
+        $governance = timeline_governance_view($row, $metadata);
         $events[] = [
             'timelineId' => isset($row['timeline_id']) ? (int)$row['timeline_id'] : null,
             'applicationId' => integration_normalize_application_id((string)($row['application_id'] ?? $applicationId)),
@@ -101,7 +229,12 @@ try {
             'sectionKey' => integration_nullable_string($row['section_key'] ?? null),
             'componentKey' => integration_nullable_string($row['section_key'] ?? null),
             'message' => integration_nullable_string($row['message'] ?? null),
-            'metadata' => json_decode((string)($row['meta_json'] ?? ''), true) ?: null,
+            'metadata' => $metadata,
+            'governance' => $governance,
+            'isGovernanceEvent' => $governance ? 1 : 0,
+            'displayTitle' => $governance['title'] ?? null,
+            'displaySummary' => $governance['summary'] ?? null,
+            'displayTone' => $governance['tone'] ?? null,
             'actor' => [
                 'userId' => isset($row['actor_user_id']) && (int)$row['actor_user_id'] > 0 ? (int)$row['actor_user_id'] : null,
                 'role' => integration_nullable_string($row['actor_role'] ?? null),

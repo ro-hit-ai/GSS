@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ATTEST360 - Background Verification</title>
+    <title>VATI GSS - Background Verification</title>
     
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -22,7 +22,7 @@
             <div class="col-lg-3 col-xl-2 bg-light border-end sidebar-sticky">
                 <div class="pt-3">
                     <div class="text-center mb-4">
-                        <h4 class="text-danger">ATTEST360</h4>
+                        <h4 class="text-danger"></h4>
                         <p class="text-muted small">Background Verification</p>
                     </div>
                     <div id="sidebar-container">

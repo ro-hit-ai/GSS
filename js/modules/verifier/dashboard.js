@@ -1,346 +1,319 @@
 document.addEventListener('DOMContentLoaded', function () {
-    var refreshDashboardBtn = document.getElementById('refreshDashboard');
-    var refreshing = false;
-    var startNextInFlight = false;
-    var DASH_POLL_MS = 15000;
+    var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
+    var kpiPending = document.getElementById('vrKpiPending');
+    var kpiInProgress = document.getElementById('vrKpiInProgress');
+    var kpiCompletedToday = document.getElementById('vrKpiCompletedToday');
+    var tasksBody = document.getElementById('vrMyTasksBody');
+    var messageEl = document.getElementById('vrDashMessage');
+    var governanceHost = document.getElementById('vrGovernanceSignals');
+    var governanceSummaryEl = document.getElementById('vrGovernanceSummary');
+    var assignedHost = document.getElementById('vrAssignedModules');
+    var startBasicBtn = document.getElementById('vrDashStartBasicBtn');
+    var startEducationBtn = document.getElementById('vrDashStartEducationBtn');
+    var startAdditionalBtn = document.getElementById('vrDashStartAdditionalBtn');
+    var refreshBtn = document.getElementById('vrDashRefreshBtn');
 
-    var ALLOWED_GROUPS = null;
-    var ALLOWED_GROUP_SECTIONS = {};
-    var DEBUG = false;
-    try {
-        var u = new URL(window.location.href);
-        DEBUG = (u.searchParams.get('debug') === '1');
-    } catch (e) {
-        DEBUG = false;
-    }
+    var refreshInFlight = false;
+    var startInFlight = false;
+    var statsByGroup = {};
+    var allowedGroups = [];
+    var allowedSections = [];
+    var groupSections = {};
 
-    function initDashboardContent() {
-        var kpiPending = document.getElementById('vrKpiPending');
-        var kpiInProgress = document.getElementById('vrKpiInProgress');
-        var kpiCompletedToday = document.getElementById('vrKpiCompletedToday');
-        var tasksBody = document.getElementById('vrMyTasksBody');
-        var tasksUpdated = document.getElementById('vrMyTasksUpdated');
-        var startActionsHost = document.getElementById('vrStartActions');
-        var messageEl = document.getElementById('vrDashMessage');
-        var assignedHost = document.getElementById('vrAssignedModules');
-        var statsByGroup = {};
-        var ALLOWED_SECTIONS_LIST = [];
-
-        function setMessage(text, type) {
+    function setMessage(text, type) {
         if (!messageEl) return;
         messageEl.textContent = text || '';
         messageEl.className = type ? ('alert alert-' + type) : '';
         messageEl.style.display = text ? 'block' : 'none';
-        }
+    }
 
-        function esc(str) {
+    function esc(str) {
         return String(str || '')
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#039;');
-        }
+    }
 
-        function badge(text, cls) {
-        return '<span class="vr-badge ' + cls + '">' + esc(text) + '</span>';
-        }
+    function addParam(url, key, value) {
+        if (value === null || value === undefined || value === '') return url;
+        return url + (url.indexOf('?') === -1 ? '?' : '&') + encodeURIComponent(key) + '=' + encodeURIComponent(String(value));
+    }
 
-        function sectionLabel(key) {
-        var k = String(key || '').toLowerCase().trim();
-        if (k === 'basic') return 'Basic';
-        if (k === 'id') return 'Identification';
-        if (k === 'contact') return 'Contact';
-        if (k === 'education') return 'Education';
-        if (k === 'employment') return 'Employment';
-        if (k === 'reference') return 'Reference';
-        if (k === 'reports') return 'Reports';
-        if (k === 'timeline') return 'Timeline';
-        return k ? (k.charAt(0).toUpperCase() + k.slice(1)) : '';
-        }
-
-        function parseAllowedSections(raw) {
-        var s = String(raw || '').toLowerCase().trim();
-        if (!s) return [];
-        if (s === '*') return ['basic', 'id', 'contact', 'education', 'employment', 'reference', 'reports', 'timeline'];
+    function parseAllowedSections(raw) {
+        var value = String(raw || '').toLowerCase().trim();
+        if (!value) return [];
+        if (value === '*') return ['basic', 'id', 'contact', 'education', 'employment', 'reference', 'ecourt', 'socialmedia', 'reports', 'timeline'];
         var out = {};
-        s.split(/[\s,|]+/).forEach(function (p) {
-            var k = String(p || '').trim();
-            if (!k) return;
-            out[k] = true;
+        value.split(/[\s,|]+/).forEach(function (part) {
+            var key = String(part || '').toLowerCase().trim();
+            if (!key) return;
+            if (key === 'identification') key = 'id';
+            if (key === 'social' || key === 'social_media' || key === 'social-media') key = 'socialmedia';
+            out[key] = true;
         });
         return Object.keys(out);
-        }
+    }
 
-        function sectionToGroup(sectionKey) {
-        var k = String(sectionKey || '').toLowerCase().trim();
-        if (k === 'basic' || k === 'id' || k === 'contact') return 'BASIC';
-        if (k === 'education' || k === 'employment' || k === 'reference') return 'EDUCATION';
+    function sectionLabel(section) {
+        var key = String(section || '').toLowerCase().trim();
+        var labels = {
+            basic: 'Basic',
+            id: 'Identification',
+            contact: 'Contact',
+            education: 'Education',
+            employment: 'Employment',
+            reference: 'Reference',
+            ecourt: 'E-Court',
+            socialmedia: 'Social Media',
+            reports: 'Reports'
+        };
+        return labels[key] || (key ? key.charAt(0).toUpperCase() + key.slice(1) : '');
+    }
+
+    function sectionToGroup(section) {
+        var key = String(section || '').toLowerCase().trim();
+        if (key === 'basic' || key === 'id' || key === 'contact') return 'BASIC';
+        if (key === 'education' || key === 'employment' || key === 'reference') return 'EDUCATION';
+        if (key === 'ecourt' || key === 'socialmedia') return 'ADDITIONAL';
         return '';
-        }
+    }
 
-        function deriveGroupsFromSections(sections) {
+    function deriveGroupsFromSections(sections) {
         var out = {};
-        (Array.isArray(sections) ? sections : []).forEach(function (sec) {
-            var g = sectionToGroup(sec);
-            if (g) out[g] = true;
+        (Array.isArray(sections) ? sections : []).forEach(function (section) {
+            var group = sectionToGroup(section);
+            if (group) out[group] = true;
         });
         return Object.keys(out);
-        }
+    }
 
-        function deriveGroupSections(sections) {
-        var map = { BASIC: [], EDUCATION: [] };
-        (Array.isArray(sections) ? sections : []).forEach(function (sec) {
-            var g = sectionToGroup(sec);
-            if (!g || !map[g]) return;
-            if (map[g].indexOf(sec) === -1) map[g].push(sec);
+    function deriveGroupSections(sections) {
+        var map = { BASIC: [], EDUCATION: [], ADDITIONAL: [] };
+        (Array.isArray(sections) ? sections : []).forEach(function (section) {
+            var group = sectionToGroup(section);
+            if (!group || !map[group]) return;
+            if (map[group].indexOf(section) === -1) map[group].push(section);
         });
         return map;
-        }
+    }
 
-        function groupDisplayFromSections(groupKey) {
-        var g = String(groupKey || '').toUpperCase();
-        var list = (ALLOWED_GROUP_SECTIONS && Array.isArray(ALLOWED_GROUP_SECTIONS[g])) ? ALLOWED_GROUP_SECTIONS[g] : [];
-        if (!list.length) return fmtGroup(g);
-        var labels = list.map(sectionLabel);
-        if (labels.length <= 2) return labels.join(' / ');
-        return labels.slice(0, 2).join(' / ') + ' +' + String(labels.length - 2);
+    function groupDisplay(groupKey) {
+        var group = String(groupKey || '').toUpperCase();
+        var sections = groupSections[group] || [];
+        if (!sections.length) {
+            if (group === 'BASIC') return 'Basic / Identification';
+            if (group === 'EDUCATION') return 'Education / Reference';
+            if (group === 'ADDITIONAL') return 'E-Court / Social Media';
+            return group || '-';
         }
+        var labels = sections.map(sectionLabel);
+        return labels.length <= 2 ? labels.join(' / ') : (labels.slice(0, 2).join(' / ') + ' +' + String(labels.length - 2));
+    }
 
-        function renderAssigned(groups, sections) {
+    function renderAssignedModules() {
         if (!assignedHost) return;
-        groups = Array.isArray(groups) ? groups : [];
-        sections = Array.isArray(sections) ? sections : [];
-        if (!sections.length && !groups.length) {
+        if (!allowedSections.length) {
             assignedHost.innerHTML = '<div class="alert alert-warning" style="margin:0;">No modules assigned. Please contact Admin.</div>';
             return;
         }
-        var pills = (sections.length ? sections : groups).map(function (g) {
-            var label = sections.length ? sectionLabel(g) : fmtGroup(g);
-            return '<span class="badge" style="background:#fff; border:1px solid rgba(148,163,184,0.30); color:#0f172a; padding:6px 10px; border-radius:999px; font-weight:800;">' + esc(label) + '</span>';
+        var pills = allowedSections.map(function (section) {
+            return '<span class="badge" style="background:#fff; border:1px solid rgba(148,163,184,0.30); color:#0f172a; padding:6px 10px; border-radius:999px; font-weight:800;">' + esc(sectionLabel(section)) + '</span>';
         }).join(' ');
-        assignedHost.innerHTML = '<div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">' +
-            '<div style="font-size:12px; color:#64748b; font-weight:800;">Assigned Components</div>' +
-            '<div style="display:flex; gap:8px; flex-wrap:wrap;">' + pills + '</div>' +
-            '</div>';
+        assignedHost.innerHTML = '<div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">'
+            + '<div style="font-size:12px; color:#64748b; font-weight:800;">Assigned Groups</div>'
+            + '<div style="display:flex; gap:8px; flex-wrap:wrap;">' + pills + '</div>'
+            + '</div>';
+    }
+
+    function renderStartButtons() {
+        function applyButton(button, groupKey, defaultLabel) {
+            if (!button) return;
+            var allowed = allowedGroups.indexOf(groupKey) !== -1;
+            var counts = statsByGroup[groupKey] || {};
+            var pending = (parseInt(counts.pending || '0', 10) || 0) + (parseInt(counts.followup || '0', 10) || 0);
+            button.style.display = allowed ? 'inline-flex' : 'none';
+            button.disabled = !allowed || startInFlight;
+            button.setAttribute('data-group', groupKey);
+            button.textContent = defaultLabel + (pending > 0 ? (' (' + pending + ')') : '');
         }
 
-        function groupLabel(g) {
-        g = String(g || '').toUpperCase();
-        return g === 'BASIC' ? 'BASIC' : (g === 'EDUCATION' ? 'EDUCATION' : g);
-        }
+        applyButton(startBasicBtn, 'BASIC', 'Start ' + groupDisplay('BASIC'));
+        applyButton(startEducationBtn, 'EDUCATION', 'Start ' + groupDisplay('EDUCATION'));
+        applyButton(startAdditionalBtn, 'ADDITIONAL', 'Start ' + groupDisplay('ADDITIONAL'));
+    }
 
-        function renderStartActions() {
-        if (!startActionsHost) return;
-        var groups = Array.isArray(ALLOWED_GROUPS) ? ALLOWED_GROUPS.slice() : [];
-        if (!groups.length) {
-            startActionsHost.innerHTML = '';
-            return;
+    function renderGovernanceSignals(kpi) {
+        if (!governanceHost) return;
+        kpi = kpi || {};
+        var reopenTotal = parseInt(kpi.reopen_actions_total || '0', 10) || 0;
+        var supervisoryTotal = parseInt(kpi.supervisory_reopens_total || '0', 10) || 0;
+        var invalidatedTotal = parseInt(kpi.active_invalidated_downstream || '0', 10) || 0;
+        var correctionTotal = parseInt(kpi.correction_requested || '0', 10) || 0;
+        if (governanceSummaryEl) {
+            if (invalidatedTotal > 0) governanceSummaryEl.textContent = invalidatedTotal + ' downstream items need clean re-validation';
+            else if (correctionTotal > 0) governanceSummaryEl.textContent = correctionTotal + ' active correction loops in verifier scope';
+            else if (reopenTotal > 0 || supervisoryTotal > 0) governanceSummaryEl.textContent = 'Reconciliation activity recorded in verifier workflow';
+            else governanceSummaryEl.textContent = 'Quiet today. No elevated governance signals.';
         }
-        startActionsHost.innerHTML = groups.map(function (g, idx) {
-            var key = String(g || '').toUpperCase();
-            var s = statsByGroup[key] || {};
-            var pending = (parseInt(s.pending || '0', 10) || 0) + (parseInt(s.followup || '0', 10) || 0);
-            var txt = 'Start ' + groupDisplayFromSections(key) + ' Verify' + (pending > 0 ? (' (' + pending + ')') : '');
-            var cls = idx === 0 ? 'vr-btn vr-btn-primary' : 'vr-btn vr-btn-soft';
-            return '<button type="button" class="' + cls + '" data-start-group="' + esc(key) + '">' + esc(txt) + '</button>';
+        var cards = [
+            {
+                h: 'Reopen actions',
+                d: String(reopenTotal) + ' governed reopen events recorded in verifier scope.'
+            },
+            {
+                h: 'Reconciliation chain',
+                d: String(supervisoryTotal) + ' downstream review chains were reopened for verifier-side re-review.'
+            },
+            {
+                h: 'Invalidated downstream',
+                d: String(invalidatedTotal) + ' downstream QA items currently need clean re-validation.'
+            },
+            {
+                h: 'Correction pressure',
+                d: String(correctionTotal) + ' live correction loops, with ' + String(parseInt(kpi.stale_corrections || '0', 10) || 0) + ' stale beyond SLA.'
+            }
+        ];
+        governanceHost.innerHTML = cards.map(function (card) {
+            return '<div class="vr-mini-card"><div class="h">' + esc(card.h) + '</div><div class="d">' + esc(card.d) + '</div></div>';
         }).join('');
-        }
+    }
 
-        function loadAllowedConfig() {
-        var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
+    function fmtStatus(row) {
+        if (!row) return 'VE PENDING';
+        if (row.stage_status_label) return String(row.stage_status_label);
+        if (window.WF_UI && typeof window.WF_UI.labelByRole === 'function') {
+            var statusCode = String(row.operational_status || row.status || '').toLowerCase().trim();
+            if (row.operational_status_label) return String(row.operational_status_label);
+            return window.WF_UI.labelByRole(statusCode, 'verifier');
+        }
+        var status = String(row.status || '').toLowerCase().trim();
+        if (row.completed_at || status === 'done' || status === 'completed') return 'Review Complete';
+        if (status === 'waiting_candidate') return 'Candidate Pending';
+        if (status === 'blocked' || status === 'hold' || status === 'insufficient_documents') return 'On Hold';
+        if (status === 'in_progress') return 'Under Review';
+        return 'Awaiting Review';
+    }
+
+    function buildOpenUrl(row) {
+        var url = base + '/modules/verifier/candidate_view.php';
+        url = addParam(url, 'application_id', row && row.application_id ? row.application_id : '');
+        url = addParam(url, 'case_id', row && row.case_id ? row.case_id : '');
+        url = addParam(url, 'client_id', row && row.client_id ? row.client_id : '');
+        url = addParam(url, 'group', row && row.group_key ? String(row.group_key).toUpperCase() : '');
+        url = addParam(url, 'view', 'mine');
+        url = addParam(url, 'filter', 'active_work');
+        return url;
+    }
+
+    function loadAllowedConfig() {
         return fetch(base + '/api/verifier/allowed_config.php?_ts=' + Date.now(), { credentials: 'same-origin' })
             .then(function (res) { return res.json(); })
             .then(function (data) {
-                if (!data || data.status !== 1 || !data.data) {
-                    ALLOWED_GROUPS = [];
-                    ALLOWED_SECTIONS_LIST = [];
-                    renderAssigned([], []);
-                    renderStartActions();
-                    return;
-                }
-                ALLOWED_SECTIONS_LIST = parseAllowedSections(data.data.allowed_sections || '');
-                ALLOWED_GROUPS = deriveGroupsFromSections(ALLOWED_SECTIONS_LIST);
-                ALLOWED_GROUP_SECTIONS = deriveGroupSections(ALLOWED_SECTIONS_LIST);
-                renderAssigned(ALLOWED_GROUPS, ALLOWED_SECTIONS_LIST);
-                renderStartActions();
+                var allowedRaw = data && data.status === 1 && data.data ? data.data.allowed_sections : '';
+                allowedSections = parseAllowedSections(allowedRaw);
+                allowedGroups = deriveGroupsFromSections(allowedSections);
+                groupSections = deriveGroupSections(allowedSections);
+                renderAssignedModules();
+                renderStartButtons();
             })
             .catch(function () {
-                ALLOWED_GROUPS = [];
-                ALLOWED_SECTIONS_LIST = [];
-                ALLOWED_GROUP_SECTIONS = {};
-                renderAssigned([], []);
-                renderStartActions();
+                allowedSections = [];
+                allowedGroups = [];
+                groupSections = {};
+                renderAssignedModules();
+                renderStartButtons();
             });
-        }
+    }
 
-        function fmtGroup(g) {
-        g = String(g || '').toUpperCase();
-        if (g === 'BASIC') return 'Basic';
-        if (g === 'EDUCATION') return 'Education';
-        return g || '-';
-        }
-
-        function fmtStatus(row) {
-        if (!row) return badge('Pending', 'vr-badge-p');
-        var s = String(row.status || '').toLowerCase();
-        if (s === 'done' || s === 'completed') return badge('Completed', 'vr-badge-d');
-        if (s === 'waiting_candidate') return badge('Waiting Candidate', 'vr-badge-p');
-        if (s === 'blocked' || s === 'hold' || s === 'insufficient_documents') return badge('Blocked', 'vr-badge-i');
-        if (s === 'in_progress') return badge('In Progress', 'vr-badge-i');
-        return badge('Pending', 'vr-badge-p');
-        }
-
-        function buildOpenUrl(row) {
-        var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-        var appId = row && row.application_id ? String(row.application_id) : '';
-        var clientId = row && row.client_id ? String(row.client_id) : '';
-        var group = row && row.group_key ? String(row.group_key) : '';
-        var caseId = row && row.case_id ? String(row.case_id) : '';
-        function addParam(u, k, v) {
-            if (!v) return u;
-            return u + (u.indexOf('?') === -1 ? '?' : '&') + encodeURIComponent(k) + '=' + encodeURIComponent(String(v));
-        }
-
-        var url = base + '/modules/verifier/candidate_view.php';
-        if (appId) {
-            url = addParam(url, 'application_id', appId);
-        } else if (caseId) {
-            url = addParam(url, 'case_id', caseId);
-        } else {
-            url = base + '/modules/verifier/dashboard.php';
-        }
-        url = addParam(url, 'client_id', clientId);
-        url = addParam(url, 'group', group);
-        return url;
-        }
-
-        function loadStats() {
-        var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
+    function loadStats() {
         return fetch(base + '/api/verifier/queue_stats.php?scope=mine&_ts=' + Date.now(), { credentials: 'same-origin' })
             .then(function (res) { return res.json(); })
             .then(function (data) {
                 if (!data || data.status !== 1 || !Array.isArray(data.data)) return;
-
-                var totals = { pending: 0, in_progress: 0, followup: 0, completed_today: 0, completed_total: 0 };
-                data.data.forEach(function (r) {
-                    totals.pending += parseInt(r.pending || '0', 10) || 0;
-                    totals.in_progress += parseInt(r.in_progress || '0', 10) || 0;
-                    totals.followup += parseInt(r.followup || '0', 10) || 0;
-                    totals.completed_today += parseInt(r.completed_today || '0', 10) || 0;
-                    totals.completed_total += parseInt(r.completed_total || '0', 10) || 0;
-                    var gk = String(r.group_key || '').toUpperCase();
-                    if (gk) {
-                        statsByGroup[gk] = {
-                            pending: parseInt(r.pending || '0', 10) || 0,
-                            followup: parseInt(r.followup || '0', 10) || 0,
-                            in_progress: parseInt(r.in_progress || '0', 10) || 0,
-                            completed_today: parseInt(r.completed_today || '0', 10) || 0
-                        };
-                    }
+                statsByGroup = {};
+                var totals = { pending: 0, in_progress: 0, followup: 0 };
+                data.data.forEach(function (row) {
+                    var groupKey = String(row.group_key || '').toUpperCase();
+                    if (!groupKey) return;
+                    statsByGroup[groupKey] = row;
+                    totals.pending += parseInt(row.pending || '0', 10) || 0;
+                    totals.followup += parseInt(row.followup || '0', 10) || 0;
+                    totals.in_progress += parseInt(row.in_progress || '0', 10) || 0;
                 });
-
                 if (kpiPending) kpiPending.textContent = String(totals.pending + totals.followup);
                 if (kpiInProgress) kpiInProgress.textContent = String(totals.in_progress);
-                if (kpiCompletedToday) kpiCompletedToday.textContent = String(totals.completed_today);
-                renderStartActions();
+                if (kpiCompletedToday) {
+                    kpiCompletedToday.textContent = String(parseInt((data.kpi && data.kpi.participated_reviewed_today) || '0', 10) || 0);
+                }
+                renderGovernanceSignals(data.kpi || {});
+                renderStartButtons();
             })
-            .catch(function () {
-            });
-        }
+            .catch(function () {});
+    }
 
-        function loadMyTasks() {
-        var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
+    function loadMyTasks() {
         return fetch(base + '/api/verifier/queue_my_tasks.php?_ts=' + Date.now(), { credentials: 'same-origin' })
             .then(function (res) { return res.json(); })
             .then(function (data) {
                 if (!tasksBody) return;
-                tasksBody.innerHTML = '';
-
-                if (!data || data.status !== 1 || !Array.isArray(data.data)) {
-                    tasksBody.innerHTML = '<tr><td colspan="5" style="color:#64748b;">No tasks.</td></tr>';
+        if (!data || data.status !== 1 || !Array.isArray(data.data) || !data.data.length) {
+                    tasksBody.innerHTML = '<tr><td colspan="5" style="color:#64748b;">No active verifier workload. Use Reviewed / Participated for historical outcomes.</td></tr>';
                     return;
                 }
-
-                var rows = data.data;
-                if (!rows.length) {
-                    tasksBody.innerHTML = '<tr><td colspan="5" style="color:#64748b;">No tasks assigned to you.</td></tr>';
-                    return;
-                }
-
-                tasksBody.innerHTML = rows.map(function (r) {
-                    var app = r.application_id || '-';
-                    var name = ((r.candidate_first_name || '') + ' ' + (r.candidate_last_name || '')).trim();
-                    var comp = groupDisplayFromSections(r.group_key);
-                    var st = fmtStatus(r);
-                    var open = buildOpenUrl(r);
-                    var action = '<a href="' + esc(open) + '" style="text-decoration:none; color:#2563eb; font-weight:700;">' + (r.assigned_user_id ? 'Continue' : 'Open') + '</a>';
-                    return '<tr>' +
-                        '<td>' + esc(app) + '</td>' +
-                        '<td>' + esc(name || '-') + '</td>' +
-                        '<td>' + esc(comp) + '</td>' +
-                        '<td>' + st + '</td>' +
-                        '<td>' + action + '</td>' +
-                        '</tr>';
+                tasksBody.innerHTML = data.data.map(function (row) {
+                    var app = row.application_id || '-';
+                    var name = ((row.candidate_first_name || '') + ' ' + (row.candidate_last_name || '')).trim();
+                    var component = groupDisplay(row.group_key);
+                    var status = fmtStatus(row);
+                    var openUrl = buildOpenUrl(row);
+                    return '<tr>'
+                        + '<td>' + esc(app) + '</td>'
+                        + '<td>' + esc(name || '-') + '</td>'
+                        + '<td>' + esc(component) + '</td>'
+                        + '<td>' + esc(status) + '</td>'
+                        + '<td><a href="' + esc(openUrl) + '" style="text-decoration:none; color:#2563eb; font-weight:700;">' + (row.assigned_user_id ? 'Continue' : 'Open') + '</a></td>'
+                        + '</tr>';
                 }).join('');
-
-                if (tasksUpdated) {
-                    tasksUpdated.textContent = 'Updated: just now';
-                }
             })
             .catch(function () {
                 if (tasksBody) {
                     tasksBody.innerHTML = '<tr><td colspan="5" style="color:#ef4444;">Failed to load tasks.</td></tr>';
                 }
             });
-        }
+    }
 
-        function reloadDashboardData() {
-        return Promise.all([loadAllowedConfig(), loadStats(), loadMyTasks()]).catch(function () {
-        });
-        }
+    function refreshDashboardData() {
+        if (refreshInFlight) return Promise.resolve();
+        refreshInFlight = true;
+        return loadAllowedConfig()
+            .then(function () {
+                return Promise.all([loadStats(), loadMyTasks()]);
+            })
+            .finally(function () {
+                refreshInFlight = false;
+            });
+    }
 
-        function bindAutoRefresh() {
-        try {
-            if (window.__vrDashAutoTimer) {
-            clearInterval(window.__vrDashAutoTimer);
-            window.__vrDashAutoTimer = null;
-            }
-            window.__vrDashAutoTimer = setInterval(function () {
-            if (document.visibilityState === 'hidden') return;
-            reloadDashboardData();
-            }, DASH_POLL_MS);
-        } catch (e) {
-        }
-        }
-
-        if (!document.body.dataset.vrDashVisBound) {
-        document.body.dataset.vrDashVisBound = '1';
-        document.addEventListener('visibilitychange', function () {
-            if (document.visibilityState === 'visible') {
-            reloadDashboardData();
-            }
-        });
-        }
-
-        function startNext(group) {
-        if (startNextInFlight) return;
-        setMessage('', '');
-        if (Array.isArray(ALLOWED_GROUPS) && ALLOWED_GROUPS.length && ALLOWED_GROUPS.indexOf(String(group || '').toUpperCase()) === -1) {
+    function startNext(groupKey) {
+        if (startInFlight) return;
+        groupKey = String(groupKey || '').toUpperCase();
+        if (!groupKey) return;
+        if (allowedGroups.length && allowedGroups.indexOf(groupKey) === -1) {
             setMessage('Access denied: module not assigned.', 'danger');
             return;
         }
-        startNextInFlight = true;
-        var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
 
-        var payload = { group: group };
-        if (DEBUG) payload.debug = 1;
+        startInFlight = true;
+        renderStartButtons();
+        setMessage('', '');
 
         fetch(base + '/api/verifier/queue_next.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'same-origin',
-            body: JSON.stringify(payload)
+            body: JSON.stringify({ group: groupKey })
         })
             .then(function (res) {
                 return res.json().catch(function () {
@@ -348,89 +321,50 @@ document.addEventListener('DOMContentLoaded', function () {
                 });
             })
             .then(function (data) {
-                if (DEBUG && window.console && console.log) {
-                    console.log('queue_next response:', data);
-                }
                 if (!data || data.status !== 1) {
                     setMessage((data && data.message) ? data.message : 'Failed to fetch next case.', 'danger');
                     return;
                 }
-                var url = data && data.data ? data.data.url : null;
+                var url = data && data.data ? data.data.url : '';
                 if (!url) {
                     setMessage(data.message || 'No pending cases for this group.', 'info');
-                    loadStats();
-                    loadMyTasks();
-                    return;
+                    return refreshDashboardData();
                 }
-                window.location.href = url;
+                window.location.assign(url);
             })
             .catch(function () {
                 setMessage('Network error. Please try again.', 'danger');
             })
             .finally(function () {
-                startNextInFlight = false;
-            });
-        }
-
-        if (startActionsHost && !startActionsHost.dataset.bound) {
-            startActionsHost.dataset.bound = '1';
-            startActionsHost.addEventListener('click', function (e) {
-            var t = e && e.target ? e.target : null;
-            var btn = t && t.closest ? t.closest('[data-start-group]') : null;
-            if (!btn) return;
-            var g = String(btn.getAttribute('data-start-group') || '').toUpperCase();
-            if (!g) return;
-            startNext(g);
-            });
-        }
-
-        reloadDashboardData();
-        bindAutoRefresh();
-    }
-
-    function refreshDashboardContent() {
-        var dashboardContent = document.getElementById('dashboardContent');
-        if (!dashboardContent || refreshing) return;
-
-        refreshing = true;
-        if (refreshDashboardBtn) {
-            refreshDashboardBtn.disabled = true;
-            refreshDashboardBtn.textContent = 'Refreshing...';
-        }
-
-        var url = new URL(window.location.href);
-        url.searchParams.set('refresh', '1');
-        url.searchParams.set('_ts', String(Date.now()));
-
-        fetch(url.toString(), { credentials: 'same-origin' })
-            .then(function (res) { return res.text(); })
-            .then(function (html) {
-                var doc = new DOMParser().parseFromString(html, 'text/html');
-                var freshContent = doc.getElementById('dashboardContent');
-                if (!freshContent) throw new Error('dashboardContent not found in refresh response.');
-                dashboardContent.innerHTML = freshContent.innerHTML;
-                initDashboardContent();
-            })
-            .catch(function () {
-                var msg = document.getElementById('vrDashMessage');
-                if (msg) {
-                    msg.textContent = 'Failed to refresh dashboard. Please try again.';
-                    msg.className = 'alert alert-danger';
-                    msg.style.display = 'block';
-                }
-            })
-            .finally(function () {
-                refreshing = false;
-                if (refreshDashboardBtn) {
-                    refreshDashboardBtn.disabled = false;
-                    refreshDashboardBtn.textContent = 'Refresh';
-                }
+                startInFlight = false;
+                renderStartButtons();
             });
     }
 
-    if (refreshDashboardBtn) {
-        refreshDashboardBtn.addEventListener('click', refreshDashboardContent);
+    if (startBasicBtn) {
+        startBasicBtn.addEventListener('click', function () {
+            startNext('BASIC');
+        });
+    }
+    if (startEducationBtn) {
+        startEducationBtn.addEventListener('click', function () {
+            startNext('EDUCATION');
+        });
+    }
+    if (startAdditionalBtn) {
+        startAdditionalBtn.addEventListener('click', function () {
+            startNext('ADDITIONAL');
+        });
+    }
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', function () {
+            refreshDashboardData();
+        });
     }
 
-    initDashboardContent();
+    refreshDashboardData();
+    setInterval(function () {
+        if (document.visibilityState === 'hidden') return;
+        refreshDashboardData();
+    }, 15000);
 });

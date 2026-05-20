@@ -6,6 +6,9 @@ document.addEventListener('DOMContentLoaded', function () {
     var startBtn = document.getElementById('valDashStartNextBtn');
     var refreshBtn = document.getElementById('valDashRefreshBtn');
     var messageEl = document.getElementById('valDashMessage');
+    var governanceHost = document.getElementById('valGovernanceSignals');
+    var governanceSummaryEl = document.getElementById('valGovernanceSummary');
+    var refreshInFlight = false;
 
     function setMessage(text, type) {
         if (!messageEl) return;
@@ -25,12 +28,53 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function fmtStatus(row) {
         if (!row) return 'pending';
+        if (row.stage_status_label) return String(row.stage_status_label);
         var s = String(row.status || '').toLowerCase().trim();
-        if (row.completed_at || s === 'done' || s === 'completed') return 'completed';
-        if (s === 'waiting_candidate') return 'waiting_candidate';
-        if (s === 'blocked' || s === 'hold' || s === 'insufficient_documents') return 'blocked';
-        if (s === 'in_progress') return 'in_progress';
-        return 'pending';
+        if (window.WF_UI && typeof window.WF_UI.labelByRole === 'function') {
+            if (row.completed_at && (s === '' || s === 'in_progress' || s === 'pending')) s = 'completed';
+            return window.WF_UI.labelByRole(s, 'validator');
+        }
+        if (row.completed_at || s === 'done' || s === 'completed') return 'Review Complete';
+        if (s === 'waiting_candidate') return 'Waiting Candidate';
+        if (s === 'blocked' || s === 'hold' || s === 'insufficient_documents') return 'On Hold';
+        if (s === 'in_progress') return 'Under Evaluation';
+        return 'Awaiting Evaluation';
+    }
+
+    function renderGovernanceSignals(kpi) {
+        if (!governanceHost) return;
+        kpi = kpi || {};
+        var reopenTotal = parseInt(kpi.reopen_actions_total || '0', 10) || 0;
+        var invalidatedTotal = parseInt(kpi.active_invalidated_downstream || '0', 10) || 0;
+        var correctionTotal = parseInt(kpi.correction_requested || '0', 10) || 0;
+        var stuckTotal = parseInt(kpi.stuck_reopened_components || '0', 10) || 0;
+        if (governanceSummaryEl) {
+            if (invalidatedTotal > 0) governanceSummaryEl.textContent = invalidatedTotal + ' downstream items need reconciliation';
+            else if (correctionTotal > 0) governanceSummaryEl.textContent = correctionTotal + ' active correction loops in validator scope';
+            else if (reopenTotal > 0 || stuckTotal > 0) governanceSummaryEl.textContent = 'Reconciliation activity recorded in validator workflow';
+            else governanceSummaryEl.textContent = 'Quiet today. No elevated governance signals.';
+        }
+        var cards = [
+            {
+                h: 'Reopen actions',
+                d: String(reopenTotal) + ' validator reopen events recorded in workflow audit.'
+            },
+            {
+                h: 'Invalidated downstream',
+                d: String(invalidatedTotal) + ' verifier-stage items currently invalidated after upstream reopen.'
+            },
+            {
+                h: 'Correction pressure',
+                d: String(correctionTotal) + ' live correction loops, with ' + String(parseInt(kpi.stale_corrections || '0', 10) || 0) + ' stale beyond SLA.'
+            },
+            {
+                h: 'Workflow health',
+                d: String(stuckTotal) + ' reopened validator components remain active; ' + String(parseInt(kpi.repeated_corrections || '0', 10) || 0) + ' components have repeated correction cycles.'
+            }
+        ];
+        governanceHost.innerHTML = cards.map(function (card) {
+            return '<div class="vr-mini-card"><div class="h">' + esc(card.h) + '</div><div class="d">' + esc(card.d) + '</div></div>';
+        }).join('');
     }
 
     function buildOpenUrl(row) {
@@ -59,6 +103,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (kpiPending) kpiPending.textContent = String(d.pending || 0);
                 if (kpiInProgress) kpiInProgress.textContent = String(d.in_progress || 0);
                 if (kpiCompletedToday) kpiCompletedToday.textContent = String(d.completed_today || 0);
+                renderGovernanceSignals(d);
             })
             .catch(function () {});
     }
@@ -71,7 +116,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (!tasksBody) return;
                 tasksBody.innerHTML = '';
                 if (!data || data.status !== 1 || !Array.isArray(data.data) || !data.data.length) {
-                    tasksBody.innerHTML = '<tr><td colspan="4" style="color:#64748b;">No tasks assigned to you.</td></tr>';
+                    tasksBody.innerHTML = '<tr><td colspan="4" style="color:#64748b;">Queue currently clear. Candidate List remains available.</td></tr>';
                     return;
                 }
                 tasksBody.innerHTML = data.data.map(function (r) {
@@ -83,7 +128,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         '<td>' + esc(app) + '</td>' +
                         '<td>' + esc(name || '-') + '</td>' +
                         '<td>' + esc(st) + '</td>' +
-                        '<td><a href="' + esc(open) + '" style="text-decoration:none; color:#2563eb; font-weight:700;">Open</a></td>' +
+                        '<td><a href="' + esc(open) + '" style="text-decoration:none; color:#2563eb; font-weight:700;">Continue</a></td>' +
                         '</tr>';
                 }).join('');
             })
@@ -124,10 +169,20 @@ document.addEventListener('DOMContentLoaded', function () {
             });
     }
 
-    if (startBtn) startBtn.addEventListener('click', startNext);
-    if (refreshBtn) refreshBtn.addEventListener('click', function () { loadStats(); loadMyTasks(); });
+    function refreshDashboardData() {
+        if (refreshInFlight) return Promise.resolve();
+        refreshInFlight = true;
+        return Promise.all([loadStats(), loadMyTasks()]).finally(function () {
+            refreshInFlight = false;
+        });
+    }
 
-    loadStats();
-    loadMyTasks();
-    setInterval(function () { loadStats(); loadMyTasks(); }, 15000);
+    if (startBtn) startBtn.addEventListener('click', startNext);
+    if (refreshBtn) refreshBtn.addEventListener('click', function () { refreshDashboardData(); });
+
+    refreshDashboardData();
+    setInterval(function () {
+        if (document.visibilityState === 'hidden') return;
+        refreshDashboardData();
+    }, 15000);
 });

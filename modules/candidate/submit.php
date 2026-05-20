@@ -28,6 +28,7 @@ require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/mail.php';
 require_once __DIR__ . '/../../api/shared/case_component_binding.php';
 require_once __DIR__ . '/../../api/shared/candidate_account_notify.php';
+require_once __DIR__ . '/../../api/shared/application_status_guard.php';
 
 try {
 
@@ -83,12 +84,13 @@ try {
                    AND UPPER(TRIM(COALESCE(case_status,''))) NOT IN ('REJECTED','STOP_BGV','APPROVED','COMPLETED','CLEAR')"
             )->execute([$caseId]);
         }
+        $submittedStatus = wf_assert_valid_application_status('submitted', 'modules.candidate.submit');
         $pdo->prepare(
             "UPDATE Vati_Payfiller_Candidate_Applications
-             SET status = 'PENDING_VALIDATOR'
+             SET status = ?
              WHERE application_id = ?
-               AND UPPER(TRIM(COALESCE(status,''))) NOT IN ('REJECTED','STOP_BGV','APPROVED','COMPLETED','CLEAR')"
-        )->execute([$application_id]);
+               AND LOWER(TRIM(COALESCE(status,''))) NOT IN ('rejected','verified')"
+        )->execute([$submittedStatus, $application_id]);
 
         if ($caseId > 0) {
             try {

@@ -11,6 +11,65 @@ $stmt->execute([$application_id]);
 $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
 $stmt->closeCursor();
 
+$basicRow = [];
+try {
+    $stmt = $pdo->prepare("CALL SP_Vati_Payfiller_get_basic_details(?)");
+    $stmt->execute([$application_id]);
+    $basicRow = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    while ($stmt->nextRowset()) {
+    }
+    $stmt->closeCursor();
+} catch (Throwable $e) {
+    $basicRow = [];
+}
+
+$basicCityVillage = trim((string)($basicRow['city_village'] ?? ''));
+$basicState = trim((string)($basicRow['state'] ?? ''));
+$basicCountry = trim((string)($basicRow['country'] ?? ''));
+$basicPostalCode = trim((string)($basicRow['postal_code'] ?? $basicRow['pincode'] ?? $basicRow['pin_code'] ?? ''));
+
+if (trim((string)($row['city'] ?? '')) === '' && $basicCityVillage !== '') {
+    $row['city'] = $basicCityVillage;
+}
+if (trim((string)($row['state'] ?? '')) === '' && $basicState !== '') {
+    $row['state'] = $basicState;
+}
+if (trim((string)($row['country'] ?? '')) === '' && $basicCountry !== '') {
+    $row['country'] = $basicCountry;
+}
+if (trim((string)($row['postal_code'] ?? '')) === '' && $basicPostalCode !== '') {
+    $row['postal_code'] = $basicPostalCode;
+}
+
+if (trim((string)($row['permanent_city'] ?? '')) === '' && $basicCityVillage !== '') {
+    $row['permanent_city'] = $basicCityVillage;
+}
+if (trim((string)($row['permanent_state'] ?? '')) === '' && $basicState !== '') {
+    $row['permanent_state'] = $basicState;
+}
+if (trim((string)($row['permanent_country'] ?? '')) === '' && $basicCountry !== '') {
+    $row['permanent_country'] = $basicCountry;
+}
+if (trim((string)($row['permanent_postal_code'] ?? '')) === '' && $basicPostalCode !== '') {
+    $row['permanent_postal_code'] = $basicPostalCode;
+}
+
+$basicPrefillUsed = (
+    $basicCityVillage !== '' ||
+    $basicState !== '' ||
+    $basicCountry !== '' ||
+    $basicPostalCode !== ''
+) && (
+    trim((string)($row['city'] ?? '')) === $basicCityVillage ||
+    trim((string)($row['state'] ?? '')) === $basicState ||
+    trim((string)($row['country'] ?? '')) === $basicCountry ||
+    trim((string)($row['postal_code'] ?? '')) === $basicPostalCode ||
+    trim((string)($row['permanent_city'] ?? '')) === $basicCityVillage ||
+    trim((string)($row['permanent_state'] ?? '')) === $basicState ||
+    trim((string)($row['permanent_country'] ?? '')) === $basicCountry ||
+    trim((string)($row['permanent_postal_code'] ?? '')) === $basicPostalCode
+);
+
 $countries = ['India','United States','United Kingdom','Australia','Canada','Germany','France','China','Japan','Other'];
 $hasPermanentData = !empty($row['permanent_address1']) || !empty($row['permanent_city']) || !empty($row['permanent_state']) || !empty($row['permanent_postal_code']);
 $sameAsCurrent = !empty($row['same_as_current']) || !$hasPermanentData;
@@ -34,6 +93,11 @@ $existingCurrentProofUrl = $existingCurrentProofPath !== '' ? app_url($existingC
     <p class="text-muted mb-3">
         Please provide your current contact information.
     </p>
+    <?php if ($basicPrefillUsed): ?>
+        <p class="compact-hint mb-3" style="color:#5b6b7b;">
+            Some address details were pre-filled from your Basic Details. Please review and update them if needed.
+        </p>
+    <?php endif; ?>
 
     <form id="contactForm" enctype="multipart/form-data">
         <input type="hidden" name="has_current_address" value="1">
@@ -58,6 +122,7 @@ $existingCurrentProofUrl = $existingCurrentProofPath !== '' ? app_url($existingC
         </div>
 
         <div class="tab-pane active contact-address-pane" id="current_address_tab" data-address-section="current_address">
+            <div class="contact-pane-heading" data-single-address-heading="current_address" style="display:none;">Current Address</div>
             <div class="form-grid compact-grid mt-3">
                 <div class="form-field col-span-full">
                     <div class="form-row-2 compact-row">
@@ -147,6 +212,7 @@ $existingCurrentProofUrl = $existingCurrentProofPath !== '' ? app_url($existingC
         </div>
 
         <div class="tab-pane contact-address-pane" id="permanent_address_tab" style="display:none;" data-address-section="permanent_address">
+            <div class="contact-pane-heading" data-single-address-heading="permanent_address" style="display:none;">Permanent Address</div>
             <div class="form-grid compact-grid mt-3">
                 <div class="form-field col-span-full">
                     <div class="form-row-2 compact-row">

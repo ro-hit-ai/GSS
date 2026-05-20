@@ -245,7 +245,7 @@ class IdentificationManager extends TabManager {
     setupFileHandlers() {
         console.log('🔧 Setting up file handlers');
 
-        document.addEventListener('click', (e) => {
+        this.addEventListener(document, 'click', (e) => {
             const trigger = e.target.closest('[data-file-choose]');
             if (!trigger) return;
             e.preventDefault();
@@ -255,7 +255,7 @@ class IdentificationManager extends TabManager {
             if (input) input.click();
         });
 
-        document.addEventListener('change', (e) => {
+        this.addEventListener(document, 'change', (e) => {
             if (e.target.matches('input[name="upload_document[]"]')) {
                 const input = e.target;
                 const card = input.closest('.identification-card');
@@ -314,7 +314,7 @@ class IdentificationManager extends TabManager {
     setupInsufficientDocsHandlers() {
         console.log('🔧 Setting up insufficient documents handlers');
         
-        document.addEventListener('change', (e) => {
+        this.addEventListener(document, 'change', (e) => {
             if (e.target.matches('input[name="insufficient_documents[]"]')) {
                 const checkbox = e.target;
                 const card = checkbox.closest('.identification-card');
@@ -518,7 +518,7 @@ setupFormHandlers() {
 
     // 🔒 DO NOT CLONE THE FORM
     // Just prevent default submit safely
-    form.addEventListener('submit', (e) => {
+    this.addEventListener(form, 'submit', (e) => {
         e.preventDefault();
         e.stopPropagation();
         console.log('❌ Native form submit prevented');
@@ -529,7 +529,7 @@ setupFormHandlers() {
         '.external-submit-btn[data-form="identificationForm"]'
     );
     if (nextBtn) {
-        nextBtn.addEventListener('click', async (e) => {
+        this.addEventListener(nextBtn, 'click', async (e) => {
             e.preventDefault();
             console.log('✅ Next button clicked');
             await this.submitForm(false);
@@ -537,7 +537,7 @@ setupFormHandlers() {
     }
 
     // Save draft
-    document.addEventListener('click', (e) => {
+    this.addEventListener(document, 'click', (e) => {
         const btn = e.target.closest('.save-draft-btn[data-page="identification"]');
         if (btn) {
             e.preventDefault();
@@ -549,7 +549,7 @@ setupFormHandlers() {
     // Previous
     const prevBtn = document.querySelector('.prev-btn');
     if (prevBtn) {
-        prevBtn.addEventListener('click', (e) => {
+        this.addEventListener(prevBtn, 'click', (e) => {
             e.preventDefault();
             if (window.Router) {
                 Router.navigateTo('basic-details');

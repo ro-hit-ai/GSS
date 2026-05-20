@@ -4,8 +4,45 @@ header("Content-Type: application/json");
 
 require_once __DIR__ . '/../../config/env.php';
 require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../shared/candidate_correction_service.php';
 
 class ValidationException extends Exception {}
+
+function normalizeInputDate(?string $raw): ?string
+{
+    $v = trim((string)$raw);
+    if ($v === '') return null;
+
+    // Already ISO
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) === 1) {
+        return $v;
+    }
+
+    // dd/mm/yyyy or dd-mm-yyyy
+    if (preg_match('/^(\d{2})[\/-](\d{2})[\/-](\d{4})$/', $v, $m) === 1) {
+        $d = (int)$m[1];
+        $mo = (int)$m[2];
+        $y = (int)$m[3];
+        if (checkdate($mo, $d, $y)) {
+            return sprintf('%04d-%02d-%02d', $y, $mo, $d);
+        }
+        return $v;
+    }
+
+    // dd/mm/yy or dd-mm-yy -> map to 20yy
+    if (preg_match('/^(\d{2})[\/-](\d{2})[\/-](\d{2})$/', $v, $m) === 1) {
+        $d = (int)$m[1];
+        $mo = (int)$m[2];
+        $yy = (int)$m[3];
+        $y = 2000 + $yy;
+        if (checkdate($mo, $d, $y)) {
+            return sprintf('%04d-%02d-%02d', $y, $mo, $d);
+        }
+        return $v;
+    }
+
+    return $v;
+}
 
 function validateSingleEmployment(array $data, bool $isFresher, int $index, bool $isDraft): void
 {
@@ -44,8 +81,7 @@ function validateSingleEmployment(array $data, bool $isFresher, int $index, bool
 
     if (!empty($data['relieving_date'])) {
         $isIsoDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', $data['relieving_date']) === 1;
-        $isSlashDate = preg_match('/^\d{2}\/\d{2}\/\d{4}$/', $data['relieving_date']) === 1;
-        if (!$isIsoDate && !$isSlashDate) {
+        if (!$isIsoDate) {
             throw new ValidationException("Invalid relieving date format for employment record $index");
         }
     }
@@ -206,8 +242,8 @@ try {
             'employer_name'      => trim($employerNames[$i] ?? ''),
             'job_title'          => trim($jobTitles[$i] ?? ''),
             'employee_id'        => trim($employeeIds[$i] ?? ''),
-            'joining_date'       => $joiningDates[$i] ?? '',
-            'relieving_date'     => $relievingDates[$i] ?? null,
+            'joining_date'       => normalizeInputDate($joiningDates[$i] ?? ''),
+            'relieving_date'     => normalizeInputDate($relievingDates[$i] ?? null),
             'employment_doc_type'=> trim($documentTypes[$i] ?? ''),
             'reason_leaving'     => trim($reasons[$i] ?? ''),
             'hr_manager_name'    => trim($hrNames[$i] ?? ''),
@@ -273,7 +309,7 @@ try {
             throw new ValidationException("Employment document is required for employment record $index");
         }
 
-        $relieving = $isCurrentlyEmployedForRow ? null : ($data['relieving_date'] ?: null);
+        $relieving = $data['relieving_date'] ?: null;
 
         $stmt->execute([
             ':application_id'         => $applicationId,
@@ -312,6 +348,7 @@ try {
         $deleteStmt->execute($params);
     }
 
+    ccs_progress_component_after_candidate_save($pdo, (string)$applicationId, 'employment', $isDraft);
     $pdo->commit();
 
     echo json_encode([

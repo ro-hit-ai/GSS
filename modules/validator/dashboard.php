@@ -32,7 +32,8 @@ ob_start();
     .vr-btn-primary:hover{color:#fff; filter:brightness(0.96);}
     .vr-btn-soft{background:#fff; border-color:rgba(148,163,184,0.35); color:#0f172a;}
 
-    .vr-grid{display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:12px; margin-top:14px;}
+    .vr-operational-grid{display:grid; grid-template-columns:minmax(0, 2fr) minmax(280px, 1fr); gap:12px; margin-top:14px;}
+    .vr-secondary-grid{display:grid; grid-template-columns:1fr; gap:12px; margin-top:12px;}
     .vr-panel{border:1px solid rgba(148,163,184,0.25); border-radius:14px; padding:12px; background:#fff;}
     .vr-panel-h h3{margin:0; font-size:13px; font-weight:900; color:#0f172a;}
     .vr-panel-h .m{font-size:12px; color:#64748b;}
@@ -44,6 +45,18 @@ ob_start();
     .vr-mini-card{border:1px solid rgba(148,163,184,0.22); border-radius:14px; padding:12px; background:rgba(255,255,255,0.75);}
     .vr-mini-card .h{font-size:12px; font-weight:800; color:#0f172a;}
     .vr-mini-card .d{font-size:12px; color:#64748b; margin-top:4px;}
+    .vr-focus-strip{display:grid; grid-template-columns:1fr; gap:10px;}
+    .vr-focus-card{border:1px solid rgba(148,163,184,0.18); border-radius:12px; padding:10px 12px; background:rgba(248,250,252,0.9);}
+    .vr-focus-card .h{font-size:12px; font-weight:800; color:#0f172a;}
+    .vr-focus-card .d{font-size:12px; color:#64748b; margin-top:3px;}
+    .vr-governance details{border:1px solid rgba(148,163,184,0.22); border-radius:14px; background:rgba(255,255,255,0.86);}
+    .vr-governance summary{list-style:none; cursor:pointer; padding:12px 14px; display:flex; align-items:center; justify-content:space-between; gap:12px; font-weight:800; color:#0f172a;}
+    .vr-governance summary::-webkit-details-marker{display:none;}
+    .vr-governance-summary-copy{font-size:12px; font-weight:600; color:#64748b;}
+    .vr-governance-body{padding:0 12px 12px;}
+    @media (max-width: 1100px){
+        .vr-operational-grid{grid-template-columns:1fr;}
+    }
 </style>
 
 <div class="vr-page">
@@ -56,7 +69,7 @@ ob_start();
     <div class="qa-like-head">
         <div>
             <div class="qa-like-title">Live Dashboard</div>
-            <div class="qa-like-subtitle">Current validator queue, my tasks, and quick actions.</div>
+            <div class="qa-like-subtitle">Current validator evaluation workload, queue continuity, and next-step actions.</div>
         </div>
         <div class="qa-like-controls">
             <span class="qa-like-chip"><span class="qa-like-dot"></span>Live Queue</span>
@@ -68,18 +81,18 @@ ob_start();
     <div class="vr-kpis">
         <div class="vr-kpi">
             <div class="n" id="valKpiPending">0</div>
-            <div class="l">Pending Cases</div>
-            <div class="t">Awaiting start</div>
+            <div class="l">Awaiting Evaluation</div>
+            <div class="t">Awaiting assignment/start</div>
         </div>
         <div class="vr-kpi">
             <div class="n" id="valKpiInProgress">0</div>
-            <div class="l">In Progress</div>
-            <div class="t">Work-in-hand</div>
+            <div class="l">Under Evaluation</div>
+            <div class="t">Active evaluation workload</div>
         </div>
         <div class="vr-kpi">
             <div class="n" id="valKpiCompletedToday">0</div>
-            <div class="l">Completed Today</div>
-            <div class="t">Ready for release</div>
+            <div class="l">Evaluated Today</div>
+            <div class="t">Evaluated outcomes today</div>
         </div>
         <div class="vr-kpi">
             <div class="n">1.8h</div>
@@ -94,7 +107,7 @@ ob_start();
         <button type="button" class="vr-btn vr-btn-soft" id="valDashRefreshBtn">Refresh</button>
     </div>
 
-    <div class="vr-grid">
+    <div class="vr-operational-grid">
         <div class="vr-panel">
             <div class="vr-panel-h">
                 <h3>My Open Cases</h3>
@@ -117,24 +130,44 @@ ob_start();
 
         <div class="vr-panel">
             <div class="vr-panel-h">
-                <h3>Quick Insights</h3>
+                <h3>Operational Focus</h3>
+                <div class="m">Linear queue-first workflow</div>
             </div>
             <div class="vr-panel-b">
-                <div class="vr-mini">
-                    <div class="vr-mini-card">
-                        <div class="h">Suggested next step</div>
-                        <div class="d">Use <strong>Start Next</strong> for strict FIFO case handling.</div>
+                <div class="vr-focus-strip">
+                    <div class="vr-focus-card">
+                        <div class="h">Queue pickup</div>
+                        <div class="d">FIFO queue pickup enabled.</div>
                     </div>
-                    <div class="vr-mini-card">
-                        <div class="h">Candidate list flow</div>
-                        <div class="d">Open <strong>Candidate List</strong> to jump to a specific assigned application.</div>
+                    <div class="vr-focus-card">
+                        <div class="h">Workflow path</div>
+                        <div class="d">Validator review flows forward into verifier ownership.</div>
                     </div>
-                    <div class="vr-mini-card">
+                    <div class="vr-focus-card">
                         <div class="h">Quality guardrail</div>
-                        <div class="d">Confirm all verification remarks are closed before final status action.</div>
+                        <div class="d">Close remarks and evidence checks before final action.</div>
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <div class="vr-secondary-grid">
+        <div class="vr-panel vr-governance">
+            <details>
+                <summary>
+                    <span>Workflow Governance</span>
+                    <span class="vr-governance-summary-copy" id="valGovernanceSummary">Decision updates, invalidation, correction, and workflow health</span>
+                </summary>
+                <div class="vr-governance-body">
+                    <div class="vr-mini" id="valGovernanceSignals">
+                        <div class="vr-mini-card">
+                            <div class="h">Loading...</div>
+                            <div class="d">Governance metrics are loading.</div>
+                        </div>
+                    </div>
+                </div>
+            </details>
         </div>
     </div>
 </div>

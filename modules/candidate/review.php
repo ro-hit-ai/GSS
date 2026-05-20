@@ -24,10 +24,10 @@ ensureApplicationExists($application_id);
         <div id="candidateReviewContent" class="candidate-review-sections" style="display:none;"></div>
     </div>
 
-    <div id="filePreviewModal" class="modal" style="display:none;">
-        <div class="modal-content" style="width:60%;margin:40px auto;background:#fff;border-radius:10px;padding:14px;position:relative;">
-            <span id="filePreviewCloseBtn" style="cursor:pointer;font-size:22px;line-height:1;position:absolute;right:12px;top:8px;">&times;</span>
-            <div id="previewContainer" style="margin-top:18px;"></div>
+    <div id="filePreviewModal" class="candidate-review-preview-modal" style="display:none;">
+        <div class="candidate-review-preview-dialog">
+            <span id="filePreviewCloseBtn" class="candidate-review-preview-close">&times;</span>
+            <div id="previewContainer" class="candidate-review-preview-body"></div>
         </div>
     </div>
 

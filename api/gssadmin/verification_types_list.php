@@ -2,7 +2,7 @@
 header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../config/db.php';
-require_once __DIR__ . '/../../includes/component_resolver.php';
+require_once __DIR__ . '/../shared/case_component_binding.php';
 
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, OPTIONS');
@@ -11,6 +11,13 @@ header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-W
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit;
+}
+
+function norm_component_key_local(string $key): string {
+    $k = strtolower(trim($key));
+    if ($k === 'identification') return 'id';
+    if ($k === 'social_media' || $k === 'social-media') return 'socialmedia';
+    return $k;
 }
 
 try {
@@ -44,6 +51,17 @@ try {
     }
 
     $out = [];
+    $unknownTypes = [];
+    $pageByComponent = [
+        'basic' => 'basic-details',
+        'id' => 'identification',
+        'contact' => 'contact',
+        'education' => 'education',
+        'employment' => 'employment',
+        'reference' => 'reference',
+        'ecourt' => 'ecourt',
+        'socialmedia' => 'social',
+    ];
     foreach ($rows as $r) {
         $typeId = isset($r['verification_type_id']) ? (int)$r['verification_type_id'] : 0;
         $typeNameRaw = (string)($r['type_name'] ?? '');
@@ -66,16 +84,42 @@ try {
             $typeNameNorm = 'Education';
         }
 
+        $resolved = case_component_binding_map_verification_type_to_components($typeNameNorm, $typeCategory);
+        $resolved = array_values(array_unique(array_filter(array_map(function ($k) {
+            return norm_component_key_local((string)$k);
+        }, $resolved), function ($k) {
+            return $k !== '';
+        })));
+        $componentKey = $resolved[0] ?? '';
+        $candidatePage = ($componentKey !== '' && isset($pageByComponent[$componentKey])) ? $pageByComponent[$componentKey] : '';
+        $candidateSubsection = '';
+        $displayLabel = $componentKey !== '' ? $componentKey : $typeNameNorm;
+        if ($componentKey === 'contact') {
+            $candidateSubsection = case_component_binding_contact_subsection($typeNameNorm, $typeCategory);
+            $displayLabel = case_component_binding_contact_display_label($typeNameNorm, $typeCategory);
+        }
+        if ($componentKey === '') {
+            $unknownTypes[] = [
+                'verification_type_id' => $typeId,
+                'type_name' => $typeNameNorm,
+                'type_category' => $typeCategory
+            ];
+        }
+
         $out[] = [
             'verification_type_id' => $typeId,
             'type_name' => $typeNameNorm,
             'type_category' => $typeCategory,
-            'component_key' => resolve_component_key($typeNameNorm, $typeCategory),
-            'display_label' => resolve_component_label($typeNameNorm, $typeCategory),
-            'candidate_page' => resolve_component_page($typeNameNorm, $typeCategory),
-            'candidate_subsection' => resolve_component_subsection($typeNameNorm, $typeCategory),
+            'component_key' => $componentKey,
+            'display_label' => $displayLabel,
+            'candidate_page' => $candidatePage,
+            'candidate_subsection' => $candidateSubsection,
             'sort_order' => $sortOrder,
         ];
+    }
+
+    if (!empty($unknownTypes)) {
+        error_log('VERIFICATION_TYPES_UNKNOWN_MAP: ' . json_encode($unknownTypes));
     }
 
     echo json_encode(['status' => 1, 'message' => 'ok', 'data' => $out]);

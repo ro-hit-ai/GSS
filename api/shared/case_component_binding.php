@@ -1,8 +1,46 @@
 <?php
+require_once __DIR__ . '/workflow_semantics.php';
+
+function case_component_binding_norm_stage_key(string $stage): string
+{
+    $s = strtolower(trim($stage));
+    if (strpos($s, '__') !== false) {
+        $s = trim((string)explode('__', $s, 2)[0]);
+    }
+    if ($s === 'p1' || $s === 'pre interview') return 'pre_interview';
+    if ($s === 'p2' || $s === 'post interview') return 'post_interview';
+    if ($s === 'p3' || $s === 'employee pool') return 'employee_pool';
+    return $s;
+}
+
+function case_component_binding_parse_stage_level(string $stage, string $level = ''): array
+{
+    $rawStage = trim($stage);
+    $rawLevel = trim($level);
+    if ($rawStage !== '' && strpos($rawStage, '__') !== false) {
+        $parts = explode('__', $rawStage, 2);
+        $rawStage = trim((string)($parts[0] ?? ''));
+        if ($rawLevel === '') {
+            $rawLevel = trim((string)($parts[1] ?? ''));
+        }
+    }
+    return [case_component_binding_norm_stage_key($rawStage), strtoupper(trim($rawLevel))];
+}
 
 function case_component_binding_str_contains_ci(string $haystack, string $needle): bool
 {
     return stripos($haystack, $needle) !== false;
+}
+
+function case_component_binding_text_has_any(string $haystack, array $needles): bool
+{
+    foreach ($needles as $needle) {
+        $needle = trim((string)$needle);
+        if ($needle !== '' && case_component_binding_str_contains_ci($haystack, $needle)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 function case_component_binding_norm_component_key(string $key): string
@@ -22,101 +60,114 @@ function case_component_binding_norm_component_key(string $key): string
 
 function case_component_binding_map_verification_type_to_components(string $typeName, string $typeCategory): array
 {
-    $hay = strtolower(trim(($typeName !== '' ? $typeName : '') . ' ' . ($typeCategory !== '' ? $typeCategory : '')));
+    $name = strtolower(trim($typeName));
+    $category = strtolower(trim($typeCategory));
+
+    // Strict deterministic map only (no fuzzy/contains matching).
+    $exactTypeMap = [
+        'education' => 'education',
+        'employment' => 'employment',
+        'employement' => 'employment',
+        'education reference' => 'reference',
+        'employment reference' => 'reference',
+        'identity proof' => 'id',
+        'current address' => 'contact',
+        'permanent address' => 'contact',
+        'current or permanent address' => 'contact',
+        'ecourt' => 'ecourt',
+        'e-court' => 'ecourt',
+        'social media' => 'socialmedia',
+    ];
+
+    if ($name !== '' && isset($exactTypeMap[$name])) {
+        return [$exactTypeMap[$name]];
+    }
+
+    // Category-level deterministic fallback (still explicit, not heuristic).
+    $exactCategoryMap = [
+        'education' => 'education',
+        'employment' => 'employment',
+        'reference' => 'reference',
+        'identity' => 'id',
+        'identification' => 'id',
+        'address' => 'contact',
+        'address verification' => 'contact',
+        'contact' => 'contact',
+        'ecourt' => 'ecourt',
+        'social media' => 'socialmedia',
+    ];
+    if ($category !== '' && isset($exactCategoryMap[$category])) {
+        return [$exactCategoryMap[$category]];
+    }
+
+    return [];
+}
+
+function case_component_binding_detect_contact_sections(string $typeName, string $typeCategory): array
+{
+    $name = strtolower(trim($typeName));
+    $category = strtolower(trim($typeCategory));
+    $hay = trim($name . ' ' . $category);
+    if (!case_component_binding_text_has_any($hay, ['address', 'contact'])) {
+        return [];
+    }
+
     $out = [];
-
-    if (
-        case_component_binding_str_contains_ci($hay, 'identification')
-        || case_component_binding_str_contains_ci($hay, 'identity')
-        || case_component_binding_str_contains_ci($hay, 'id verification')
-        || case_component_binding_str_contains_ci($hay, 'kyc')
-        || case_component_binding_str_contains_ci($hay, 'aadhaar')
-        || case_component_binding_str_contains_ci($hay, 'aadhar')
-        || case_component_binding_str_contains_ci($hay, 'pan')
-        || case_component_binding_str_contains_ci($hay, 'passport')
-        || case_component_binding_str_contains_ci($hay, 'voter')
-        || case_component_binding_str_contains_ci($hay, 'national id')
-    ) {
-        $out[] = 'id';
+    if (case_component_binding_text_has_any($name, ['current or permanent', 'current/permanent', 'full address details'])) {
+        $out[] = 'current_address';
+        $out[] = 'permanent_address';
+    } else {
+        if (case_component_binding_text_has_any($name, ['current', 'present'])) {
+            $out[] = 'current_address';
+        }
+        if (case_component_binding_text_has_any($name, ['permanent'])) {
+            $out[] = 'permanent_address';
+        }
     }
 
-    if (
-        case_component_binding_str_contains_ci($hay, 'contact')
-        || case_component_binding_str_contains_ci($hay, 'address')
-        || case_component_binding_str_contains_ci($hay, 'current address')
-        || case_component_binding_str_contains_ci($hay, 'permanent address')
-        || case_component_binding_str_contains_ci($hay, 'residence')
-    ) {
-        $out[] = 'contact';
+    if (empty($out) && case_component_binding_text_has_any($category, ['address verification'])) {
+        $out[] = 'current_address';
+        $out[] = 'permanent_address';
     }
 
-    if (
-        case_component_binding_str_contains_ci($hay, 'education')
-        || case_component_binding_str_contains_ci($hay, 'qualification')
-        || case_component_binding_str_contains_ci($hay, 'degree')
-        || case_component_binding_str_contains_ci($hay, 'college')
-        || case_component_binding_str_contains_ci($hay, 'university')
-    ) {
-        $out[] = 'education';
-    }
-
-    if (
-        case_component_binding_str_contains_ci($hay, 'employment')
-        || case_component_binding_str_contains_ci($hay, 'employer')
-        || case_component_binding_str_contains_ci($hay, 'experience')
-        || case_component_binding_str_contains_ci($hay, 'work history')
-    ) {
-        $out[] = 'employment';
-    }
-
-    if (
-        case_component_binding_str_contains_ci($hay, 'reference')
-        || case_component_binding_str_contains_ci($hay, 'referee')
-        || case_component_binding_str_contains_ci($hay, 'ref check')
-        || case_component_binding_str_contains_ci($hay, 'ref-check')
-    ) {
-        $out[] = 'reference';
-    }
-
-    if (
-        case_component_binding_str_contains_ci($hay, 'social')
-        || case_component_binding_str_contains_ci($hay, 'linkedin')
-        || case_component_binding_str_contains_ci($hay, 'facebook')
-        || case_component_binding_str_contains_ci($hay, 'instagram')
-        || case_component_binding_str_contains_ci($hay, 'twitter')
-        || case_component_binding_str_contains_ci($hay, 'world check')
-        || case_component_binding_str_contains_ci($hay, 'worldcheck')
-    ) {
-        $out[] = 'socialmedia';
-    }
-
-    if (
-        case_component_binding_str_contains_ci($hay, 'ecourt')
-        || case_component_binding_str_contains_ci($hay, 'e-court')
-        || case_component_binding_str_contains_ci($hay, 'court')
-        || case_component_binding_str_contains_ci($hay, 'litigation')
-        || case_component_binding_str_contains_ci($hay, 'judis')
-        || case_component_binding_str_contains_ci($hay, 'judicial')
-        || case_component_binding_str_contains_ci($hay, 'manupatra')
-    ) {
-        $out[] = 'ecourt';
-    }
-
-    if (case_component_binding_str_contains_ci($hay, 'database')) {
-        $out[] = 'database';
-    }
-
-    if (
-        case_component_binding_str_contains_ci($hay, 'driving')
-        || case_component_binding_str_contains_ci($hay, 'driver')
-        || case_component_binding_str_contains_ci($hay, 'licence')
-        || case_component_binding_str_contains_ci($hay, 'license')
-        || case_component_binding_str_contains_ci($hay, 'dl')
-    ) {
-        $out[] = 'driving_licence';
+    if (empty($out) && case_component_binding_text_has_any($hay, ['address', 'contact'])) {
+        $out[] = 'current_address';
     }
 
     return array_values(array_unique($out));
+}
+
+function case_component_binding_contact_subsection(string $typeName, string $typeCategory): string
+{
+    $sections = case_component_binding_detect_contact_sections($typeName, $typeCategory);
+    $hasCurrent = in_array('current_address', $sections, true);
+    $hasPermanent = in_array('permanent_address', $sections, true);
+
+    if ($hasCurrent && $hasPermanent) {
+        return 'current_and_permanent_address';
+    }
+    if ($hasPermanent) {
+        return 'permanent_address';
+    }
+    if ($hasCurrent) {
+        return 'current_address';
+    }
+    return '';
+}
+
+function case_component_binding_contact_display_label(string $typeName, string $typeCategory): string
+{
+    $subsection = case_component_binding_contact_subsection($typeName, $typeCategory);
+    if ($subsection === 'permanent_address') {
+        return 'Permanent Address';
+    }
+    if ($subsection === 'current_address') {
+        return 'Current Address';
+    }
+    if ($subsection === 'current_and_permanent_address') {
+        return 'Current OR Permanent Address';
+    }
+    return 'Contact';
 }
 
 function case_component_binding_fetch_case(PDO $pdo, int $caseId, string $applicationId): ?array
@@ -183,14 +234,7 @@ function case_component_binding_fetch_types(PDO $pdo, int $jobRoleId, string $se
     if ($jobRoleId <= 0) {
         return [];
     }
-    $selectedLevel = strtolower(trim($selectedLevel));
-    $selectedStage = strtolower(trim($selectedStage));
-    if (strpos($selectedStage, '__') !== false) {
-        $selectedStage = explode('__', $selectedStage, 2)[0];
-    }
-    if ($selectedStage === 'pre_interview') $selectedStage = 'p1';
-    if ($selectedStage === 'post_interview') $selectedStage = 'p2';
-    if ($selectedStage === 'employee_pool') $selectedStage = 'p3';
+    [$selectedStage, $selectedLevel] = case_component_binding_parse_stage_level($selectedStage, $selectedLevel);
 
     // Strict stage-scoped resolution: do not materialize mixed-stage components.
     if ($selectedLevel === '' || $selectedStage === '') {
@@ -200,21 +244,30 @@ function case_component_binding_fetch_types(PDO $pdo, int $jobRoleId, string $se
     error_log('DEBUG_STAGE: level=' . $selectedLevel . ', stage=' . $selectedStage);
 
     try {
-        $params = [$jobRoleId, $selectedLevel, $selectedStage];
+        $params = [$jobRoleId, $selectedLevel, $selectedLevel, $selectedStage];
 
-        // Prefer DB-driven component_key from mapping table; fallback to type table if available.
+        // Use DB-driven component_key from mapping table.
+        // Important: `Vati_Payfiller_Verification_Types` may not have `component_key`
+        // in several environments. Referencing it causes SQL errors and forces
+        // fallback heuristic mapping, which can incorrectly seed extra components.
         try {
             $sql = 'SELECT j.verification_type_id, j.is_enabled, t.type_name, t.type_category, j.level_key, j.stage_key,
-                           COALESCE(NULLIF(TRIM(j.component_key), \'\'), NULLIF(TRIM(t.component_key), \'\'), \'\') AS component_key
+                           COALESCE(NULLIF(TRIM(j.component_key), \'\'), \'\') AS component_key
                       FROM Vati_Payfiller_Job_Role_Verification_Types j
                  LEFT JOIN Vati_Payfiller_Verification_Types t ON t.verification_type_id = j.verification_type_id
                      WHERE j.job_role_id = ?
-                       AND LOWER(TRIM(COALESCE(j.level_key, ""))) = ?
                        AND (
-                            CASE LOWER(TRIM(COALESCE(j.stage_key, "")))
-                                WHEN "pre_interview" THEN "p1"
-                                WHEN "post_interview" THEN "p2"
-                                WHEN "employee_pool" THEN "p3"
+                            LOWER(TRIM(COALESCE(j.level_key, ""))) = LOWER(?)
+                            OR (
+                                TRIM(COALESCE(j.level_key, "")) = ""
+                                AND LOWER(TRIM(COALESCE(j.stage_key, ""))) LIKE CONCAT("%__", LOWER(?))
+                            )
+                       )
+                       AND (
+                            CASE
+                                WHEN LOWER(TRIM(COALESCE(j.stage_key, ""))) IN ("pre_interview", "p1") OR LOWER(TRIM(COALESCE(j.stage_key, ""))) LIKE "pre_interview__%" OR LOWER(TRIM(COALESCE(j.stage_key, ""))) LIKE "p1__%" THEN "pre_interview"
+                                WHEN LOWER(TRIM(COALESCE(j.stage_key, ""))) IN ("post_interview", "p2") OR LOWER(TRIM(COALESCE(j.stage_key, ""))) LIKE "post_interview__%" OR LOWER(TRIM(COALESCE(j.stage_key, ""))) LIKE "p2__%" THEN "post_interview"
+                                WHEN LOWER(TRIM(COALESCE(j.stage_key, ""))) IN ("employee_pool", "p3") OR LOWER(TRIM(COALESCE(j.stage_key, ""))) LIKE "employee_pool__%" OR LOWER(TRIM(COALESCE(j.stage_key, ""))) LIKE "p3__%" THEN "employee_pool"
                                 ELSE LOWER(TRIM(COALESCE(j.stage_key, "")))
                             END
                        ) = ?
@@ -223,19 +276,36 @@ function case_component_binding_fetch_types(PDO $pdo, int $jobRoleId, string $se
             $stmt->execute($params);
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
             error_log('FETCHED TYPES: ' . json_encode($rows));
+            if ((string)getenv('WF_STATUS_DEBUG_LOGS') === '1') {
+                error_log('CONFIG_AUTH_READ: ' . json_encode([
+                    'resolver' => 'case_component_binding_fetch_types',
+                    'job_role_id' => $jobRoleId,
+                    'selected_stage' => $selectedStage,
+                    'selected_level' => $selectedLevel,
+                    'matched_rows' => count($rows),
+                ]));
+            }
             return $rows;
         } catch (Throwable $e1) {
+            // Last-resort compatibility query for older schemas: return empty component_key
+            // so caller can map by type text.
             $sql = 'SELECT j.verification_type_id, j.is_enabled, t.type_name, t.type_category, j.level_key, j.stage_key,
                            \'\' AS component_key
                       FROM Vati_Payfiller_Job_Role_Verification_Types j
                  LEFT JOIN Vati_Payfiller_Verification_Types t ON t.verification_type_id = j.verification_type_id
                      WHERE j.job_role_id = ?
-                       AND LOWER(TRIM(COALESCE(j.level_key, ""))) = ?
                        AND (
-                            CASE LOWER(TRIM(COALESCE(j.stage_key, "")))
-                                WHEN "pre_interview" THEN "p1"
-                                WHEN "post_interview" THEN "p2"
-                                WHEN "employee_pool" THEN "p3"
+                            LOWER(TRIM(COALESCE(j.level_key, ""))) = LOWER(?)
+                            OR (
+                                TRIM(COALESCE(j.level_key, "")) = ""
+                                AND LOWER(TRIM(COALESCE(j.stage_key, ""))) LIKE CONCAT("%__", LOWER(?))
+                            )
+                       )
+                       AND (
+                            CASE
+                                WHEN LOWER(TRIM(COALESCE(j.stage_key, ""))) IN ("pre_interview", "p1") OR LOWER(TRIM(COALESCE(j.stage_key, ""))) LIKE "pre_interview__%" OR LOWER(TRIM(COALESCE(j.stage_key, ""))) LIKE "p1__%" THEN "pre_interview"
+                                WHEN LOWER(TRIM(COALESCE(j.stage_key, ""))) IN ("post_interview", "p2") OR LOWER(TRIM(COALESCE(j.stage_key, ""))) LIKE "post_interview__%" OR LOWER(TRIM(COALESCE(j.stage_key, ""))) LIKE "p2__%" THEN "post_interview"
+                                WHEN LOWER(TRIM(COALESCE(j.stage_key, ""))) IN ("employee_pool", "p3") OR LOWER(TRIM(COALESCE(j.stage_key, ""))) LIKE "employee_pool__%" OR LOWER(TRIM(COALESCE(j.stage_key, ""))) LIKE "p3__%" THEN "employee_pool"
                                 ELSE LOWER(TRIM(COALESCE(j.stage_key, "")))
                             END
                        ) = ?
@@ -244,6 +314,15 @@ function case_component_binding_fetch_types(PDO $pdo, int $jobRoleId, string $se
             $stmt->execute($params);
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
             error_log('FETCHED TYPES: ' . json_encode($rows));
+            if ((string)getenv('WF_STATUS_DEBUG_LOGS') === '1') {
+                error_log('CONFIG_AUTH_READ_FALLBACK: ' . json_encode([
+                    'resolver' => 'case_component_binding_fetch_types',
+                    'job_role_id' => $jobRoleId,
+                    'selected_stage' => $selectedStage,
+                    'selected_level' => $selectedLevel,
+                    'matched_rows' => count($rows),
+                ]));
+            }
             return $rows;
         }
     } catch (Throwable $e) {
@@ -256,7 +335,7 @@ function case_component_binding_fetch_stage_steps(PDO $pdo, int $jobRoleId, stri
     if ($jobRoleId <= 0) {
         return [];
     }
-    $selectedStage = strtolower(trim($selectedStage));
+    [$selectedStage, ] = case_component_binding_parse_stage_level($selectedStage, '');
 
     try {
         $sql = 'SELECT verification_type_id, assigned_role, is_active, stage_key
@@ -264,7 +343,14 @@ function case_component_binding_fetch_stage_steps(PDO $pdo, int $jobRoleId, stri
                  WHERE job_role_id = ?';
         $params = [$jobRoleId];
         if ($selectedStage !== '') {
-            $sql .= ' AND LOWER(TRIM(COALESCE(stage_key, ""))) = ?';
+            $sql .= ' AND (
+                CASE
+                    WHEN LOWER(TRIM(COALESCE(stage_key, ""))) IN ("pre_interview", "p1") OR LOWER(TRIM(COALESCE(stage_key, ""))) LIKE "pre_interview__%" OR LOWER(TRIM(COALESCE(stage_key, ""))) LIKE "p1__%" THEN "pre_interview"
+                    WHEN LOWER(TRIM(COALESCE(stage_key, ""))) IN ("post_interview", "p2") OR LOWER(TRIM(COALESCE(stage_key, ""))) LIKE "post_interview__%" OR LOWER(TRIM(COALESCE(stage_key, ""))) LIKE "p2__%" THEN "post_interview"
+                    WHEN LOWER(TRIM(COALESCE(stage_key, ""))) IN ("employee_pool", "p3") OR LOWER(TRIM(COALESCE(stage_key, ""))) LIKE "employee_pool__%" OR LOWER(TRIM(COALESCE(stage_key, ""))) LIKE "p3__%" THEN "employee_pool"
+                    ELSE LOWER(TRIM(COALESCE(stage_key, "")))
+                END
+            ) = ?';
             $params[] = $selectedStage;
         }
         $sql .= ' ORDER BY stage_key ASC, execution_group ASC, verification_type_id ASC';
@@ -281,7 +367,10 @@ function case_component_binding_build_for_case(PDO $pdo, int $caseId, string $ap
     $config = [
         'case' => null,
         'job_role_id' => 0,
-        'required_components' => ['basic', 'id'],
+        // Canonical internal operational section: reports.
+        // It must exist in snapshot participation so strict workflow validation
+        // can accept reports transitions deterministically.
+        'required_components' => ['basic', 'id', 'reports'],
         'component_roles' => [],
         'has_role_binding' => false,
     ];
@@ -298,11 +387,10 @@ function case_component_binding_build_for_case(PDO $pdo, int $caseId, string $ap
         return $config;
     }
 
-    $selectedLevel = strtolower(trim((string)($case['selected_level'] ?? '')));
-    $selectedStage = strtolower(trim((string)($case['selected_stage'] ?? '')));
-    if (strpos($selectedStage, '__') !== false) {
-        $selectedStage = explode('__', $selectedStage, 2)[0];
-    }
+    [$selectedStage, $selectedLevel] = case_component_binding_parse_stage_level(
+        (string)($case['selected_stage'] ?? ''),
+        (string)($case['selected_level'] ?? '')
+    );
     $types = case_component_binding_fetch_types($pdo, $config['job_role_id'], $selectedLevel, $selectedStage);
     if (empty($types)) {
         error_log('NO_MAPPING_FOUND: role_id=' . (string)$config['job_role_id'] . ', level=' . $selectedLevel . ', stage=' . $selectedStage);
@@ -329,7 +417,13 @@ function case_component_binding_build_for_case(PDO $pdo, int $caseId, string $ap
                 (string)($t['type_category'] ?? '')
             );
         }
-        error_log('MAP_TYPE: ' . (string)($t['type_name'] ?? '') . ' -> ' . implode(',', $components));
+        error_log('MAP_TYPE_DEBUG: ' . json_encode([
+            'raw_type_name' => (string)($t['type_name'] ?? ''),
+            'type_category' => (string)($t['type_category'] ?? ''),
+            'resolved_component_key' => implode(',', $components),
+            'mapping_source' => ($dbComponentKey !== '' ? 'db_component_key' : 'explicit_type_map'),
+            'heuristic_used' => false,
+        ]));
         if (!$components) {
             error_log('MAP_TYPE: skipped verification_type_id=' . (string)$vtId . ' (no component mapping)');
             continue;
@@ -358,6 +452,49 @@ function case_component_binding_build_for_case(PDO $pdo, int $caseId, string $ap
                 $config['component_roles'][$componentKey] = [];
             }
             $config['component_roles'][$componentKey][$assignedRole] = true;
+        }
+    }
+
+    // Ownership-governance fallback:
+    // If explicit stage-step ownership mapping is absent, derive verifier ownership
+    // deterministically from required components that belong to canonical verifier groups.
+    // This prevents static theoretical members (e.g. non-required address) from blocking closure.
+    if (empty($config['component_roles'])) {
+        $requiredSet = [];
+        foreach ((array)$config['required_components'] as $c) {
+            $k = case_component_binding_norm_component_key((string)$c);
+            if ($k !== '') $requiredSet[$k] = true;
+        }
+        $verifierOwned = [];
+        foreach (wf_verifier_group_map() as $group => $components) {
+            foreach ((array)$components as $componentKey) {
+                $k = case_component_binding_norm_component_key((string)$componentKey);
+                if ($k === '' || !isset($requiredSet[$k])) continue;
+                $verifierOwned[$k] = true;
+            }
+        }
+        foreach (array_keys($verifierOwned) as $componentKey) {
+            if (!isset($config['component_roles'][$componentKey])) {
+                $config['component_roles'][$componentKey] = [];
+            }
+            $config['component_roles'][$componentKey]['verifier'] = true;
+        }
+        if ((string)getenv('WF_STATUS_DEBUG_LOGS') === '1') {
+            @file_put_contents(
+                __DIR__ . '/../../logs/workflow_transition.log',
+                json_encode([
+                    'ts' => date('c'),
+                    'event' => 'ownership_roles_fallback_applied',
+                    'case_id' => $caseId,
+                    'application_id' => (string)($case['application_id'] ?? ''),
+                    'selected_stage' => $selectedStage,
+                    'component_roles' => $config['component_roles'],
+                    'required_components' => array_values(array_keys($requiredSet)),
+                    'resolver_owner' => 'case_component_binding_build_for_case',
+                    'mapping_source' => 'wf_verifier_group_map_required_intersection',
+                ], JSON_UNESCAPED_SLASHES) . PHP_EOL,
+                FILE_APPEND
+            );
         }
     }
 

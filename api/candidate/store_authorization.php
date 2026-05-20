@@ -6,6 +6,18 @@ error_reporting(E_ALL);
 session_start();
 require_once __DIR__ . '/../../config/db.php';
 
+function validator_activation_debug_log(string $message): void
+{
+    $root = realpath(__DIR__ . '/../..');
+    $logFile = $root ? ($root . DIRECTORY_SEPARATOR . 'logs' . DIRECTORY_SEPARATOR . 'validator_activation_debug.log') : '';
+    $line = '[' . date('Y-m-d H:i:s') . '] ' . $message . "\r\n";
+    if ($logFile !== '') {
+        @file_put_contents($logFile, $line, FILE_APPEND);
+        return;
+    }
+    @error_log($line);
+}
+
 try {
     $application_id =
         $_SESSION['application_id']
@@ -57,107 +69,15 @@ try {
         $stmt->execute([$application_id, $fileName, $signature]);
     }
 
-    /* ---------- MARK APPLICATION SUBMITTED (UPSERT) ---------- */
-    $caseMetaStmt = $pdo->prepare(
-        "SELECT candidate_first_name, candidate_middle_name, candidate_last_name
-         FROM Vati_Payfiller_Cases
-         WHERE application_id = ?
-         LIMIT 1"
+    validator_activation_debug_log(
+        'source=store_authorization'
+        . ' application_id=' . $application_id
+        . ' final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none'
     );
-    $caseMetaStmt->execute([$application_id]);
-    $caseMeta = $caseMetaStmt->fetch(PDO::FETCH_ASSOC) ?: [];
-    $candidateName = trim(
-        (string)($caseMeta['candidate_first_name'] ?? '') . ' '
-        . (string)($caseMeta['candidate_middle_name'] ?? '') . ' '
-        . (string)($caseMeta['candidate_last_name'] ?? '')
-    );
-
-    $upd = $pdo->prepare(
-        "INSERT INTO Vati_Payfiller_Candidate_Applications
-            (application_id, candidate_name, status, submitted_at, created_at, updated_at)
-         VALUES (?, ?, 'submitted', NOW(), NOW(), NOW())
-         ON DUPLICATE KEY UPDATE
-            status = 'submitted',
-            submitted_at = COALESCE(submitted_at, VALUES(submitted_at)),
-            updated_at = NOW()"
-    );
-    $upd->execute([$application_id, $candidateName]);
-
-    // Best-effort: enqueue into validator queue
-    try {
-        $caseStmt = $pdo->prepare('SELECT case_id, client_id FROM Vati_Payfiller_Cases WHERE application_id = ? LIMIT 1');
-        $caseStmt->execute([$application_id]);
-        $c = $caseStmt->fetch(PDO::FETCH_ASSOC) ?: null;
-        if ($c && !empty($c['case_id'])) {
-            $caseId = (int)$c['case_id'];
-            $clientId = isset($c['client_id']) ? (int)$c['client_id'] : null;
-            $ensure = $pdo->prepare('CALL SP_Vati_Payfiller_VAL_EnsureQueue(?)');
-            $ensure->execute([$clientId]);
-            while ($ensure->nextRowset()) {
-            }
-
-            // Keep status pending if not claimed yet
-            $pdo->prepare('UPDATE Vati_Payfiller_Validator_Queue SET status = IF(completed_at IS NULL AND assigned_user_id IS NULL, \"pending\", status) WHERE case_id = ?')
-                ->execute([$caseId]);
-
-            // Candidate submission should move case to validator stage.
-            $pdo->prepare(
-                "UPDATE Vati_Payfiller_Cases
-                 SET case_status = 'PENDING_VALIDATOR'
-                 WHERE case_id = ?
-                   AND UPPER(TRIM(COALESCE(case_status,''))) NOT IN ('REJECTED','STOP_BGV','APPROVED','COMPLETED','CLEAR')"
-            )->execute([$caseId]);
-
-            $pdo->prepare(
-                "UPDATE Vati_Payfiller_Candidate_Applications
-                 SET status = 'PENDING_VALIDATOR'
-                 WHERE application_id = ?
-                   AND UPPER(TRIM(COALESCE(status,''))) NOT IN ('REJECTED','STOP_BGV','APPROVED','COMPLETED','CLEAR')"
-            )->execute([$application_id]);
-
-            // Seed candidate-stage workflow as approved for all required components.
-            try {
-                $pdo->prepare(
-                    "INSERT INTO Vati_Payfiller_Case_Component_Workflow
-                        (case_id, application_id, component_key, stage, status, updated_by_user_id, updated_by_role, completed_at)
-                     SELECT c.case_id, c.application_id, LOWER(TRIM(c.component_key)), 'candidate', 'approved', NULL, 'candidate', NOW()
-                     FROM Vati_Payfiller_Case_Components c
-                     WHERE c.case_id = ?
-                       AND c.is_required = 1
-                     ON DUPLICATE KEY UPDATE
-                        status = 'approved',
-                        completed_at = COALESCE(completed_at, NOW()),
-                        updated_at = NOW()"
-                )->execute([$caseId]);
-            } catch (Throwable $e) {
-                // ignore
-            }
-
-            // Ensure pre-seeded candidate-stage pending rows are finalized on submit.
-            // Keep validator/verifier/qa rows untouched by filtering only stage='candidate'.
-            try {
-                $pdo->prepare(
-                    "UPDATE Vati_Payfiller_Case_Component_Workflow
-                     SET status = 'approved',
-                         completed_at = COALESCE(completed_at, NOW()),
-                         updated_by_user_id = NULL,
-                         updated_by_role = 'candidate',
-                         updated_at = NOW()
-                     WHERE application_id = ?
-                       AND LOWER(TRIM(stage)) = 'candidate'
-                       AND COALESCE(LOWER(TRIM(status)), '') IN ('', 'pending', 'in_progress', 'in-progress', 'submitted')"
-                )->execute([$application_id]);
-            } catch (Throwable $e) {
-                // ignore
-            }
-        }
-    } catch (Throwable $e) {
-        // ignore
-    }
 
     echo json_encode([
         "success" => true,
-        "message" => "Application submitted successfully."
+        "message" => "Authorization saved successfully. Please submit your application."
     ]);
     exit;
 

@@ -44,6 +44,7 @@ ob_start();
                 <th>Mobile</th>
                 <th>Stage</th>
                 <th>Status</th>
+                <th>SLA</th>
                 <th>PDF</th>
                 <th>Invited</th>
                 <th>Created</th>

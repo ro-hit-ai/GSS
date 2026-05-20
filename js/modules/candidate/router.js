@@ -221,6 +221,13 @@ class Router {
 
     /* ================= PAGE ACCESS CONTROL ================= */
     static getAllowedPages() {
+        if (this.caseConfig && Number(this.caseConfig.correction_mode || 0) === 1) {
+            const enabled = this.getEnabledPageOrder();
+            const pages = enabled.length ? enabled.slice() : this.pageOrder.slice();
+            this._allowedPagesCache = pages;
+            this._cacheTimestamp = Date.now();
+            return pages;
+        }
         const now = Date.now();
         
         // Return cached version if recent

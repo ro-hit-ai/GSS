@@ -1,19 +1,71 @@
 <?php
 error_reporting(E_ALL);
-ini_set('display_errors', '1');
+ini_set('display_errors', '0');
 
 header('Content-Type: application/json');
 
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/integration.php';
+require_once __DIR__ . '/shared/workflow_communication_service.php';
 
-auth_require_login();
+auth_require_login(null);
 auth_session_start();
+if (session_status() === PHP_SESSION_ACTIVE) {
+    session_write_close();
+}
 
 function get_str(string $key, string $default = ''): string
 {
     return trim((string)($_GET[$key] ?? $default));
+}
+
+function normalize_component_key(string $value): string
+{
+    $v = strtolower(trim($value));
+    if ($v === 'identification') return 'id';
+    if ($v === 'contact_information' || $v === 'contact information') return 'contact';
+    if ($v === 'education_details' || $v === 'education details') return 'education';
+    if ($v === 'employment_details' || $v === 'employment details') return 'employment';
+    if ($v === 'social_media' || $v === 'social media') return 'socialmedia';
+    if ($v === 'e-court' || $v === 'e_court' || $v === 'e court') return 'ecourt';
+    if ($v === 'references') return 'reference';
+    return $v;
+}
+
+function infer_component_from_text(string $subject, string $body = ''): string
+{
+    $haystack = strtolower(trim($subject . ' ' . $body));
+    if ($haystack === '') return '';
+    $map = [
+        'basic' => ['basic details', 'basic'],
+        'id' => ['identification', ' id '],
+        'contact' => ['contact information', 'contact'],
+        'education' => ['education details', 'education'],
+        'employment' => ['employment details', 'employment'],
+        'reference' => ['reference', 'references'],
+        'socialmedia' => ['social media', 'socialmedia'],
+        'ecourt' => ['e-court', 'ecourt', 'e court'],
+        'reports' => ['reports', 'report'],
+    ];
+    foreach ($map as $componentKey => $needles) {
+        foreach ($needles as $needle) {
+            if ($needle !== '' && strpos($haystack, $needle) !== false) {
+                return $componentKey;
+            }
+        }
+    }
+    return '';
+}
+
+function row_matches_component_scope(array $row, string $componentKey): bool
+{
+    $rowKey = normalize_component_key((string)($row['component_key'] ?? ''));
+    if ($rowKey === $componentKey) return true;
+    if ($rowKey !== '' && $rowKey !== 'timeline') return false;
+    $subject = (string)($row['subject'] ?? '');
+    $body = (string)($row['body'] ?? $row['message'] ?? '');
+    return infer_component_from_text($subject, $body) === $componentKey;
 }
 
 function session_role_norm(): string
@@ -25,6 +77,14 @@ function session_role_norm(): string
     if ($role === 'customer_admin') {
         $role = 'client_admin';
     }
+    return $role;
+}
+
+function normalize_role_key(string $role): string
+{
+    $role = strtolower(trim($role));
+    if ($role === 'customer_admin') return 'client_admin';
+    if ($role === 'db verifier' || $role === 'db-verifier' || $role === 'db_verifier') return 'verifier';
     return $role;
 }
 
@@ -61,40 +121,102 @@ function enforce_client_admin_application_scope(PDO $pdo, string $applicationId)
     }
 }
 
-function resolve_replies_table(PDO $pdo): string
+function table_has_column(PDO $pdo, string $table, string $column): bool
 {
-    $candidates = ['GSS_Email_Replies', 'email_replies'];
-    $stmt = $pdo->prepare(
-        'SELECT 1 FROM information_schema.tables '
-        . 'WHERE table_schema = DATABASE() AND table_name = ? LIMIT 1'
+    $st = $pdo->prepare(
+        'SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ? LIMIT 1'
     );
-    foreach ($candidates as $table) {
-        $stmt->execute([$table]);
-        if ($stmt->fetchColumn()) {
-            return $table;
-        }
-    }
-
-    throw new RuntimeException('Replies table not found: GSS_Email_Replies or email_replies');
+    $st->execute([$table, $column]);
+    return (bool)$st->fetchColumn();
 }
 
-function ensure_required_columns(PDO $pdo, string $table): void
+function table_exists(PDO $pdo, string $table): bool
 {
-    $st = $pdo->query('DESCRIBE `' . str_replace('`', '``', $table) . '`');
+    $st = $pdo->prepare(
+        'SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ? LIMIT 1'
+    );
+    $st->execute([$table]);
+    return (bool)$st->fetchColumn();
+}
+
+function load_legacy_incoming_replies(PDO $pdo, string $applicationId, int $limit = 120): array
+{
+    $table = wc_resolve_replies_table($pdo);
+    if ($table === '') return [];
+    $cols = wc_resolve_reply_columns($pdo, $table);
+    if (empty($cols['ok'])) return [];
+
+    $sql = 'SELECT `'.str_replace('`','``',$cols['sender']).'` AS sender, '
+        . '`'.str_replace('`','``',$cols['message']).'` AS message, '
+        . '`'.str_replace('`','``',$cols['created_at']).'` AS created_at '
+        . ($cols['subject'] !== '' ? ', `'.str_replace('`','``',$cols['subject']).'` AS subject ' : ", '' AS subject ")
+        . ($cols['message_id'] !== '' ? ', `'.str_replace('`','``',$cols['message_id']).'` AS message_id ' : ", '' AS message_id ")
+        . ($cols['in_reply_to'] !== '' ? ', `'.str_replace('`','``',$cols['in_reply_to']).'` AS in_reply_to ' : ", '' AS in_reply_to ")
+        . ($cols['references_header'] !== '' ? ', `'.str_replace('`','``',$cols['references_header']).'` AS references_header ' : ", '' AS references_header ")
+        . ($cols['thread_id'] !== '' ? ', `'.str_replace('`','``',$cols['thread_id']).'` AS thread_id ' : ", '' AS thread_id ")
+        . 'FROM `'.str_replace('`','``',$table).'` '
+        . "WHERE REPLACE(LOWER(TRIM(application_id)), ' ', '') = REPLACE(LOWER(TRIM(?)), ' ', '') "
+        . 'ORDER BY `'.str_replace('`','``',$cols['created_at']).'` DESC '
+        . 'LIMIT ' . max(1, (int)$limit);
+    $st = $pdo->prepare($sql);
+    $st->execute([$applicationId]);
     $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
-    $have = [];
-    foreach ($rows as $row) {
-        $name = isset($row['Field']) ? strtolower(trim((string)$row['Field'])) : '';
-        if ($name !== '') {
-            $have[$name] = true;
+    $out = [];
+    foreach ($rows as $r) {
+        $out[] = [
+            'communication_id' => 0,
+            'component_key' => 'timeline',
+            'subject' => (string)($r['subject'] ?? ''),
+            'sender' => (string)($r['sender'] ?? 'Candidate'),
+            'message' => (string)($r['message'] ?? ''),
+            'created_at' => (string)($r['created_at'] ?? ''),
+            'direction' => 'incoming',
+            'delivery_status' => 'received',
+            'communication_type' => 'manual_message',
+            'actor_role' => 'candidate',
+            'message_id' => wc_norm_msg_id((string)($r['message_id'] ?? '')),
+            'in_reply_to' => wc_norm_msg_id((string)($r['in_reply_to'] ?? '')),
+            'references_header' => (string)($r['references_header'] ?? ''),
+            'thread_id' => (string)($r['thread_id'] ?? ''),
+        ];
+    }
+    return $out;
+}
+
+function row_belongs_to_viewer_role(array $row, string $viewerRole, array $allowedThreadIds, array $allowedMessageIds): bool
+{
+    if ($viewerRole === '') {
+        return true;
+    }
+
+    $direction = strtolower(trim((string)($row['direction'] ?? '')));
+    $actorRole = normalize_role_key((string)($row['actor_role'] ?? ''));
+    if ($direction === 'outgoing') {
+        return $actorRole === $viewerRole;
+    }
+
+    if ($direction !== 'incoming') {
+        return true;
+    }
+
+    $threadId = strtolower(trim((string)($row['thread_id'] ?? '')));
+    if ($threadId !== '' && isset($allowedThreadIds[$threadId])) {
+        return true;
+    }
+
+    $inReplyTo = wc_norm_msg_id((string)($row['in_reply_to'] ?? ''));
+    if ($inReplyTo !== '' && isset($allowedMessageIds[$inReplyTo])) {
+        return true;
+    }
+
+    $references = wc_extract_msg_ids((string)($row['references_header'] ?? ''));
+    foreach ($references as $refId) {
+        if ($refId !== '' && isset($allowedMessageIds[$refId])) {
+            return true;
         }
     }
 
-    foreach (['application_id', 'sender', 'message', 'created_at'] as $required) {
-        if (!isset($have[$required])) {
-            throw new RuntimeException("Column missing in {$table}: {$required}");
-        }
-    }
+    return false;
 }
 
 try {
@@ -105,34 +227,200 @@ try {
     }
 
     $applicationId = integration_normalize_application_id(get_str('application_id'));
+    $componentKey = normalize_component_key(get_str('component_key'));
+    $scope = strtolower(get_str('scope', 'case'));
+    $sync = strtolower(get_str('sync', '1'));
+    $viewerRole = normalize_role_key(session_role_norm());
     if ($applicationId === '') {
         http_response_code(400);
         echo json_encode(['status' => 0, 'message' => 'application_id is required']);
         exit;
     }
+    if (!in_array($scope, ['case', 'component'], true)) {
+        $scope = 'case';
+    }
+    if ($scope !== 'component') {
+        $componentKey = '';
+    }
+    $shouldSync = !in_array($sync, ['0', 'false', 'no', 'off'], true);
 
     $pdo = getDB();
     enforce_client_admin_application_scope($pdo, $applicationId);
-    $table = resolve_replies_table($pdo);
-    ensure_required_columns($pdo, $table);
+    $verificationProjected = 0;
+    $canonicalIncomingInserted = 0;
+    if ($shouldSync) {
+        $verificationProjected = wc_sync_verification_communications($pdo, $applicationId);
+        $canonicalIncomingInserted = wc_ingest_incoming_replies($pdo, $applicationId);
+    }
 
-    $stmt = $pdo->prepare(
-        'SELECT sender, message, created_at '
-        . 'FROM `' . str_replace('`', '``', $table) . '` '
-        . 'WHERE application_id = ? '
-        . 'ORDER BY created_at DESC '
-        . 'LIMIT 200'
-    );
-    $stmt->execute([$applicationId]);
+    $wcTable = 'workflow_communications';
+    $hasDirection = table_has_column($pdo, $wcTable, 'direction');
+    $hasActorRole = table_has_column($pdo, $wcTable, 'actor_role');
+    $hasActorName = table_has_column($pdo, $wcTable, 'actor_name');
+    $hasDelivery = table_has_column($pdo, $wcTable, 'delivery_status');
+    $hasType = table_has_column($pdo, $wcTable, 'communication_type');
+    $hasMessageId = table_has_column($pdo, $wcTable, 'message_id');
+    $hasInReplyTo = table_has_column($pdo, $wcTable, 'in_reply_to');
+    $hasReferences = table_has_column($pdo, $wcTable, 'references_header');
+    $hasThreadId = table_has_column($pdo, $wcTable, 'thread_id');
+
+    $sql = 'SELECT communication_id, component_key, role_key, sent_by_name, subject, body, notes, sent_at'
+        . ($hasDirection ? ', direction' : ", 'outgoing' AS direction")
+        . ($hasActorRole ? ', actor_role' : ', role_key AS actor_role')
+        . ($hasActorName ? ', actor_name' : ', sent_by_name AS actor_name')
+        . ($hasDelivery ? ', delivery_status' : ", 'sent' AS delivery_status")
+        . ($hasType ? ', communication_type' : ", '' AS communication_type")
+        . ($hasMessageId ? ', message_id' : ", '' AS message_id")
+        . ($hasInReplyTo ? ', in_reply_to' : ", '' AS in_reply_to")
+        . ($hasReferences ? ', references_header' : ", '' AS references_header")
+        . ($hasThreadId ? ', thread_id' : ", '' AS thread_id")
+        . ' FROM workflow_communications';
+
+    $where = ['application_id = ?'];
+    $params = [$applicationId];
+    if ($hasDirection) {
+        $where[] = "direction IN ('incoming','outgoing')";
+    }
+    $sql .= ' WHERE ' . implode(' AND ', $where);
+    $sql .= ' ORDER BY sent_at DESC, communication_id DESC LIMIT 120';
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-    echo json_encode(array_map(static function (array $row): array {
+    $data = array_map(static function (array $row): array {
+        $senderName = (string)($row['actor_name'] ?? '');
+        if ($senderName === '') $senderName = (string)($row['sent_by_name'] ?? '');
+        if ($senderName === '') {
+            $senderName = strtolower((string)($row['direction'] ?? '')) === 'incoming' ? 'Candidate' : 'Operations';
+        }
+        $msg = trim((string)($row['body'] ?? ''));
+        if ($msg === '') $msg = trim((string)($row['notes'] ?? ''));
+        if ($msg === '') $msg = trim((string)($row['subject'] ?? ''));
         return [
-            'sender' => (string)($row['sender'] ?? ''),
-            'message' => (string)($row['message'] ?? ''),
-            'created_at' => (string)($row['created_at'] ?? ''),
+            'communication_id' => (int)($row['communication_id'] ?? 0),
+            'component_key' => normalize_component_key((string)($row['component_key'] ?? '')),
+            'subject' => (string)($row['subject'] ?? ''),
+            'sender' => $senderName,
+            'message' => $msg,
+            'created_at' => (string)($row['sent_at'] ?? ''),
+            'direction' => (string)($row['direction'] ?? ''),
+            'delivery_status' => (string)($row['delivery_status'] ?? ''),
+            'communication_type' => (string)($row['communication_type'] ?? ''),
+            'actor_role' => (string)($row['actor_role'] ?? $row['role_key'] ?? ''),
+            'message_id' => (string)($row['message_id'] ?? ''),
+            'in_reply_to' => (string)($row['in_reply_to'] ?? ''),
+            'references_header' => (string)($row['references_header'] ?? ''),
+            'thread_id' => (string)($row['thread_id'] ?? ''),
         ];
-    }, $rows));
+    }, $rows);
+
+    if ($scope === 'component' && $componentKey !== '') {
+        $data = array_values(array_filter($data, static function (array $row) use ($componentKey): bool {
+            return row_matches_component_scope($row, $componentKey);
+        }));
+    }
+
+    $allowedThreadIds = [];
+    $allowedMessageIds = [];
+    foreach ($data as $row) {
+        if (strtolower(trim((string)($row['direction'] ?? ''))) !== 'outgoing') {
+            continue;
+        }
+        if (normalize_role_key((string)($row['actor_role'] ?? '')) !== $viewerRole) {
+            continue;
+        }
+        $threadId = strtolower(trim((string)($row['thread_id'] ?? '')));
+        if ($threadId !== '') {
+            $allowedThreadIds[$threadId] = true;
+        }
+        $messageId = wc_norm_msg_id((string)($row['message_id'] ?? ''));
+        if ($messageId !== '') {
+            $allowedMessageIds[$messageId] = true;
+        }
+    }
+    $data = array_values(array_filter($data, static function (array $row) use ($viewerRole, $allowedThreadIds, $allowedMessageIds): bool {
+        return row_belongs_to_viewer_role($row, $viewerRole, $allowedThreadIds, $allowedMessageIds);
+    }));
+
+    // Fallback: if canonical has no incoming rows, surface legacy mailbox replies directly.
+    $hasIncoming = false;
+    foreach ($data as $d0) {
+        if (strtolower(trim((string)($d0['direction'] ?? ''))) === 'incoming') {
+            $hasIncoming = true;
+            break;
+        }
+    }
+    if (!$hasIncoming) {
+        $legacy = load_legacy_incoming_replies($pdo, $applicationId, 120);
+        if ($legacy) {
+            if ($scope === 'component' && $componentKey !== '') {
+                $legacy = array_values(array_filter($legacy, static function (array $row) use ($componentKey): bool {
+                    return row_matches_component_scope($row, $componentKey);
+                }));
+            }
+            $legacy = array_values(array_filter($legacy, static function (array $row) use ($viewerRole, $allowedThreadIds, $allowedMessageIds): bool {
+                return row_belongs_to_viewer_role($row, $viewerRole, $allowedThreadIds, $allowedMessageIds);
+            }));
+            $data = array_merge($legacy, $data);
+            usort($data, static function (array $a, array $b): int {
+                return strcmp((string)($b['created_at'] ?? ''), (string)($a['created_at'] ?? ''));
+            });
+            if (count($data) > 120) {
+                $data = array_slice($data, 0, 120);
+            }
+        }
+    }
+
+    // Keep backward compatibility for both response shapes consumed by UI.
+    $canonicalCount = count($rows);
+    $legacyCount = 0;
+    foreach ($data as $d) {
+        if ((int)($d['communication_id'] ?? 0) === 0) $legacyCount++;
+        unset($d['subject']);
+    }
+    $lastIncoming = null;
+    foreach ($data as $d) {
+        if (strtolower(trim((string)($d['direction'] ?? ''))) === 'incoming') {
+            $lastIncoming = $d;
+            break;
+        }
+    }
+    $runtimeRows = [];
+    try {
+        if (table_exists($pdo, 'workflow_mail_runtime_state')) {
+            $runtimeStmt = $pdo->prepare(
+                'SELECT source_key, last_status, last_run_at, inserted_count, duplicate_count, skipped_count, unmatched_count, note
+                   FROM workflow_mail_runtime_state
+                  WHERE source_key IN (?, ?)
+                  ORDER BY source_key ASC'
+            );
+            $runtimeStmt->execute(['legacy_reply_ingest', 'verification_sync']);
+            $runtimeRows = $runtimeStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        }
+    } catch (Throwable $e) {
+        $runtimeRows = [];
+    }
+    echo json_encode([
+        'status' => 1,
+        'message' => 'ok',
+        'data' => $data,
+        'debug' => [
+            'canonical_count' => $canonicalCount,
+            'legacy_count' => $legacyCount,
+            'verification_projected' => $verificationProjected,
+            'canonical_incoming_inserted' => $canonicalIncomingInserted,
+            'matched_application_id' => $applicationId,
+            'component_key' => $componentKey,
+            'scope' => $scope,
+            'viewer_role' => $viewerRole,
+            'sync' => $shouldSync,
+            'matched_thread_id' => (string)($lastIncoming['thread_id'] ?? ''),
+            'last_in_reply_to' => (string)($lastIncoming['in_reply_to'] ?? ''),
+            'last_references' => (string)($lastIncoming['references_header'] ?? ''),
+            'runtime_state' => $runtimeRows,
+        ]
+    ]);
 } catch (PDOException $e) {
     http_response_code(500);
     echo json_encode([

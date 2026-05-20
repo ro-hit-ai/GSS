@@ -3,6 +3,7 @@ header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../shared/workflow_semantics.php';
 
 auth_require_login('team_lead');
 auth_session_start();
@@ -35,7 +36,7 @@ try {
     $validatorUserId = get_int('validator_user_id', 0);
     $verifierUserId = get_int('verifier_user_id', 0);
     $vrGroup = strtoupper(get_str('vr_group', ''));
-    if ($vrGroup !== '' && !in_array($vrGroup, ['BASIC', 'EDUCATION'], true)) {
+    if ($vrGroup !== '' && !wf_is_valid_verifier_group($vrGroup)) {
         $vrGroup = '';
     }
 

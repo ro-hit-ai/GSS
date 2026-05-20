@@ -3,36 +3,13 @@ header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../shared/application_status_guard.php';
+require_once __DIR__ . '/queue_visibility.php';
 
 auth_require_login('verifier');
 
 auth_session_start();
 $userId = (int)($_SESSION['auth_user_id'] ?? 0);
-
-function verifier_allowed_sections_set(): array {
-    $raw = isset($_SESSION['auth_allowed_sections']) ? (string)$_SESSION['auth_allowed_sections'] : '';
-    $raw = strtolower(trim($raw));
-    if ($raw === '*') return ['*' => true];
-    if ($raw === '') return [];
-    $parts = preg_split('/[\s,|]+/', $raw) ?: [];
-    $out = [];
-    foreach ($parts as $p) {
-        $k = strtolower(trim((string)$p));
-        if ($k === '') continue;
-        $out[$k] = true;
-    }
-    return $out;
-}
-
-function verifier_can_group(array $set, string $groupKey): bool {
-    if (isset($set['*'])) return true;
-    $g = strtoupper(trim($groupKey));
-    $need = $g === 'BASIC' ? ['basic', 'id', 'contact'] : ($g === 'EDUCATION' ? ['education', 'employment', 'reference'] : []);
-    foreach ($need as $k) {
-        if (isset($set[$k])) return true;
-    }
-    return false;
-}
 
 $input = json_decode(file_get_contents('php://input'), true) ?: [];
 $caseId = isset($input['case_id']) ? (int)$input['case_id'] : 0;
@@ -51,14 +28,14 @@ try {
         exit;
     }
 
-    if ($caseId <= 0 || !in_array($groupKey, ['BASIC', 'EDUCATION'], true)) {
+    if ($caseId <= 0 || !wf_is_valid_verifier_group($groupKey)) {
         http_response_code(400);
         echo json_encode(['status' => 0, 'message' => 'case_id and valid group are required']);
         exit;
     }
 
-    $allowedSet = verifier_allowed_sections_set();
-    if (!verifier_can_group($allowedSet, $groupKey)) {
+    $allowedSet = verifier_allowed_sections_set_from_session();
+    if (!verifier_can_group_by_sections($allowedSet, $groupKey)) {
         http_response_code(403);
         echo json_encode(['status' => 0, 'message' => 'Access denied']);
         exit;
@@ -106,15 +83,16 @@ try {
             } catch (Throwable $e) {
             }
             try {
+                $submittedStatus = wf_assert_valid_application_status('submitted', 'verifier.queue_complete');
                 $uApp = $pdo->prepare(
                     "UPDATE Vati_Payfiller_Candidate_Applications
-                     SET status = 'PENDING_QA'
+                     SET status = ?
                      WHERE application_id = (
                         SELECT application_id FROM Vati_Payfiller_Cases WHERE case_id = ? LIMIT 1
                      )
-                       AND UPPER(TRIM(COALESCE(status,''))) NOT IN ('REJECTED','STOP_BGV','APPROVED','COMPLETED')"
+                       AND LOWER(TRIM(COALESCE(status,''))) NOT IN ('rejected','verified')"
                 );
-                $uApp->execute([$caseId]);
+                $uApp->execute([$submittedStatus, $caseId]);
             } catch (Throwable $e) {
             }
 

@@ -3,35 +3,11 @@ header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/queue_visibility.php';
 
 auth_require_login('verifier');
 
 auth_session_start();
-
-function verifier_allowed_sections_set(): array {
-    $raw = isset($_SESSION['auth_allowed_sections']) ? (string)$_SESSION['auth_allowed_sections'] : '';
-    $raw = strtolower(trim($raw));
-    if ($raw === '*') return ['*' => true];
-    if ($raw === '') return [];
-    $parts = preg_split('/[\s,|]+/', $raw) ?: [];
-    $out = [];
-    foreach ($parts as $p) {
-        $k = strtolower(trim((string)$p));
-        if ($k === '') continue;
-        $out[$k] = true;
-    }
-    return $out;
-}
-
-function verifier_can_group(array $set, string $groupKey): bool {
-    if (isset($set['*'])) return true;
-    $g = strtoupper(trim($groupKey));
-    $need = $g === 'BASIC' ? ['basic', 'id', 'contact'] : ($g === 'EDUCATION' ? ['education', 'employment', 'reference'] : []);
-    foreach ($need as $k) {
-        if (isset($set[$k])) return true;
-    }
-    return false;
-}
 
 function get_str(string $key, string $default = ''): string {
     return trim((string)($_GET[$key] ?? $default));
@@ -59,15 +35,15 @@ try {
     $groupKey = strtoupper(get_str('group', ''));
     $search = get_str('search', '');
 
-    if ($groupKey !== '' && !in_array($groupKey, ['BASIC', 'EDUCATION'], true)) {
+    if ($groupKey !== '' && !wf_is_valid_verifier_group($groupKey)) {
         http_response_code(400);
         echo json_encode(['status' => 0, 'message' => 'Invalid group']);
         exit;
     }
 
     if ($groupKey !== '') {
-        $allowedSet = verifier_allowed_sections_set();
-        if (!verifier_can_group($allowedSet, $groupKey)) {
+        $allowedSet = verifier_allowed_sections_set_from_session();
+        if (!verifier_can_group_by_sections($allowedSet, $groupKey)) {
             http_response_code(403);
             echo json_encode(['status' => 0, 'message' => 'Access denied']);
             exit;

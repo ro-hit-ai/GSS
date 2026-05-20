@@ -40,6 +40,38 @@ function table_has_column(PDO $pdo, string $tableName, string $columnName): bool
     }
 }
 
+function normalize_stage_key(string $stageKey): string {
+    $raw = strtolower(trim($stageKey));
+    if ($raw === '') return '';
+    if (strpos($raw, '__') !== false) {
+        $raw = trim((string)explode('__', $raw, 2)[0]);
+    }
+    if ($raw === 'p1') return 'pre_interview';
+    if ($raw === 'p2') return 'post_interview';
+    if ($raw === 'p3') return 'employee_pool';
+    if ($raw === 'pre interview') return 'pre_interview';
+    if ($raw === 'post interview') return 'post_interview';
+    if ($raw === 'employee pool') return 'employee_pool';
+    return $raw;
+}
+
+function normalize_stage_level_pair(string $stageKey, string $levelKey): array {
+    $rawStage = trim($stageKey);
+    $rawLevel = trim($levelKey);
+
+    if ($rawStage !== '' && strpos($rawStage, '__') !== false) {
+        $parts = explode('__', $rawStage, 2);
+        $rawStage = trim((string)($parts[0] ?? ''));
+        if ($rawLevel === '') {
+            $rawLevel = trim((string)($parts[1] ?? ''));
+        }
+    }
+
+    $normStage = normalize_stage_key($rawStage);
+    $normLevel = strtoupper(trim($rawLevel));
+    return [$normStage, $normLevel];
+}
+
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         http_response_code(405);
@@ -55,6 +87,7 @@ try {
     $jobRoleId = isset($data['job_role_id']) ? (int)$data['job_role_id'] : 0;
     $stageKey = isset($data['stage_key']) ? trim((string)$data['stage_key']) : '';
     $levelKey = isset($data['level_key']) ? trim((string)$data['level_key']) : '';
+    [$stageKey, $levelKey] = normalize_stage_level_pair($stageKey, $levelKey);
     $types = $data['types'] ?? [];
     if (!is_array($types)) $types = [];
 
@@ -124,8 +157,9 @@ try {
         $isEnabled = !empty($t['is_enabled']) ? 1 : 0;
         if ($isEnabled !== 1) continue;
 
-        $itemStageKey = isset($t['stage_key']) ? trim((string)$t['stage_key']) : $stageKey;
-        $itemLevelKey = isset($t['level_key']) ? trim((string)$t['level_key']) : $levelKey;
+        $itemStageRaw = isset($t['stage_key']) ? trim((string)$t['stage_key']) : $stageKey;
+        $itemLevelRaw = isset($t['level_key']) ? trim((string)$t['level_key']) : $levelKey;
+        [$itemStageKey, $itemLevelKey] = normalize_stage_level_pair($itemStageRaw, $itemLevelRaw);
         $sortOrder = isset($t['sort_order']) ? (int)$t['sort_order'] : ($savedCount + 1);
         $requiredCount = isset($t['required_count']) ? (int)$t['required_count'] : 1;
         if ($requiredCount <= 0) $requiredCount = 1;
@@ -149,6 +183,16 @@ try {
         $savedCount++;
     }
     $pdo->commit();
+
+    if ((string)getenv('WF_STATUS_DEBUG_LOGS') === '1') {
+        error_log('CONFIG_AUTH_SAVE: ' . json_encode([
+            'job_role_id' => $jobRoleId,
+            'persisted_stage_key' => $stageKey,
+            'persisted_level_key' => $levelKey,
+            'saved_count' => $savedCount,
+            'contextual_mode' => $contextualMode ? 1 : 0,
+        ]));
+    }
 
     echo json_encode([
         'status' => 1,

@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../api/shared/workflow_semantics.php';
 auth_require_login('verifier');
 auth_session_start();
 
@@ -7,6 +8,10 @@ $applicationId = isset($_GET['application_id']) ? trim((string)$_GET['applicatio
 $clientId = isset($_GET['client_id']) ? (int)$_GET['client_id'] : 0;
 $group = isset($_GET['group']) ? trim((string)$_GET['group']) : '';
 $caseId = isset($_GET['case_id']) ? (int)$_GET['case_id'] : 0;
+$view = isset($_GET['view']) ? strtolower(trim((string)$_GET['view'])) : '';
+$filter = isset($_GET['filter']) ? strtolower(trim((string)$_GET['filter'])) : '';
+$allowedViews = ['mine', 'available', 'followup', 'participated', 'history', 'completed'];
+$allowedFilters = ['all', 'active_work', 'awaiting_evaluation', 'waiting_candidate', 'evaluated', 'reopened', 'downstream_processing', 'review_complete'];
 
 if ($applicationId === '' && $caseId > 0) {
     require_once __DIR__ . '/../../config/db.php';
@@ -34,7 +39,7 @@ if ($applicationId === '' && $caseId <= 0) {
 // This prevents Forbidden when opening an available row that wasn't claimed yet.
 $userId = (int)($_SESSION['auth_user_id'] ?? 0);
 $groupKey = strtoupper(trim((string)$group));
-if ($userId > 0 && in_array($groupKey, ['BASIC', 'EDUCATION'], true)) {
+if ($userId > 0 && wf_is_valid_verifier_group($groupKey)) {
     require_once __DIR__ . '/../../config/db.php';
     try {
         $pdo = getDB();
@@ -94,6 +99,24 @@ if ($clientId > 0) {
 
 if ($group !== '') {
     $target .= '&group=' . urlencode($group);
+}
+if (in_array($view, $allowedViews, true)) {
+    $_SESSION['verifier_last_list_view'] = $view;
+    $target .= '&view=' . urlencode($view);
+    $target .= '&list_view=' . urlencode($view);
+} elseif (!empty($_SESSION['verifier_last_list_view']) && in_array((string)$_SESSION['verifier_last_list_view'], $allowedViews, true)) {
+    $lastView = (string)$_SESSION['verifier_last_list_view'];
+    $target .= '&view=' . urlencode($lastView);
+    $target .= '&list_view=' . urlencode($lastView);
+}
+if (in_array($filter, $allowedFilters, true)) {
+    $_SESSION['verifier_last_list_filter'] = $filter;
+    $target .= '&filter=' . urlencode($filter);
+    $target .= '&list_filter=' . urlencode($filter);
+} elseif (!empty($_SESSION['verifier_last_list_filter']) && in_array((string)$_SESSION['verifier_last_list_filter'], $allowedFilters, true)) {
+    $lastFilter = (string)$_SESSION['verifier_last_list_filter'];
+    $target .= '&filter=' . urlencode($lastFilter);
+    $target .= '&list_filter=' . urlencode($lastFilter);
 }
 
 header('Location: ' . $target);

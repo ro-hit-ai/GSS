@@ -33,10 +33,7 @@ function verifier_allowed_sections_set_from_session(?PDO $pdo = null): array {
 }
 
 function verifier_group_components(string $groupKey): array {
-    $g = strtoupper(trim($groupKey));
-    if ($g === 'BASIC') return ['basic', 'id', 'contact', 'address', 'socialmedia', 'ecourt', 'reports'];
-    if ($g === 'EDUCATION') return ['education', 'employment', 'reference'];
-    return [];
+    return wf_verifier_group_components($groupKey);
 }
 
 function verifier_norm_component_key(string $k): string {
@@ -53,6 +50,16 @@ function verifier_can_group_by_sections(array $allowedSet, string $groupKey): bo
         if (isset($allowedSet[$k])) return true;
     }
     return false;
+}
+
+function verifier_allowed_groups_from_sections(array $allowedSet): array {
+    $out = [];
+    foreach (wf_verifier_group_keys() as $groupKey) {
+        if (verifier_can_group_by_sections($allowedSet, $groupKey)) {
+            $out[] = $groupKey;
+        }
+    }
+    return $out;
 }
 
 function verifier_filter_actionable_queue_rows(PDO $pdo, array $rows, array $allowedSet): array {
@@ -165,3 +172,4 @@ function verifier_filter_actionable_queue_rows(PDO $pdo, array $rows, array $all
 
     return $out;
 }
+require_once __DIR__ . '/../shared/workflow_semantics.php';

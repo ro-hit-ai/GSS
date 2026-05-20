@@ -3,6 +3,7 @@ header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../shared/workflow_semantics.php';
 
 auth_require_login('team_lead');
 auth_session_start();
@@ -32,6 +33,8 @@ function allowed_sections_set(string $raw): array {
     $out = [];
     foreach ($parts as $p) {
         $k = strtolower(trim((string)$p));
+        if ($k === 'social_media' || $k === 'social-media') $k = 'socialmedia';
+        if ($k === 'identification') $k = 'id';
         if ($k === '') continue;
         $out[$k] = true;
     }
@@ -40,8 +43,7 @@ function allowed_sections_set(string $raw): array {
 
 function can_work_group(array $set, string $groupKey): bool {
     if (isset($set['*'])) return true;
-    $g = strtoupper(trim($groupKey));
-    $need = $g === 'BASIC' ? ['basic', 'id', 'contact'] : ($g === 'EDUCATION' ? ['education', 'employment', 'reference'] : []);
+    $need = wf_verifier_group_components($groupKey);
     foreach ($need as $k) {
         if (isset($set[$k])) return true;
     }
@@ -73,9 +75,9 @@ try {
         exit;
     }
 
-    if ($queue === 'vr' && !in_array($groupKey, ['BASIC', 'EDUCATION'], true)) {
+    if ($queue === 'vr' && !wf_is_valid_verifier_group($groupKey)) {
         http_response_code(400);
-        echo json_encode(['status' => 0, 'message' => 'group_key is required for vr (BASIC|EDUCATION)']);
+        echo json_encode(['status' => 0, 'message' => 'group_key is required for vr']);
         exit;
     }
 

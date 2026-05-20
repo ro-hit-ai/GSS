@@ -287,7 +287,7 @@
                                         <h6 class="mb-1">Welcome</h6>
                                         <small class="text-muted">Just now</small>
                                     </div>
-                                    <p class="mb-0 small text-muted">Welcome to ATTEST360 Background Verification Portal</p>
+                                    <p class="mb-0 small text-muted">Welcome to VATI GSS  Background Verification Portal</p>
                                 </div>
                             </div>
                         </div>

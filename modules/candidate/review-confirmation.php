@@ -5,9 +5,40 @@ require_once __DIR__ . '/../../config/db.php';
 
 $application_id = getApplicationId();
 ensureApplicationExists($application_id);
+$correctionMode = !empty($_SESSION['candidate_correction_mode']);
+$correctionContext = null;
+if ($correctionMode && !empty($_SESSION['candidate_correction_session_id'])) {
+    try {
+        $pdo = getDB();
+        $st = $pdo->prepare('SELECT requested_by_name, requested_role, correction_reason, expires_at, allowed_components_json FROM candidate_correction_sessions WHERE correction_session_id = ? LIMIT 1');
+        $st->execute([(int)$_SESSION['candidate_correction_session_id']]);
+        $cc = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+        if ($cc) {
+            $components = json_decode((string)($cc['allowed_components_json'] ?? '[]'), true);
+            if (!is_array($components)) $components = [];
+            $correctionContext = [
+                'requested_by_name' => (string)($cc['requested_by_name'] ?? ''),
+                'requested_role' => (string)($cc['requested_role'] ?? ''),
+                'correction_reason' => (string)($cc['correction_reason'] ?? ''),
+                'expires_at' => (string)($cc['expires_at'] ?? ''),
+                'components' => $components
+            ];
+        }
+    } catch (Throwable $e) {}
+}
 ?>
 
 <form id="review-confirmationForm" class="candidate-form">
+    <?php if ($correctionMode && is_array($correctionContext)): ?>
+    <div class="mb-4 p-3 border rounded" style="background:#fffbeb; border-color:#fde68a !important;">
+        <div style="font-weight:700; color:#92400e; margin-bottom:6px;">Correction Request</div>
+        <div style="font-size:13px; color:#7c2d12;">Requested By: <?= htmlspecialchars(trim((string)$correctionContext['requested_by_name']) !== '' ? (string)$correctionContext['requested_by_name'] : (string)$correctionContext['requested_role']) ?></div>
+        <div style="font-size:13px; color:#7c2d12;">Role: <?= htmlspecialchars((string)$correctionContext['requested_role']) ?></div>
+        <div style="font-size:13px; color:#7c2d12;">Components: <?= htmlspecialchars(implode(', ', array_map('strval', (array)$correctionContext['components']))) ?></div>
+        <div style="font-size:13px; color:#7c2d12;">Reason: <?= htmlspecialchars((string)$correctionContext['correction_reason']) ?></div>
+        <div style="font-size:13px; color:#7c2d12;">Deadline: <?= htmlspecialchars((string)$correctionContext['expires_at']) ?></div>
+    </div>
+    <?php endif; ?>
 
     <!-- TITLE -->
     <h2 class="section-title">

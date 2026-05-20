@@ -182,10 +182,7 @@ class EmploymentManager extends TabManager {
                 el.value = value;
             }
         });
-        const employmentDocType = card.querySelector('[name="employment_doc_type[]"]');
-        if (employmentDocType) {
-            employmentDocType.value = data.employment_doc_type || "";
-        }
+        const savedEmploymentDocType = data.employment_doc_type || "";
 
         
         // Set dates
@@ -258,11 +255,12 @@ class EmploymentManager extends TabManager {
                 this.contactEmployer = contactEmployerValue;
                 
                 // Update UI based on current employment status
-                this.updateContactEmployer(card);
+                this.updateContactEmployer(card, true);
+                this.updateEmploymentProofOptions(card, this.currentlyEmployed, savedEmploymentDocType);
             } else {
                 radioBlock.style.display = 'none';
                 console.log('   Hiding radio block for card ' + index);
-                this.updateEmploymentProofOptions(card, "no");
+                this.updateEmploymentProofOptions(card, "no", savedEmploymentDocType);
             }
         }
 
@@ -312,7 +310,7 @@ class EmploymentManager extends TabManager {
     setupInsufficientDocsHandlers() {
         console.log('🔧 Setting up insufficient documents handlers');
         
-        document.addEventListener('change', (e) => {
+        this.addEventListener(document, 'change', (e) => {
             if (e.target.matches('.insufficient-emp-checkbox')) {
                 const checkbox = e.target;
                 const card = checkbox.closest('.employment-card');
@@ -379,7 +377,7 @@ class EmploymentManager extends TabManager {
         }
 
         // Handle Save Draft button
-        document.addEventListener('click', (e) => {
+        this.addEventListener(document, 'click', (e) => {
             const draftBtn = e.target.closest('.save-draft-btn[data-page="employment"]');
             if (draftBtn) {
                 e.preventDefault();
@@ -395,7 +393,7 @@ class EmploymentManager extends TabManager {
     setupFileHandlers() {
         console.log('🔧 Setting up file handlers');
 
-        document.addEventListener('click', (e) => {
+        this.addEventListener(document, 'click', (e) => {
             const trigger = e.target.closest('[data-file-choose]');
             if (!trigger) return;
             e.preventDefault();
@@ -405,7 +403,7 @@ class EmploymentManager extends TabManager {
             if (input) input.click();
         });
 
-        document.addEventListener('change', (e) => {
+        this.addEventListener(document, 'change', (e) => {
             if (e.target.matches('input[name="employment_doc[]"]')) {
                 const input = e.target;
                 const card = input.closest('.employment-card');
@@ -463,7 +461,7 @@ class EmploymentManager extends TabManager {
     }
 
     setupRelievingDateHandlers() {
-        document.addEventListener('input', (e) => {
+        this.addEventListener(document, 'input', (e) => {
             if (!e.target.matches('input[name="relieving_date[]"]')) return;
             if (e.target.type !== 'text') return;
 
@@ -491,7 +489,7 @@ class EmploymentManager extends TabManager {
     setupRadioHandlers() {
         console.log('🔧 Setting up radio handlers');
         
-        document.addEventListener('change', e => {
+        this.addEventListener(document, 'change', e => {
             if (e.target.name === 'is_fresher[0]') {
                 this.isFresher = e.target.value === 'yes';
                 console.log(`🔄 Fresher changed to: ${this.isFresher}`);
@@ -514,28 +512,51 @@ class EmploymentManager extends TabManager {
         });
     }
 
-    updateContactEmployer(card) {
+    convertIsoToDisplayDate(value) {
+        const raw = String(value || '').trim();
+        if (!raw) return '';
+        const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!match) return raw;
+        return `${match[3]}/${match[2]}/${match[1]}`;
+    }
+
+    convertDisplayToIsoDate(value) {
+        const raw = String(value || '').trim();
+        if (!raw) return '';
+        if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+        const match = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+        if (!match) return raw;
+        return `${match[3]}-${match[2]}-${match[1]}`;
+    }
+
+    updateContactEmployer(card, preserveExistingDate = false) {
         if (!card) return;
 
         const contactEmployerField = card.querySelector(".contact-employer-field");
         const relievingDateInput = card.querySelector('[name="relieving_date[]"]');
+        const relievingDateField = relievingDateInput ? relievingDateInput.closest('.form-field') : null;
 
         if (!contactEmployerField) return;
 
         if (this.currentlyEmployed === "yes") {
             contactEmployerField.style.display = "block";
             if (relievingDateInput) {
-                relievingDateInput.type = "text";
-                relievingDateInput.value = "";
+                if (relievingDateField) {
+                    relievingDateField.style.display = '';
+                }
+                relievingDateInput.type = "date";
                 relievingDateInput.disabled = false;
                 relievingDateInput.required = false;
-                relievingDateInput.placeholder = "DD/MM/YYYY";
-                relievingDateInput.inputMode = "numeric";
-                relievingDateInput.pattern = "\\d{2}/\\d{2}/\\d{4}";
+                relievingDateInput.placeholder = "";
+                relievingDateInput.removeAttribute("inputmode");
+                relievingDateInput.removeAttribute("pattern");
             }
         } else {
             contactEmployerField.style.display = "none";
             if (relievingDateInput) {
+                if (relievingDateField) {
+                    relievingDateField.style.display = '';
+                }
                 relievingDateInput.type = "date";
                 relievingDateInput.disabled = false;
                 relievingDateInput.required = true;
@@ -548,14 +569,14 @@ class EmploymentManager extends TabManager {
         this.updateEmploymentProofOptions(card, this.currentlyEmployed);
     }
 
-    updateEmploymentProofOptions(card, employmentStatus) {
+    updateEmploymentProofOptions(card, employmentStatus, preferredValue = null) {
         if (!card) return;
 
         const docTypeSelect = card.querySelector('[name="employment_doc_type[]"]');
         if (!docTypeSelect) return;
 
         const normalizedStatus = employmentStatus === "yes" ? "yes" : "no";
-        const currentValue = docTypeSelect.value;
+        const currentValue = preferredValue !== null ? preferredValue : docTypeSelect.value;
         const options = this.docTypeOptions[normalizedStatus] || [];
 
         docTypeSelect.innerHTML = '<option value="">Select document type</option>';

@@ -11,7 +11,7 @@ $user_name = $_SESSION['user_name'] ?? 'Candidate';
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Authorization Form - ATTEST360</title>
+    <title>Authorization Form - VATI GSS</title>
     <link rel="stylesheet"
           href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="<?php echo htmlspecialchars(app_url('/assets/css/candidate.css')); ?>">

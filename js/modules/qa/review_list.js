@@ -1,6 +1,7 @@
 (function () {
     document.addEventListener('DOMContentLoaded', function () {
         var viewSelect = document.getElementById('qaCasesViewSelect');
+        var stateFilterEl = document.getElementById('qaCasesStateFilter');
         var clientSelect = document.getElementById('qaCasesClientSelect');
         var validatorSelect = document.getElementById('qaCasesValidatorSelect');
         var verifierSelect = document.getElementById('qaCasesVerifierSelect');
@@ -63,6 +64,17 @@
         function buildReportHref(applicationId) {
             var href = 'case_review.php?application_id=' + encodeURIComponent(String(applicationId || ''));
             return href;
+        }
+
+        function qaChipLabel(rowOrStatus) {
+            var row = (rowOrStatus && typeof rowOrStatus === 'object') ? rowOrStatus : null;
+            var canonical = row ? String(row.stage_status_label || row.operational_status_label || '').trim() : '';
+            if (canonical) return canonical;
+            var rawStatus = row ? String(row.case_status || row.status || '') : String(rowOrStatus || '');
+            if (window.WF_UI && typeof window.WF_UI.labelByRole === 'function') {
+                return window.WF_UI.labelByRole(rawStatus, 'qa');
+            }
+            return String(rawStatus || '-');
         }
 
         function loadCss(href) {
@@ -180,7 +192,12 @@
                                 return;
                             }
                             setLastUpdatedNow();
-                            callback({ data: data.data || [] });
+                            var rows = Array.isArray(data.data) ? data.data : [];
+                            var filterKey = stateFilterEl ? String(stateFilterEl.value || 'all') : 'all';
+                            if (window.WF_UI && typeof window.WF_UI.matchesFilter === 'function') {
+                                rows = rows.filter(function (r) { return window.WF_UI.matchesFilter(r, filterKey); });
+                            }
+                            callback({ data: rows });
                         })
                         .catch(function () {
                             setMessage('Network error. Please try again.', 'danger');
@@ -203,8 +220,15 @@
                     { data: 'candidate_mobile' },
                     {
                         data: 'current_stage',
-                        render: function (d) {
-                            var t = String(d || '').trim();
+                        render: function (_d, _t, row) {
+                            var t = String((row && (row.stage_status_label || row.operational_status_label)) ? (row.stage_status_label || row.operational_status_label) : '');
+                            if (!t) {
+                                var raw = String((row && row.case_status) ? row.case_status : '');
+                                t = (window.WF_UI && typeof window.WF_UI.labelByRole === 'function')
+                                    ? String(window.WF_UI.labelByRole(raw, 'qa') || '')
+                                    : String((row && row.current_stage) || '');
+                            }
+                            t = t.trim();
                             var bg = '#e2e8f0';
                             var fg = '#0f172a';
                             var u = t.toUpperCase();
@@ -229,7 +253,12 @@
                             return escapeHtml(v !== '' ? v : '-');
                         }
                     },
-                    { data: 'case_status' },
+                    {
+                        data: 'case_status',
+                        render: function (_d, _t, row) {
+                            return escapeHtml(qaChipLabel(row));
+                        }
+                    },
                     {
                         data: 'created_at',
                         render: function (d) {
@@ -329,6 +358,9 @@
 
         if (viewSelect) {
             viewSelect.addEventListener('change', reloadTable);
+        }
+        if (stateFilterEl) {
+            stateFilterEl.addEventListener('change', reloadTable);
         }
 
         if (validatorSelect) {

@@ -15,6 +15,21 @@ function get_str_qs(string $key, string $default = ''): string {
     return trim((string)($_GET[$key] ?? $default));
 }
 
+function table_has_column(PDO $pdo, string $tableName, string $columnName): bool {
+    try {
+        $stmt = $pdo->prepare(
+            'SELECT COUNT(*) FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = ?
+               AND COLUMN_NAME = ?'
+        );
+        $stmt->execute([$tableName, $columnName]);
+        return (int)($stmt->fetchColumn() ?: 0) > 0;
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
         http_response_code(405);
@@ -62,6 +77,9 @@ try {
     $availableLevels = [];
     $availableStages = [];
 
+    $hasLevelKey = table_has_column($pdo, 'Vati_Payfiller_Job_Role_Verification_Types', 'level_key');
+    $hasStageKey = table_has_column($pdo, 'Vati_Payfiller_Job_Role_Verification_Types', 'stage_key');
+
     // Prefer SP if available
     try {
         $sp = $pdo->prepare('CALL SP_Vati_Payfiller_GetClientVerificationSummary(?)');
@@ -98,6 +116,7 @@ try {
     }
 
     try {
+        if (!$hasLevelKey) throw new RuntimeException('level_key column not available');
         $lvl = $pdo->prepare(
             'SELECT DISTINCT LOWER(TRIM(COALESCE(level_key, ""))) AS level_key
                FROM Vati_Payfiller_Job_Role_Verification_Types
@@ -123,7 +142,7 @@ try {
                     WHERE s.job_role_id = ?
                       AND s.is_active = 1';
         $stgParams = [$jobRoleId];
-        if ($levelKey !== '') {
+        if ($levelKey !== '' && $hasLevelKey) {
             $stgSql .= ' AND EXISTS (
                             SELECT 1
                               FROM Vati_Payfiller_Job_Role_Verification_Types j
@@ -149,12 +168,14 @@ try {
 
     $typeMetaById = [];
     try {
-        $typesSql = 'SELECT j.verification_type_id, j.is_enabled, j.level_key, t.type_name, t.type_category
+        $typesSql = 'SELECT j.verification_type_id, j.is_enabled, '
+            . ($hasLevelKey ? 'j.level_key' : '\'\' AS level_key')
+            . ', t.type_name, t.type_category
                        FROM Vati_Payfiller_Job_Role_Verification_Types j
                        LEFT JOIN Vati_Payfiller_Verification_Types t ON t.verification_type_id = j.verification_type_id
                       WHERE j.job_role_id = ?';
         $typeParams = [$jobRoleId];
-        if ($levelKey !== '') {
+        if ($levelKey !== '' && $hasLevelKey) {
             $typesSql .= ' AND LOWER(TRIM(COALESCE(j.level_key, ""))) = ?';
             $typeParams[] = $levelKey;
         }

@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../../includes/layout.php';
 require_once __DIR__ . '/../../includes/menus.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../api/shared/workflow_semantics.php';
 
 auth_require_login('team_lead');
 
@@ -40,8 +41,9 @@ ob_start();
             <label>VR Group</label>
             <select id="tlVrGroupSelect">
                 <option value="">All</option>
-                <option value="BASIC">BASIC</option>
-                <option value="EDUCATION">EDUCATION</option>
+                <?php foreach (wf_verifier_group_keys() as $vrGroupKey): ?>
+                    <option value="<?= htmlspecialchars($vrGroupKey) ?>"><?= htmlspecialchars($vrGroupKey) ?></option>
+                <?php endforeach; ?>
             </select>
         </div>
         <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">

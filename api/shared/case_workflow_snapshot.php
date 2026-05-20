@@ -159,6 +159,7 @@ try {
                     WHEN UPPER(TRIM(c.case_status)) IN ('REJECTED','STOP_BGV') THEN 'QA Rejected'
                     WHEN UPPER(TRIM(c.case_status)) IN ('APPROVED','VERIFIED','COMPLETED','CLEAR') THEN 'QA Completed'
                     WHEN (vq.completed_at IS NOT NULL AND COALESCE(vr.vr_pending, 0) = 0 AND COALESCE(vr.vr_total, 0) > 0) THEN 'QA Pending'
+                    WHEN (vq.completed_at IS NOT NULL AND COALESCE(vw.verifier_progress, 0) > 0 AND COALESCE(vr.vr_pending, 0) > 0) THEN 'QA Available'
                     WHEN (COALESCE(vr.vr_total, 0) > 0 AND COALESCE(vr.vr_pending, 0) > 0 AND COALESCE(vr.vr_in_progress, 0) > 0) THEN 'Verifier In Progress'
                     WHEN (COALESCE(vr.vr_total, 0) > 0 AND COALESCE(vr.vr_pending, 0) > 0) THEN 'Verifier Pending'
                     WHEN (vq.assigned_user_id IS NOT NULL AND vq.completed_at IS NULL) THEN 'Validation In Progress'
@@ -194,6 +195,16 @@ try {
                   FROM Vati_Payfiller_Verifier_Group_Queue
                  GROUP BY case_id
             ) vr ON vr.case_id = c.case_id
+            LEFT JOIN (
+                SELECT case_id,
+                       SUM(CASE
+                               WHEN LOWER(TRIM(COALESCE(stage, ''))) = 'verifier'
+                                AND LOWER(TRIM(COALESCE(status, ''))) IN ('approved','rejected','hold','insufficient_documents','completed','clear','verified')
+                               THEN 1 ELSE 0
+                           END) AS verifier_progress
+                  FROM Vati_Payfiller_Case_Component_Workflow
+                 GROUP BY case_id
+            ) vw ON vw.case_id = c.case_id
             WHERE c.application_id = ?
             LIMIT 1";
 
@@ -266,7 +277,10 @@ try {
         ]);
 
         $componentStatus = strtolower(trim((string)($component['status'] ?? 'pending')));
-        $isDone = in_array($stageLabel, ['Completed', 'QA Rejected'], true);
+        $stageLower = strtolower($stageLabel);
+        $isDone = (strpos($stageLower, 'completed') !== false)
+            || (strpos($stageLower, 'qa reviewed') !== false)
+            || (strpos($stageLower, 'qa rejected') !== false);
         $isRejected = str_contains(strtolower($stageLabel), 'rejected') || $componentStatus === 'rejected';
         $isHold = $componentStatus === 'hold';
 

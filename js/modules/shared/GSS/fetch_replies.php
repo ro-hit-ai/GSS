@@ -1,6 +1,7 @@
 <?php
-require_once __DIR__ . '/config/env.php';
-require_once __DIR__ . '/config/db.php';
+require_once __DIR__ . '/../../../../config/env.php';
+require_once __DIR__ . '/../../../../config/db.php';
+require_once __DIR__ . '/../../../../api/shared/workflow_communication_service.php';
 
 const MAX_REPLY_MESSAGE_CHARS = 20000;
 const DEBUG_MODE = true;
@@ -13,7 +14,35 @@ function cli_log(string $message): void
 function normalize_application_id(string $value): string
 {
     $value = strtoupper(trim($value));
+    $value = preg_replace('/\s+/', '', $value) ?? $value;
     return preg_match('/^APP-\d+$/', $value) === 1 ? $value : '';
+}
+
+function normalize_message_id(string $value): string
+{
+    $value = trim($value);
+    if ($value === '') return '';
+    $value = trim($value, "<> \t\r\n");
+    return strtolower($value);
+}
+
+function extract_message_ids(string $value): array
+{
+    $value = trim($value);
+    if ($value === '') return [];
+    $out = [];
+    if (preg_match_all('/<([^>]+)>/', $value, $m) === 1 && !empty($m[1])) {
+        foreach ($m[1] as $id) {
+            $n = normalize_message_id((string)$id);
+            if ($n !== '') $out[$n] = true;
+        }
+    } else {
+        foreach (preg_split('/\s+/', $value) as $token) {
+            $n = normalize_message_id((string)$token);
+            if ($n !== '') $out[$n] = true;
+        }
+    }
+    return array_keys($out);
 }
 
 function decode_mime_header_value(string $value): string
@@ -262,6 +291,35 @@ function resolve_replies_table(PDO $pdo): string
     throw new RuntimeException('Replies table not found. Expected GSS_Email_Replies or email_replies');
 }
 
+function table_has_column(PDO $pdo, string $table, string $column): bool
+{
+    $st = $pdo->prepare('SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ? LIMIT 1');
+    $st->execute([$table, $column]);
+    return (bool)$st->fetchColumn();
+}
+
+function resolve_application_from_thread(PDO $pdo, string $inReplyTo, string $references): array
+{
+    $ids = [];
+    $inr = normalize_message_id($inReplyTo);
+    if ($inr !== '') $ids[] = $inr;
+    $ids = array_merge($ids, extract_message_ids($references));
+    $ids = array_values(array_unique(array_filter($ids, static function ($x) { return $x !== ''; })));
+    if (!$ids) return ['application_id' => '', 'thread_id' => '', 'case_id' => 0];
+
+    $ph = implode(',', array_fill(0, count($ids), '?'));
+    $sql = 'SELECT application_id, thread_id, case_id FROM workflow_communications WHERE message_id IN (' . $ph . ') ORDER BY communication_id DESC LIMIT 1';
+    $st = $pdo->prepare($sql);
+    $st->execute($ids);
+    $row = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+    if (!$row) return ['application_id' => '', 'thread_id' => '', 'case_id' => 0];
+    return [
+        'application_id' => normalize_application_id((string)($row['application_id'] ?? '')),
+        'thread_id' => trim((string)($row['thread_id'] ?? '')),
+        'case_id' => (int)($row['case_id'] ?? 0),
+    ];
+}
+
 if (php_sapi_name() !== 'cli') {
     http_response_code(403);
     echo "CLI only\n";
@@ -307,10 +365,27 @@ try {
 
     $inserted = 0;
     $skipped = 0;
+    $duplicates = 0;
+    $unmatched = 0;
+
+    $hasMsgId = table_has_column($pdo, $repliesTable, 'message_id');
+    $hasInReplyTo = table_has_column($pdo, $repliesTable, 'in_reply_to');
+    $hasReferences = table_has_column($pdo, $repliesTable, 'references_header');
+    $hasMailboxUid = table_has_column($pdo, $repliesTable, 'mailbox_uid');
+    $hasSubject = table_has_column($pdo, $repliesTable, 'subject');
+    $hasThreadId = table_has_column($pdo, $repliesTable, 'thread_id');
 
     try {
+        $insertCols = ['application_id', 'sender', 'message'];
+        if ($hasSubject) $insertCols[] = 'subject';
+        if ($hasMsgId) $insertCols[] = 'message_id';
+        if ($hasInReplyTo) $insertCols[] = 'in_reply_to';
+        if ($hasReferences) $insertCols[] = 'references_header';
+        if ($hasMailboxUid) $insertCols[] = 'mailbox_uid';
+        if ($hasThreadId) $insertCols[] = 'thread_id';
+        $placeholders = implode(', ', array_fill(0, count($insertCols), '?'));
         $insert = $pdo->prepare(
-            'INSERT INTO `' . str_replace('`', '``', $repliesTable) . '` (application_id, sender, message) VALUES (?, ?, ?)'
+            'INSERT INTO `' . str_replace('`', '``', $repliesTable) . '` (' . implode(', ', $insertCols) . ') VALUES (' . $placeholders . ')'
         );
         cli_log('PREPARE SUCCESS');
     } catch (Exception $e) {
@@ -343,6 +418,12 @@ try {
             $subject = decode_mime_header_value($rawSubject);
             cli_log('Subject: ' . $subject);
 
+            $headersRaw = @imap_fetchheader($inbox, $msgNo, FT_INTERNAL);
+            $headerInfo = @imap_rfc822_parse_headers((string)$headersRaw);
+            $messageId = normalize_message_id((string)($headerInfo->message_id ?? ''));
+            $inReplyTo = normalize_message_id((string)($headerInfo->in_reply_to ?? ''));
+            $referencesHeader = trim((string)($headerInfo->references ?? ''));
+
             $rawFrom = ($overview && isset($overview->from)) ? (string)$overview->from : '';
             $sender = decode_mime_header_value($rawFrom);
             if ($sender === '') {
@@ -366,7 +447,12 @@ try {
                 $applicationId = normalize_application_id($m[0]);
             }
             if ($applicationId === '') {
+                $byThread = resolve_application_from_thread($pdo, $inReplyTo, $referencesHeader);
+                $applicationId = (string)($byThread['application_id'] ?? '');
+            }
+            if ($applicationId === '') {
                 cli_log('Skipping UID ' . (string)$uid . ': application_id not found in subject/body');
+                $unmatched++;
                 $skipped++;
                 continue;
             }
@@ -375,15 +461,45 @@ try {
             cli_log('Subject: ' . $subject);
             cli_log('Sender: ' . $sender);
             cli_log('Extracted APP ID: ' . $applicationId);
+            cli_log('Message-ID: ' . $messageId);
+            cli_log('In-Reply-To: ' . $inReplyTo);
+            cli_log('References: ' . $referencesHeader);
             cli_log('Message length: ' . strlen($message));
+
+            if ($hasMsgId && $messageId !== '') {
+                $dup = $pdo->prepare('SELECT 1 FROM `' . str_replace('`', '``', $repliesTable) . '` WHERE message_id = ? LIMIT 1');
+                $dup->execute([$messageId]);
+                if ($dup->fetchColumn()) {
+                    cli_log('Skipping duplicate by message_id: ' . $messageId);
+                    $duplicates++;
+                    $skipped++;
+                    continue;
+                }
+            } elseif ($hasMailboxUid) {
+                $dup = $pdo->prepare('SELECT 1 FROM `' . str_replace('`', '``', $repliesTable) . '` WHERE mailbox_uid = ? LIMIT 1');
+                $dup->execute([(string)$uid]);
+                if ($dup->fetchColumn()) {
+                    cli_log('Skipping duplicate by mailbox_uid: ' . (string)$uid);
+                    $duplicates++;
+                    $skipped++;
+                    continue;
+                }
+            }
 
             cli_log('REACHED INSERT BLOCK');
             try {
-                $result = $insert->execute([
+                $values = [
                     $applicationId,
                     str_limit($sender, 255),
                     $message
-                ]);
+                ];
+                if ($hasSubject) $values[] = str_limit($subject, 255);
+                if ($hasMsgId) $values[] = $messageId !== '' ? $messageId : null;
+                if ($hasInReplyTo) $values[] = $inReplyTo !== '' ? $inReplyTo : null;
+                if ($hasReferences) $values[] = $referencesHeader !== '' ? str_limit($referencesHeader, 1000) : null;
+                if ($hasMailboxUid) $values[] = (string)$uid;
+                if ($hasThreadId) $values[] = 'app:' . strtolower($applicationId);
+                $result = $insert->execute($values);
 
                 if ($result) {
                     cli_log('INSERT SUCCESS');
@@ -409,7 +525,10 @@ try {
             }
             $metaJson = json_encode([
                 'source' => 'imap',
-                'type' => 'reply'
+                'type' => 'reply',
+                'message_id' => $messageId,
+                'in_reply_to' => $inReplyTo,
+                'references' => $referencesHeader
             ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             if (!is_string($metaJson) || $metaJson === '') {
                 $metaJson = '{"source":"imap","type":"reply"}';
@@ -440,8 +559,15 @@ try {
     }
 
     cli_log('Fetch completed. Inserted=' . $inserted . ', skipped=' . $skipped);
+    wc_log_ingest_event($pdo, 'imap_poll', '', 0, 'ok', $inserted, $duplicates, $skipped, $unmatched, 'IMAP fetch_replies poll completed');
     imap_close($inbox);
 } catch (Throwable $e) {
+    try {
+        if (isset($pdo) && $pdo instanceof PDO) {
+            wc_log_ingest_event($pdo, 'imap_poll', '', 0, 'error', 0, 0, 0, 0, $e->getMessage());
+        }
+    } catch (Throwable $_e2) {
+    }
     @imap_close($inbox);
     cli_log('Failed: ' . $e->getMessage());
     exit(1);

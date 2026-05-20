@@ -4,6 +4,7 @@ session_start();
 
 require_once __DIR__ . "/../../config/env.php";
 require_once __DIR__ . "/../../config/db.php";
+require_once __DIR__ . "/../shared/candidate_correction_service.php";
 
 /* ================= EXCEPTIONS ================= */
 class ValidationException extends Exception {}
@@ -193,6 +194,8 @@ try {
             $proofField = 'address_proof_file';
         } elseif (!empty($_FILES['current_address_proof'])) {
             $proofField = 'current_address_proof';
+        } elseif (!empty($_FILES['permanent_address_proof'])) {
+            $proofField = 'permanent_address_proof';
         }
 
         if ($proofField && isset($_FILES[$proofField]['error']) && $_FILES[$proofField]['error'] !== UPLOAD_ERR_NO_FILE && $_FILES[$proofField]['error'] !== UPLOAD_ERR_OK) {
@@ -296,6 +299,7 @@ try {
     ]);
 
     $stmt->closeCursor();
+    ccs_progress_component_after_candidate_save($pdo, (string)$application_id, 'contact', $is_draft);
     $pdo->commit();
 
 $response = [

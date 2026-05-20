@@ -135,7 +135,6 @@ return [
         'aliases' => [
             'ecourt',
             'e-court',
-            'court',
             'judis',
             'judicial',
             'manupatra',

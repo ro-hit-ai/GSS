@@ -29,7 +29,7 @@ try {
         exit;
     }
 
-    if (!in_array($groupKey, ['BASIC', 'EDUCATION'], true)) {
+    if (!wf_is_valid_verifier_group($groupKey)) {
         http_response_code(400);
         echo json_encode(['status' => 0, 'message' => 'Valid group is required']);
         exit;

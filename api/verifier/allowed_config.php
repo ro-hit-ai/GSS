@@ -58,10 +58,7 @@ try {
 
     $set = allowed_sections_set();
     $allowedSectionsStr = isset($set['*']) ? '*' : implode(',', array_keys($set));
-    $groups = [];
-    foreach (['BASIC', 'EDUCATION'] as $g) {
-        if (verifier_can_group_by_sections($set, $g)) $groups[] = $g;
-    }
+    $groups = verifier_allowed_groups_from_sections($set);
 
     echo json_encode([
         'status' => 1,

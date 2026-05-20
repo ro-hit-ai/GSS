@@ -159,7 +159,7 @@
         if (!jobRoleId) {
             setLevelOptions([]);
             setStageOptions([]);
-            setMappingPreviewHtml('<div class="text-muted" style="font-size:12px;">Select a job role, job level and stage to view mapped verification checks.</div>');
+            setMappingPreviewHtml('<div class="text-muted" style="font-size:12px;">Select a job role to view mapped verification checks.</div>');
             return;
         }
 
@@ -206,7 +206,7 @@
             var stages = data.data.stages || {};
             var stageKeys = Object.keys(stages);
             if (!stageKeys.length) {
-                setMappingPreviewHtml('<div class="text-muted" style="font-size:12px;">No mapping found for selected role/job level/stage.</div>');
+                setMappingPreviewHtml('<div class="text-muted" style="font-size:12px;">No mapping found for selected role.</div>');
                 return;
             }
 
@@ -226,7 +226,7 @@
                 html += '</div>';
             });
 
-            setMappingPreviewHtml(html || '<div class="text-muted" style="font-size:12px;">No mapping found for selected role/job level/stage.</div>');
+            setMappingPreviewHtml(html || '<div class="text-muted" style="font-size:12px;">No mapping found for selected role.</div>');
         } catch (e) {
             setMappingPreviewHtml('<div class="text-muted" style="font-size:12px;">Unable to load mapping.</div>');
         }

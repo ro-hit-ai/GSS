@@ -1,5 +1,10 @@
 <?php
 
+// DEPRECATED FOR WORKFLOW COMPONENT GENERATION:
+// Verification type -> component mapping ownership has moved to
+// api/shared/case_component_binding.php::case_component_binding_map_verification_type_to_components().
+// Keep this file only for legacy non-workflow display helpers until fully retired.
+
 function component_registry(): array
 {
     static $registry = null;
@@ -50,7 +55,7 @@ function component_resolve_by_alias(string $searchText): ?array
             if ($aliasNorm === '') {
                 continue;
             }
-            if ($searchText === $aliasNorm || strpos($searchText, $aliasNorm) !== false) {
+            if ($searchText === $aliasNorm) {
                 return component_meta_from_registry_key((string)$key);
             }
         }
@@ -72,55 +77,7 @@ function component_text_has_any(string $searchText, array $needles): bool
 
 function component_resolve_by_heuristics(string $searchText): ?array
 {
-    if ($searchText === '') {
-        return null;
-    }
-
-    $isReference = component_text_has_any($searchText, [
-        'reference',
-        'referee',
-        'ref check',
-        'ref-check',
-    ]);
-
-    if ($isReference) {
-        $isEducationReference = component_text_has_any($searchText, [
-            'education',
-            'academic',
-            'qualification',
-            'degree',
-            'college',
-            'university',
-        ]);
-        if ($isEducationReference) {
-            return component_meta_from_registry_key('education_reference');
-        }
-
-        $isEmploymentReference = component_text_has_any($searchText, [
-            'employment',
-            'employee',
-            'employer',
-            'professional',
-            'work',
-            'experience',
-        ]);
-        if ($isEmploymentReference) {
-            return component_meta_from_registry_key('employment_reference');
-        }
-
-        return component_meta_from_registry_key('reference');
-    }
-
-    $isAddress = component_text_has_any($searchText, ['address']);
-    if ($isAddress) {
-        if (component_text_has_any($searchText, ['current', 'present'])) {
-            return component_meta_from_registry_key('current_address');
-        }
-        if (component_text_has_any($searchText, ['permanent'])) {
-            return component_meta_from_registry_key('permanent_address');
-        }
-    }
-
+    // Deterministic mode: heuristic resolution is intentionally disabled.
     return null;
 }
 

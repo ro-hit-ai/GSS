@@ -1,0 +1,78 @@
+<?php
+session_start();
+require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../../config/env.php';
+require_once __DIR__ . '/../../api/shared/candidate_correction_service.php';
+
+$token = trim((string)($_GET['token'] ?? ''));
+if ($token === '') {
+    http_response_code(400);
+    echo 'Invalid correction link.';
+    exit;
+}
+
+try {
+    $pdo = getDB();
+    ccs_ensure_table($pdo);
+    $st = $pdo->prepare('SELECT * FROM candidate_correction_sessions WHERE token = ? LIMIT 1');
+    $st->execute([$token]);
+    $row = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+    if (!$row) {
+        throw new Exception('Invalid correction link.');
+    }
+    $status = strtolower(trim((string)($row['status'] ?? '')));
+    if ($status !== 'active') {
+        throw new Exception('This correction session is no longer active.');
+    }
+    $expiresAt = trim((string)($row['expires_at'] ?? ''));
+    if ($expiresAt !== '' && strtotime($expiresAt) < time()) {
+        $u = $pdo->prepare("UPDATE candidate_correction_sessions SET status = 'expired', updated_at = NOW() WHERE correction_session_id = ?");
+        $u->execute([(int)$row['correction_session_id']]);
+        throw new Exception('Correction session expired.');
+    }
+
+    $caseId = (int)($row['case_id'] ?? 0);
+    $applicationId = (string)($row['application_id'] ?? '');
+    if ($caseId <= 0 || $applicationId === '') {
+        throw new Exception('Invalid correction session context.');
+    }
+    $allowed = json_decode((string)($row['allowed_components_json'] ?? '[]'), true);
+    if (!is_array($allowed) || !$allowed) {
+        throw new Exception('No correction components configured.');
+    }
+
+    $map = [
+        'basic' => 'basic-details',
+        'id' => 'identification',
+        'contact' => 'contact',
+        'socialmedia' => 'social',
+        'ecourt' => 'ecourt',
+        'education' => 'education',
+        'employment' => 'employment',
+        'reference' => 'reference',
+    ];
+    $allowedPages = ['review-confirmation'];
+    foreach ($allowed as $c) {
+        $k = ccs_component_norm((string)$c);
+        if (isset($map[$k])) $allowedPages[] = $map[$k];
+    }
+    $allowedPages = array_values(array_unique($allowedPages));
+
+    $_SESSION['case_id'] = $caseId;
+    $_SESSION['application_id'] = $applicationId;
+    $_SESSION['logged_in'] = true;
+    $_SESSION['candidate_correction_mode'] = 1;
+    $_SESSION['candidate_correction_session_id'] = (int)$row['correction_session_id'];
+    $_SESSION['candidate_correction_token'] = $token;
+    $_SESSION['candidate_correction_allowed_components'] = json_encode(array_values($allowed), JSON_UNESCAPED_UNICODE);
+    $_SESSION['candidate_correction_allowed_pages'] = json_encode($allowedPages, JSON_UNESCAPED_UNICODE);
+
+    $go = count($allowedPages) > 1 ? $allowedPages[1] : 'review-confirmation';
+    header('Location: ' . app_url('/modules/candidate/index.php?page=' . urlencode($go)));
+    exit;
+} catch (Throwable $e) {
+    http_response_code(400);
+    echo htmlspecialchars($e->getMessage());
+    exit;
+}
+

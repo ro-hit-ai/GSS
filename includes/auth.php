@@ -1,6 +1,48 @@
 <?php
 require_once __DIR__ . '/../config/env.php';
 
+function auth_is_api_request(): bool {
+    $uri = strtolower((string)($_SERVER['REQUEST_URI'] ?? ''));
+    $script = strtolower((string)($_SERVER['SCRIPT_NAME'] ?? ''));
+    $accept = strtolower((string)($_SERVER['HTTP_ACCEPT'] ?? ''));
+    $xhr = strtolower((string)($_SERVER['HTTP_X_REQUESTED_WITH'] ?? ''));
+
+    if (strpos($uri, '/api/') !== false || strpos($script, '/api/') !== false) return true;
+    if (strpos($accept, 'application/json') !== false) return true;
+    if ($xhr === 'xmlhttprequest') return true;
+    return false;
+}
+
+function auth_respond_unauthorized(): void {
+    if (auth_is_api_request()) {
+        http_response_code(401);
+        header('Content-Type: application/json');
+        echo json_encode(['status' => 0, 'message' => 'Unauthorized']);
+        exit;
+    }
+
+    $redirect = $_SERVER['REQUEST_URI'] ?? '';
+    $to = app_url('/login.php');
+    if ($redirect !== '') {
+        $to .= '?redirect=' . rawurlencode($redirect);
+    }
+    header('Location: ' . $to);
+    exit;
+}
+
+function auth_respond_forbidden(): void {
+    if (auth_is_api_request()) {
+        http_response_code(403);
+        header('Content-Type: application/json');
+        echo json_encode(['status' => 0, 'message' => 'Forbidden']);
+        exit;
+    }
+
+    http_response_code(403);
+    echo 'Access denied';
+    exit;
+}
+
 function auth_session_start(): void {
     if (session_status() === PHP_SESSION_NONE) {
         @session_start();
@@ -49,19 +91,11 @@ function auth_require_login(?string $requiredAccess = null): void {
     header('Expires: 0');
 
     if (!auth_is_logged_in()) {
-        $redirect = $_SERVER['REQUEST_URI'] ?? '';
-        $to = app_url('/login.php');
-        if ($redirect !== '') {
-            $to .= '?redirect=' . rawurlencode($redirect);
-        }
-        header('Location: ' . $to);
-        exit;
+        auth_respond_unauthorized();
     }
 
     if ($requiredAccess !== null && $requiredAccess !== '' && !auth_has_access($requiredAccess)) {
-        http_response_code(403);
-        echo 'Access denied';
-        exit;
+        auth_respond_forbidden();
     }
 }
 
@@ -74,13 +108,7 @@ function auth_require_any_access(array $requiredAny): void {
     header('Expires: 0');
 
     if (!auth_is_logged_in()) {
-        $redirect = $_SERVER['REQUEST_URI'] ?? '';
-        $to = app_url('/login.php');
-        if ($redirect !== '') {
-            $to .= '?redirect=' . rawurlencode($redirect);
-        }
-        header('Location: ' . $to);
-        exit;
+        auth_respond_unauthorized();
     }
 
     $requiredAny = array_values(array_filter(array_map(function ($v) {
@@ -99,7 +127,5 @@ function auth_require_any_access(array $requiredAny): void {
         }
     }
 
-    http_response_code(403);
-    echo 'Access denied';
-    exit;
+    auth_respond_forbidden();
 }

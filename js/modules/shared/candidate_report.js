@@ -47,12 +47,30 @@
     var CURRENT_MODAL_REASON_TYPE = '';
     var TL_CACHE = [];
     var EMAIL_REPLIES_CACHE = [];
+    var EMAIL_REPLIES_SIDEBAR_CACHE = [];
+    var EMAIL_REPLIES_LAST_SYNC_AT = 0;
+    var EMAIL_REPLIES_LAST_SYNC_APP_ID = '';
+    var EMAIL_REPLIES_INFLIGHT = null;
+    var EMAIL_REPLIES_INFLIGHT_KEY = '';
+    var EMAIL_REPLIES_LAST_RENDER_KEY = '';
     var TL_ACTIVE_FILTER = 'all';
     var COMPONENT_TABLE_ROWS = { id: [], education: [], employment: [] };
     var COMPONENT_TABLE_RENDERED = { id: false, education: false, employment: false };
 
     var SELECTED_UPLOAD_FILES = [];
     var ACTIVE_ITEM_BY_SECTION = {};
+    var ROLE_ACTIONABLE_COMPONENTS = {};
+    var ROLE_READONLY_COMPONENTS = {};
+    var ROLE_LOCKED_COMPONENTS = {};
+    var ROLE_LOCK_REASONS = {};
+    var LOAD_REPORT_IN_FLIGHT = false;
+    var LOAD_REPORT_PENDING_OPTS = null;
+    try {
+        if (!window.__validatorActionDebug || !Array.isArray(window.__validatorActionDebug)) {
+            window.__validatorActionDebug = [];
+        }
+    } catch (_e) {
+    }
 
     var HOLIDAY_SET = {};
     var HOLIDAYS_LOADED = false;
@@ -219,6 +237,293 @@ function closeBsModal(id) {
         return role === 'validator' || role === 'verifier' || role === 'qa' || role === 'team_lead';
     }
 
+    function isActiveWorkflowStatus(status) {
+        var s = String(status || '').toLowerCase().trim();
+        return s === 'hold' || s === 'insufficient_documents' || s === 'waiting_candidate' || s === 'reopened' || s === 'blocked';
+    }
+
+    function shouldShowResendCandidateAccess(payload) {
+        var role = String(getRole() || '').toLowerCase().trim();
+        if (['validator', 'verifier', 'qa', 'team_lead', 'gss_admin', 'client_admin'].indexOf(role) === -1) return false;
+        var p = payload && typeof payload === 'object' ? payload : {};
+        var caseRow = p.case && typeof p.case === 'object' ? p.case : {};
+        var caseStatus = String(caseRow.case_status || '').toUpperCase().trim();
+        if (caseStatus === 'APPROVED' || caseStatus === 'COMPLETED' || caseStatus === 'CLEAR' || caseStatus === 'ARCHIVED' || caseStatus === 'STOP_BGV' || caseStatus === 'TERMINATED') {
+            return false;
+        }
+        var hasActive = false;
+        var comp = p.component_workflow && typeof p.component_workflow === 'object' ? p.component_workflow : {};
+        Object.keys(comp).forEach(function (k) {
+            var st = comp[k] || {};
+            ['candidate', 'validator', 'verifier', 'qa'].forEach(function (sg) {
+                var s = st[sg] && st[sg].status ? st[sg].status : '';
+                if (isActiveWorkflowStatus(s)) hasActive = true;
+            });
+        });
+        if (hasActive) return true;
+        var app = p.application && typeof p.application === 'object' ? p.application : {};
+        var appStatus = String(app.status || '').toLowerCase().trim();
+        return appStatus === 'waiting_candidate' || appStatus === 'reopened' || caseStatus === 'PENDING_CANDIDATE' || caseStatus === 'CANDIDATE_PENDING';
+    }
+
+    function initCandidateAccessResend(getPayload) {
+        var btn = document.getElementById('cvResendCandidateAccessBtn');
+        var badge = document.getElementById('cvResendMetaBadge');
+        if (!btn) return;
+        var role = String(getRole() || '').toLowerCase().trim();
+        var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
+        var inFlight = false;
+
+        async function refreshResendMeta(payload) {
+            if (!badge) return;
+            try {
+                var p = payload && typeof payload === 'object' ? payload : (getPayload ? getPayload() : REPORT_PAYLOAD);
+                var caseRow = p && p.case ? p.case : {};
+                var applicationId = String((caseRow && caseRow.application_id) || '').trim();
+                var caseId = parseInt(String((caseRow && caseRow.case_id) || '0'), 10) || 0;
+                if (!applicationId && !caseId) {
+                    badge.style.display = 'none';
+                    return;
+                }
+                var url = base + '/api/shared/candidate_access_resend_status.php?application_id=' + encodeURIComponent(applicationId || '') + '&case_id=' + encodeURIComponent(String(caseId || ''));
+                var res = await fetch(url, { credentials: 'same-origin' });
+                var data = await res.json().catch(function () { return null; });
+                if (!res.ok || !data || data.status !== 1 || !data.data) {
+                    badge.style.display = 'none';
+                    return;
+                }
+                var count = parseInt(String(data.data.resend_count || '0'), 10) || 0;
+                var last = String(data.data.last_resent_at || '').trim();
+                if (count <= 0) {
+                    badge.style.display = 'none';
+                    return;
+                }
+                var ts = last;
+                try {
+                    ts = last ? window.GSS_DATE.formatDbDateTime(last) : '';
+                } catch (_eFmt) {}
+                badge.textContent = 'Resent ' + String(count) + ' time(s)' + (ts ? (' | Last: ' + ts) : '');
+                badge.style.display = '';
+            } catch (_e) {
+                badge.style.display = 'none';
+            }
+        }
+
+        function refreshVisibility() {
+            try {
+                var p = getPayload ? getPayload() : REPORT_PAYLOAD;
+                var show = shouldShowResendCandidateAccess(p);
+                btn.style.display = show ? '' : 'none';
+                refreshResendMeta(p);
+            } catch (_e) {
+                btn.style.display = 'none';
+                if (badge) badge.style.display = 'none';
+            }
+        }
+
+        refreshVisibility();
+        document.addEventListener('cv:section-changed', refreshVisibility);
+
+        if (btn.dataset.bound) return;
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', async function () {
+            if (inFlight) return;
+            var payload = getPayload ? getPayload() : REPORT_PAYLOAD;
+            var caseRow = payload && payload.case ? payload.case : {};
+            var applicationId = String((caseRow && caseRow.application_id) || (qs('application_id') || '')).trim();
+            var caseId = parseInt(String((caseRow && caseRow.case_id) || '0'), 10) || 0;
+            if (!applicationId && !caseId) {
+                setBoxMessage('cvTopMessage', 'Unable to resend access: missing case context.', 'danger');
+                return;
+            }
+            inFlight = true;
+            btn.disabled = true;
+            btn.dataset.originalText = btn.dataset.originalText || btn.textContent;
+            btn.textContent = 'Resending...';
+            try {
+                var reqId = 'car-' + String(applicationId || caseId) + '-' + String(role) + '-' + String(Date.now());
+                var res = await fetch(base + '/api/shared/candidate_access_resend.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({
+                        case_id: caseId || null,
+                        application_id: applicationId || null,
+                        role: role,
+                        request_id: reqId,
+                        reason: 'Workflow candidate access recovery'
+                    })
+                });
+                var data = await res.json().catch(function () { return null; });
+                if (!res.ok || !data || data.status !== 1) {
+                    throw new Error((data && data.message) ? data.message : 'Resend failed');
+                }
+                setBoxMessage('cvTopMessage', data.message || 'Candidate access resent.', 'success');
+                loadTimeline(applicationId || '').catch(function () {});
+                refreshResendMeta(payload);
+            } catch (e) {
+                setBoxMessage('cvTopMessage', (e && e.message) ? e.message : 'Resend failed', 'danger');
+            } finally {
+                inFlight = false;
+                btn.disabled = false;
+                btn.textContent = btn.dataset.originalText || 'Resend Candidate Access';
+            }
+        });
+    }
+
+    function initCandidateCorrectionRequest(getPayload) {
+        var openBtn = document.getElementById('cvOpenCorrectionModal');
+        var sendBtn = document.getElementById('cvCorrectionSendBtn');
+        var host = document.getElementById('cvCorrectionComponents');
+        var reasonEl = document.getElementById('cvCorrectionReason');
+        if (!openBtn || !sendBtn || !host) return;
+        var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
+        var busy = false;
+
+        function labelForSection(s) {
+            var k = String(s || '').toLowerCase().trim();
+            if (k === 'basic') return 'Basic Details';
+            if (k === 'id') return 'Identification';
+            if (k === 'contact') return 'Contact Information';
+            if (k === 'socialmedia') return 'Social Media';
+            if (k === 'ecourt') return 'E-Court';
+            if (k === 'education') return 'Education';
+            if (k === 'employment') return 'Employment';
+            if (k === 'reference') return 'Reference';
+            return k;
+        }
+
+        async function buildRows() {
+            var p = getPayload ? getPayload() : REPORT_PAYLOAD;
+            var caseRow = p && p.case ? p.case : {};
+            var applicationId = String((caseRow.application_id || '')).trim();
+            var caseId = parseInt(String(caseRow.case_id || '0'), 10) || 0;
+            var html = [];
+            var keys = [];
+            try {
+                var url = base + '/api/shared/correction_eligible_components.php?application_id=' + encodeURIComponent(applicationId || '') + '&case_id=' + encodeURIComponent(String(caseId || ''));
+                var res = await fetch(url, { credentials: 'same-origin' });
+                var data = await res.json().catch(function () { return null; });
+                if (res.ok && data && data.status === 1 && data.data && Array.isArray(data.data.components)) {
+                    keys = data.data.components.slice();
+                }
+            } catch (_e0) {}
+            keys.forEach(function (k) {
+                html.push('<label style="display:flex;align-items:center;gap:8px;border:1px solid rgba(148,163,184,.35);border-radius:8px;padding:8px;">'
+                    + '<input type="checkbox" class="cv-correction-comp" value="' + escHtml(k) + '" checked>'
+                    + '<span>' + escHtml(labelForSection(k)) + '</span>'
+                    + '</label>');
+            });
+            host.innerHTML = html.length ? html.join('') : '<div style="color:#64748b;font-size:12px;">No operationally active components available for correction request.</div>';
+        }
+
+        openBtn.addEventListener('click', async function () {
+            var activeSection = normSection(CURRENT_SECTION_KEY || activeComponentSectionKey() || '');
+            if (activeSection && !canValidatorActOnComponent(activeSection, 'open_correction_modal', 'correction')) {
+                return;
+            }
+            await buildRows();
+            setBoxMessage('cvCorrectionMessage', '', '');
+            if (reasonEl) reasonEl.value = '';
+            openBsModal('cvCorrectionModal');
+        });
+
+        sendBtn.addEventListener('click', async function () {
+            if (busy) return;
+            var checks = Array.prototype.slice.call(host.querySelectorAll('.cv-correction-comp:checked'));
+            var components = checks.map(function (c) { return String(c.value || '').trim(); }).filter(Boolean);
+            if (!components.length) {
+                setBoxMessage('cvCorrectionMessage', 'Select at least one component.', 'danger');
+                return;
+            }
+            var denied = components.find(function (c) { return !canValidatorActOnComponent(c, 'request_correction', 'correction'); });
+            if (denied) return;
+            var payload = getPayload ? getPayload() : REPORT_PAYLOAD;
+            var caseRow = payload && payload.case ? payload.case : {};
+            var applicationId = String((caseRow.application_id || '')).trim();
+            var caseId = parseInt(String(caseRow.case_id || '0'), 10) || 0;
+            if (!applicationId && !caseId) {
+                setBoxMessage('cvCorrectionMessage', 'Missing case context.', 'danger');
+                return;
+            }
+            busy = true;
+            sendBtn.disabled = true;
+            var old = sendBtn.textContent;
+            sendBtn.textContent = 'Sending...';
+            try {
+                var reqId = 'corr-' + String(applicationId || caseId) + '-' + String(Date.now());
+                var res = await fetch(base + '/api/shared/correction_session_create.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({
+                        case_id: caseId || null,
+                        application_id: applicationId || null,
+                        components: components,
+                        reason: reasonEl ? String(reasonEl.value || '').trim() : '',
+                        request_id: reqId
+                    })
+                });
+                var data = await res.json().catch(function () { return null; });
+                if (!res.ok || !data || data.status !== 1) {
+                    throw new Error((data && data.message) ? data.message : 'Failed to create correction session');
+                }
+                setBoxMessage('cvCorrectionMessage', data.message || 'Correction request sent', 'success');
+                setBoxMessage('cvTopMessage', data.message || 'Correction request sent', 'success');
+                loadTimeline(applicationId || '').catch(function () {});
+                setTimeout(function () { closeBsModal('cvCorrectionModal'); }, 700);
+            } catch (e) {
+                setBoxMessage('cvCorrectionMessage', (e && e.message) ? e.message : 'Failed to send correction request', 'danger');
+            } finally {
+                busy = false;
+                sendBtn.disabled = false;
+                sendBtn.textContent = old || 'Send Correction Request';
+            }
+        });
+    }
+
+    function correctionHistoryHtml(rows) {
+        if (!Array.isArray(rows) || rows.length === 0) return 'No correction history yet.';
+        return rows.map(function (r) {
+            var comp = sectionLabel(String(r.component_key || ''));
+            var cycle = parseInt(String(r.cycle_number || '0'), 10) || 0;
+            var by = String(r.requested_by_name || r.requested_role || '');
+            var role = String(r.requested_role || '');
+            var reason = String(r.correction_reason || '');
+            var reqAt = String(r.requested_at || r.created_at || '');
+            var subAt = String(r.candidate_submitted_at || '');
+            var fin = String(r.final_status || r.status || '');
+            function fmt(v) { try { return v ? window.GSS_DATE.formatDbDateTime(v) : '-'; } catch (_e) { return v || '-'; } }
+            return '<div style="border:1px solid rgba(148,163,184,.35);border-radius:8px;padding:8px;margin-bottom:8px;background:#fff;">'
+                + '<div style="display:flex;justify-content:space-between;gap:8px;"><b>' + escHtml(comp) + ' - Cycle ' + escHtml(String(cycle)) + '</b><span style="font-size:11px;color:#64748b;">' + escHtml(fmt(reqAt)) + '</span></div>'
+                + '<div style="font-size:12px;color:#334155;">By: ' + escHtml(by) + (role ? (' (' + escHtml(role) + ')') : '') + '</div>'
+                + (reason ? ('<div style="font-size:12px;color:#0f172a;">Reason: ' + escHtml(reason) + '</div>') : '')
+                + '<div style="font-size:12px;color:#334155;">Candidate Submitted: ' + escHtml(fmt(subAt)) + '</div>'
+                + '<div style="font-size:12px;color:#334155;">Final Status: ' + escHtml(fin || '-') + '</div>'
+                + '</div>';
+        }).join('');
+    }
+
+    async function loadCorrectionHistory(applicationId, caseId) {
+        var host = document.getElementById('cvCorrectionHistory');
+        if (!host) return;
+        if (!applicationId && !caseId) { host.innerHTML = 'No correction history yet.'; return; }
+        host.innerHTML = 'Loading correction history...';
+        var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
+        try {
+            var url = base + '/api/shared/correction_history.php?application_id=' + encodeURIComponent(applicationId || '') + '&case_id=' + encodeURIComponent(String(caseId || ''));
+            var res = await fetch(url, { credentials: 'same-origin' });
+            var data = await res.json().catch(function () { return null; });
+            if (!res.ok || !data || data.status !== 1 || !Array.isArray(data.data)) {
+                host.innerHTML = 'No correction history yet.';
+                return;
+            }
+            host.innerHTML = correctionHistoryHtml(data.data);
+        } catch (_e) {
+            host.innerHTML = 'No correction history yet.';
+        }
+    }
+
     function isRecordComponent(section) {
         var s = normSection(section);
         return s === 'id' || s === 'education' || s === 'employment';
@@ -226,7 +531,104 @@ function closeBsModal(id) {
 
     function isActionableComponent(section) {
         var s = normSection(section);
-        return ACTIONABLE_COMPONENTS.indexOf(s) !== -1;
+        if (ACTIONABLE_COMPONENTS.indexOf(s) === -1) return false;
+        var role = getRole();
+        if (role === 'validator') {
+            if (ROLE_ACTIONABLE_COMPONENTS && Object.prototype.hasOwnProperty.call(ROLE_ACTIONABLE_COMPONENTS, s)) {
+                return !!ROLE_ACTIONABLE_COMPONENTS[s];
+            }
+            if (ROLE_READONLY_COMPONENTS && ROLE_READONLY_COMPONENTS[s]) return false;
+        }
+        return true;
+    }
+
+    function pushValidatorActionDebug(evt) {
+        try {
+            if (!window.__validatorActionDebug || !Array.isArray(window.__validatorActionDebug)) {
+                window.__validatorActionDebug = [];
+            }
+            window.__validatorActionDebug.push(evt);
+            if (window.__validatorActionDebug.length > 200) {
+                window.__validatorActionDebug.shift();
+            }
+        } catch (_e) {
+        }
+    }
+
+    function getValidatorComponentAccess(componentKey) {
+        var section = normSection(componentKey);
+        var role = getRole();
+        if (role !== 'validator' && role !== 'verifier' && role !== 'db_verifier') {
+            return { actionable: true, readonly: false, denied_reason: '' };
+        }
+        if (!section || ACTIONABLE_COMPONENTS.indexOf(section) === -1) {
+            return { actionable: false, readonly: true, denied_reason: 'invalid_component' };
+        }
+        if (ROLE_READONLY_COMPONENTS && ROLE_READONLY_COMPONENTS[section]) {
+            return { actionable: false, readonly: true, denied_reason: 'validator_readonly_unassigned' };
+        }
+        if (ROLE_ACTIONABLE_COMPONENTS && Object.keys(ROLE_ACTIONABLE_COMPONENTS).length > 0) {
+            if (!ROLE_ACTIONABLE_COMPONENTS[section]) {
+                return { actionable: false, readonly: true, denied_reason: 'validator_not_actionable' };
+            }
+        }
+        return { actionable: true, readonly: false, denied_reason: '' };
+    }
+
+    function canValidatorActOnComponent(componentKey, actionType, uiMessageTarget) {
+        var role = getRole();
+        var section = normSection(componentKey);
+        var access = getValidatorComponentAccess(section);
+        var blocked = (role === 'validator' && !access.actionable);
+        var evt = {
+            ts: new Date().toISOString(),
+            attempted_action: String(actionType || ''),
+            component_key: section,
+            actionable: !!access.actionable,
+            readonly: !!access.readonly,
+            blocked_reason: String(access.denied_reason || ''),
+            prevented_backend_call: blocked ? 1 : 0
+        };
+        pushValidatorActionDebug(evt);
+        if (blocked) {
+            var msg = 'Action unavailable for this component in the current view.';
+            if (uiMessageTarget === 'split') setSplitPaneMessage(msg, 'error');
+            else if (uiMessageTarget === 'pdf') setPdfViewerMessage(msg, 'error');
+            else if (uiMessageTarget === 'upload') setBoxMessage('cvUploadMessage', msg, 'warning');
+            else if (uiMessageTarget === 'correction') setBoxMessage('cvCorrectionMessage', msg, 'warning');
+            else setBoxMessage('cvTopMessage', msg, 'info');
+            return false;
+        }
+        return true;
+    }
+
+    function applyRoleActionabilityFromPayload(payload) {
+        ROLE_ACTIONABLE_COMPONENTS = {};
+        ROLE_READONLY_COMPONENTS = {};
+        ROLE_LOCKED_COMPONENTS = {};
+        ROLE_LOCK_REASONS = {};
+        var d = payload && (payload.data || payload) ? (payload.data || payload) : {};
+        var a = d && d.actionability ? d.actionability : {};
+        var actionable = Array.isArray(a.actionable_components) ? a.actionable_components : [];
+        var readonly = Array.isArray(a.readonly_components) ? a.readonly_components : [];
+        var locked = Array.isArray(a.locked_components) ? a.locked_components : [];
+        var reasons = a && typeof a.lock_reasons === 'object' ? a.lock_reasons : {};
+        actionable.forEach(function (k) {
+            var nk = normSection(k);
+            if (nk) ROLE_ACTIONABLE_COMPONENTS[nk] = true;
+        });
+        readonly.forEach(function (k) {
+            var nk = normSection(k);
+            if (nk) ROLE_READONLY_COMPONENTS[nk] = true;
+        });
+        locked.forEach(function (k) {
+            var nk = normSection(k);
+            if (!nk) return;
+            ROLE_LOCKED_COMPONENTS[nk] = true;
+            if (reasons && Object.prototype.hasOwnProperty.call(reasons, nk)) {
+                ROLE_LOCK_REASONS[nk] = String(reasons[nk] || '');
+            }
+        });
     }
 
     function activeComponentSectionKey() {
@@ -243,6 +645,12 @@ function closeBsModal(id) {
             if (fromPanel && fromPanel !== 'timeline') return fromPanel;
         }
         return '';
+    }
+
+    function currentRepliesScopeComponent() {
+        var sec = normSection(activeComponentSectionKey() || CURRENT_SECTION_KEY || LAST_COMPONENT_SECTION_KEY || '');
+        if (!sec || sec === 'timeline') return '';
+        return sec;
     }
 
     function isLikelyImageUrl(url) {
@@ -393,6 +801,7 @@ function closeBsModal(id) {
             setSplitPaneMessage('Please select a valid section before taking action.', 'error');
             return;
         }
+        if (!canValidatorActOnComponent(componentKey, mode, 'split')) return;
         if (mode === 'reject' || mode === 'hold') {
             if (!reason) {
                 setSplitPaneMessage('Reason is required for ' + mode + '.', 'error');
@@ -435,7 +844,7 @@ function closeBsModal(id) {
             setBoxMessage('cvTopMessage', 'Updated successfully.', 'success');
             closePane();
             try {
-                await loadReport();
+                loadReport({ preserveUi: true, section: componentKey }).catch(function () {});
             } catch (_e) {
             }
         } catch (e) {
@@ -889,6 +1298,7 @@ if (uploadInput) {
             setPdfViewerMessage('Please select a valid section before taking action.', 'error');
             return;
         }
+        if (!canValidatorActOnComponent(componentKey, mode, 'pdf')) return;
         if ((mode === 'reject' || mode === 'hold') && !reason) {
             setPdfViewerMessage('Reason is required for ' + mode + '.', 'error');
             if (reasonEl) reasonEl.focus();
@@ -923,7 +1333,7 @@ if (uploadInput) {
             }
             setPdfViewerMessage('Action updated successfully.', 'success');
             setBoxMessage('cvTopMessage', 'Updated successfully.', 'success');
-            try { await loadReport(); } catch (_e) {}
+            try { loadReport({ preserveUi: true, section: componentKey }).catch(function () {}); } catch (_e) {}
         } catch (e) {
             setPdfViewerMessage((e && e.message) ? e.message : 'Network error. Please try again.', 'error');
         } finally {
@@ -998,198 +1408,735 @@ if (uploadInput) {
 
     async function initVerifierMailAndPrint(getPayload) {
         var role = getRole();
-        if (role !== 'verifier') return;
+        if (!(role === 'verifier' || role === 'validator' || role === 'qa' || role === 'team_lead')) return;
 
         var openBtn = document.getElementById('cvOpenMailModal');
         var printBtn = document.getElementById('cvPrintLetterBtn');
         var tplSel = document.getElementById('cvMailTemplateSelect');
         var toEl = document.getElementById('cvMailToEmail');
         var subjEl = document.getElementById('cvMailSubject');
+        var notesEl = document.getElementById('cvCommNotes');
         var previewEl = document.getElementById('cvMailPreview');
         var sendBtn = document.getElementById('cvMailSendBtn');
+        var actionsEl = document.getElementById('cvCommActionCards');
+        var checklistEl = document.getElementById('cvCommChecklist');
+        var deadlineEl = document.getElementById('cvCommDeadline');
+        var historyEl = document.getElementById('cvCommHistory');
+        var draftBtn = document.getElementById('cvCommSaveDraftBtn');
+        var reuseBtn = document.getElementById('cvCommReuseLastBtn');
+        var resendBtn = document.getElementById('cvCommResendLastBtn');
 
-        if (!openBtn || !tplSel || !previewEl || !sendBtn) return;
-
+        if (!openBtn || !previewEl || !sendBtn || !actionsEl || !checklistEl) return;
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-        var templates = [];
+        var activeAction = '';
+        var activeTemplateId = null;
+        var activeBody = '';
+        var activeChecklist = [];
+        var lastHistory = [];
+        var previewTimer = null;
+        var OPEN_PREFETCH = null;
+
+        function currentComponent() {
+            return String(activeComponentSectionKey() || CURRENT_SECTION_KEY || 'basic').toLowerCase().trim();
+        }
 
         function getContext() {
             var payload = getPayload ? getPayload() : null;
             var caseId = payload && payload.case && payload.case.case_id ? parseInt(payload.case.case_id, 10) : 0;
             var appId = payload && payload.case && payload.case.application_id ? String(payload.case.application_id) : (qs('application_id') || '');
-            var group = getVerifierGroup();
-            return { case_id: caseId || null, application_id: appId || null, role: 'verifier', group: group || null };
+            return { case_id: caseId || null, application_id: appId || null, role: role, component: currentComponent() };
         }
 
-        async function loadTemplates(type) {
-            var url = base + '/api/shared/mail_templates_list.php';
-            if (type) url += '?type=' + encodeURIComponent(type);
-            var res = await fetch(url, { credentials: 'same-origin' });
-            var data = await res.json().catch(function () { return null; });
-            if (!res.ok || !data || data.status !== 1) {
-                throw new Error((data && data.message) ? data.message : 'Failed to load templates');
+        function selectedChecklist() {
+            var out = [];
+            checklistEl.querySelectorAll('input[type="checkbox"][data-check-key]').forEach(function (cb) {
+                if (cb.checked) out.push(String(cb.getAttribute('data-check-key') || '').trim());
+            });
+            return out.filter(Boolean);
+        }
+
+        function renderHistory(items) {
+            var rows = Array.isArray(items) ? items : [];
+            if (!rows.length) {
+                historyEl.innerHTML = '<div style="font-size:12px; color:#64748b;">No previous communications.</div>';
+                return;
             }
+            historyEl.innerHTML = rows.map(function (r, idx) {
+                var badgeTone = String(r.delivery_status || '').toLowerCase() === 'draft' ? '#b45309' : '#166534';
+                return '<div data-history-idx="' + esc(String(idx)) + '" style="padding:8px; border:1px solid rgba(148,163,184,.24); border-radius:8px; margin-bottom:6px; background:#fff; cursor:pointer;">' +
+                    '<div style="display:flex; justify-content:space-between; gap:8px;"><b style="font-size:12px;">' + esc((r.action_key || '').replace(/_/g, ' ')) + '</b>' +
+                    '<span style="font-size:11px; color:' + badgeTone + '; font-weight:800;">' + esc(r.delivery_status || 'sent') + '</span></div>' +
+                    '<div style="font-size:11px; color:#64748b;">' + esc(r.role_key || '-') + ' • ' + esc(r.component_key || '-') + ' • ' + esc(r.sent_at || '') + '</div>' +
+                    '</div>';
+            }).join('');
+        }
+
+        function renderChecklist(items) {
+            var list = Array.isArray(items) ? items : [];
+            if (!list.length) {
+                checklistEl.innerHTML = '<div style="font-size:12px; color:#64748b;">No checklist required for this action.</div>';
+                return;
+            }
+            checklistEl.innerHTML = list.map(function (it, idx) {
+                var id = 'cvCommChk_' + idx;
+                return '<label for="' + esc(id) + '" style="display:flex; gap:8px; align-items:flex-start; margin-bottom:6px; font-size:12px;">' +
+                    '<input id="' + esc(id) + '" type="checkbox" data-check-key="' + esc(String(it)) + '" checked>' +
+                    '<span>' + esc(String(it)) + '</span>' +
+                '</label>';
+            }).join('');
+        }
+
+        function schedulePreview() {
+            if (previewTimer) clearTimeout(previewTimer);
+            previewTimer = setTimeout(function () {
+                var checks = selectedChecklist();
+                var notes = notesEl ? String(notesEl.value || '').trim() : '';
+                var deadline = deadlineEl ? String(deadlineEl.value || '') : '';
+                var composed = activeBody;
+                if (checks.length) composed += '\n\nChecklist:\n- ' + checks.join('\n- ');
+                if (deadline) composed += '\n\nDeadline: ' + deadline;
+                if (notes) composed += '\n\nNotes:\n' + notes;
+                previewEl.innerHTML = wcSafeHtml(composed);
+            }, 180);
+        }
+
+        function wcSafeHtml(body) {
+            var s = escHtml(String(body || ''));
+            return '<div style="font-family:Arial,sans-serif; font-size:13px; line-height:1.45;">' + s.replace(/\n/g, '<br>') + '</div>';
+        }
+
+        async function fetchJsonWithTimeout(url, options, timeoutMs) {
+            var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+            var timer = null;
+            var opts = options || {};
+            if (ctrl) {
+                opts.signal = ctrl.signal;
+                timer = setTimeout(function () {
+                    try { ctrl.abort(); } catch (_e) {}
+                }, Math.max(1000, parseInt(timeoutMs || 0, 10) || 6000))
+            }
+            try {
+                var res = await fetch(url, opts);
+                var data = await res.json().catch(function () { return null; });
+                return { ok: !!res.ok, data: data };
+            } finally {
+                if (timer) clearTimeout(timer);
+            }
+        }
+
+        async function loadHistory() {
+            var ctx = getContext();
+            var url = base + '/api/shared/workflow_communications_history.php?application_id=' + encodeURIComponent(ctx.application_id || '') + '&component=' + encodeURIComponent(ctx.component || '');
+            var out = await fetchJsonWithTimeout(url, { credentials: 'same-origin' }, 4500);
+            var data = out.data;
+            if (!out.ok || !data || data.status !== 1) return [];
             return Array.isArray(data.data) ? data.data : [];
         }
 
-        function setTplOptions(list) {
-            templates = Array.isArray(list) ? list : [];
-            tplSel.innerHTML = '<option value="">Select Template</option>';
-            templates.forEach(function (t) {
-                var opt = document.createElement('option');
-                opt.value = String(t.template_id || '');
-                opt.textContent = (t.template_name || ('Template #' + t.template_id)) + (t.template_type ? (' (' + t.template_type + ')') : '');
-                tplSel.appendChild(opt);
-            });
-        }
-
-        async function renderSelected() {
-            var tplId = parseInt(tplSel.value || '0', 10) || 0;
-            if (!tplId) {
-                if (subjEl) subjEl.value = '';
-                previewEl.innerHTML = '<div style="color:#6b7280; font-size:13px;">Select a template to preview.</div>';
-                return;
-            }
-
-            previewEl.innerHTML = '<div style="color:#6b7280; font-size:13px;">Loading preview...</div>';
-            setBoxMessage('cvMailMessage', '', '');
-
+        async function resolveAction(action) {
+            activeAction = String(action || '').toLowerCase().trim();
             var ctx = getContext();
-
-            var res = await fetch(base + '/api/shared/mail_template_render.php', {
+            var out = await fetchJsonWithTimeout(base + '/api/shared/mail_templates_resolve.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'same-origin',
-                body: JSON.stringify({ template_id: tplId, application_id: ctx.application_id, case_id: ctx.case_id, role: ctx.role, group: ctx.group })
-            });
-            var data = await res.json().catch(function () { return null; });
-            if (!res.ok || !data || data.status !== 1 || !data.data) {
-                throw new Error((data && data.message) ? data.message : 'Failed to render');
+                body: JSON.stringify({
+                    role: role,
+                    component: ctx.component,
+                    action: activeAction,
+                    application_id: ctx.application_id,
+                    case_id: ctx.case_id,
+                    deadline: deadlineEl ? String(deadlineEl.value || '') : ''
+                })
+            }, 5000);
+            var data = out.data;
+            if (!out.ok || !data || data.status !== 1 || !data.data) {
+                throw new Error((data && data.message) ? data.message : 'Failed to resolve communication template');
             }
-
-            if (subjEl) subjEl.value = data.data.subject || '';
-            previewEl.innerHTML = data.data.html || ('<pre style="white-space:pre-wrap; margin:0;">' + escHtml(data.data.body || '') + '</pre>');
+            activeTemplateId = data.data.template_id || null;
+            activeBody = String(data.data.body || '');
+            activeChecklist = Array.isArray(data.data.checklist) ? data.data.checklist : [];
+            if (subjEl) subjEl.value = String(data.data.subject || '');
+            if (tplSel) tplSel.value = activeTemplateId ? String(activeTemplateId) : '';
+            renderChecklist(activeChecklist);
+            schedulePreview();
         }
 
-        async function sendMail() {
-            var tplId = parseInt(tplSel.value || '0', 10) || 0;
-            if (!tplId) {
-                setBoxMessage('cvMailMessage', 'Please select template.', 'danger');
+        async function loadActionCards() {
+            var ctx = getContext();
+            var out = await fetchJsonWithTimeout(base + '/api/shared/mail_templates_resolve.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({
+                    role: role,
+                    component: ctx.component,
+                    action: 'insufficient_documents',
+                    application_id: ctx.application_id,
+                    case_id: ctx.case_id
+                })
+            }, 5000);
+            var data = out.data;
+            if (!out.ok || !data || data.status !== 1 || !data.data) {
+                throw new Error((data && data.message) ? data.message : 'Failed to load actions');
+            }
+            var actions = Array.isArray(data.data.actions) ? data.data.actions : [];
+            actionsEl.innerHTML = actions.map(function (a) {
+                var act = String(a.action || '');
+                return '<button type="button" class="btn btn-sm btn-outline-primary" data-comm-action="' + esc(act) + '" style="text-align:left;">' + esc(String(a.label || act)) + '</button>';
+            }).join('');
+            if (!actions.length) {
+                activeAction = '';
+                activeTemplateId = null;
+                activeBody = '';
+                renderChecklist([]);
+                schedulePreview();
                 return;
             }
+            // Use the same resolver response for first paint to avoid a second blocking call.
+            activeAction = 'insufficient_documents';
+            activeTemplateId = data.data.template_id || null;
+            activeBody = String(data.data.body || '');
+            activeChecklist = Array.isArray(data.data.checklist) ? data.data.checklist : [];
+            if (subjEl) subjEl.value = String(data.data.subject || '');
+            if (tplSel) tplSel.value = activeTemplateId ? String(activeTemplateId) : '';
+            renderChecklist(activeChecklist);
+            schedulePreview();
+            // If first button action is not insufficient_documents, resolve it in background.
+            var firstAct = String(actions[0].action || '').toLowerCase().trim();
+            if (firstAct && firstAct !== 'insufficient_documents') {
+                resolveAction(firstAct).catch(function () {});
+            }
+        }
+
+        async function sendComm(mode) {
+            var ctx = getContext();
+            var componentKey = normSection(ctx.component || currentRepliesScopeComponent() || '');
             var to = toEl ? String(toEl.value || '').trim() : '';
-            if (!to) {
+            var subject = subjEl ? String(subjEl.value || '').trim() : '';
+            var notes = notesEl ? String(notesEl.value || '').trim() : '';
+            var deadline = deadlineEl ? String(deadlineEl.value || '') : '';
+            var checks = selectedChecklist();
+            if (!activeAction) {
+                setBoxMessage('cvMailMessage', 'Please select an action.', 'danger');
+                return;
+            }
+            if (mode !== 'draft' && !to) {
                 setBoxMessage('cvMailMessage', 'To Email is required.', 'danger');
                 return;
             }
-
             setBoxMessage('cvMailMessage', '', '');
             sendBtn.disabled = true;
             sendBtn.dataset.originalText = sendBtn.dataset.originalText || sendBtn.textContent;
-            sendBtn.textContent = 'Sending...';
-
+            sendBtn.textContent = mode === 'draft' ? 'Saving...' : 'Sending...';
             try {
-                var ctx = getContext();
-                var res = await fetch(base + '/api/shared/mail_template_send.php', {
+                var reqId = 'wc-' + String(ctx.application_id || '') + '-' + String(ctx.component || '') + '-' + String(activeAction || '') + '-' + String(Date.now());
+                var res = await fetch(base + '/api/shared/workflow_communications_send.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     credentials: 'same-origin',
-                    body: JSON.stringify({ template_id: tplId, to_email: to, application_id: ctx.application_id, case_id: ctx.case_id, role: ctx.role, group: ctx.group })
+                    body: JSON.stringify({
+                        mode: mode,
+                        role: role,
+                        component: ctx.component,
+                        action: activeAction,
+                        template_id: activeTemplateId,
+                        to_email: to,
+                        subject: subject,
+                        body: activeBody,
+                        notes: notes,
+                        deadline: deadline,
+                        checklist: checks,
+                        application_id: ctx.application_id,
+                        case_id: ctx.case_id,
+                        workflow_version: REPORT_PAYLOAD && REPORT_PAYLOAD.case ? REPORT_PAYLOAD.case.workflow_version : null,
+                        request_id: reqId
+                    })
                 });
                 var data = await res.json().catch(function () { return null; });
-                if (!res.ok || !data || data.status !== 1) {
-                    throw new Error((data && data.message) ? data.message : 'Send failed');
+                if (!res.ok || !data || data.status !== 1) throw new Error((data && data.message) ? data.message : 'Communication send failed');
+                if (mode !== 'draft') {
+                    var optimisticRow = {
+                        sender: (window.CV_CURRENT_USER_NAME || role || 'Operations'),
+                        message: notes ? (activeBody + '\n\nNotes:\n' + notes) : activeBody,
+                        created_at: new Date().toISOString().slice(0, 19).replace('T', ' '),
+                        direction: 'outgoing',
+                        actor_role: role,
+                        component_key: componentKey
+                    };
+                    EMAIL_REPLIES_CACHE = [optimisticRow].concat(Array.isArray(EMAIL_REPLIES_CACHE) ? EMAIL_REPLIES_CACHE : []);
+                    if (componentKey && componentKey === currentRepliesScopeComponent()) {
+                        EMAIL_REPLIES_SIDEBAR_CACHE = [optimisticRow].concat(Array.isArray(EMAIL_REPLIES_SIDEBAR_CACHE) ? EMAIL_REPLIES_SIDEBAR_CACHE : []);
+                    }
+                    var hostModal = document.getElementById('cvEmailReplies');
+                    var hostSidebar = document.getElementById('emailReplies');
+                    var countEl = document.getElementById('cvEmailRepliesCount');
+                    if (hostModal) hostModal.innerHTML = emailRepliesHtml(EMAIL_REPLIES_CACHE);
+                    if (hostSidebar) hostSidebar.innerHTML = emailRepliesHtml(EMAIL_REPLIES_SIDEBAR_CACHE.slice(0, 8));
+                    if (countEl) countEl.textContent = String(EMAIL_REPLIES_SIDEBAR_CACHE.length);
                 }
-                setBoxMessage('cvMailMessage', 'Sent successfully.', 'success');
+                setBoxMessage('cvMailMessage', mode === 'draft' ? 'Draft saved.' : 'Sent successfully.', 'success');
+                lastHistory = await loadHistory();
+                renderHistory(lastHistory);
+                loadEmailReplies(ctx.application_id || '', { componentKey: componentKey, sync: false }).catch(function () {});
+                loadTimeline(ctx.application_id || '', { sync: false }).catch(function () {});
             } catch (e) {
-                setBoxMessage('cvMailMessage', (e && e.message) ? e.message : 'Send failed', 'danger');
+                setBoxMessage('cvMailMessage', (e && e.message) ? e.message : 'Communication failed', 'danger');
             } finally {
                 sendBtn.disabled = false;
                 sendBtn.textContent = sendBtn.dataset.originalText || 'Send';
             }
         }
 
-        async function printLetter() {
-            var tplId = parseInt(tplSel.value || '0', 10) || 0;
-            if (!tplId) {
-                alert('Please select template from Mail modal first.');
-                return;
-            }
-            var ctx = getContext();
-
-            var res = await fetch(base + '/api/shared/mail_template_render.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'same-origin',
-                body: JSON.stringify({ template_id: tplId, application_id: ctx.application_id, case_id: ctx.case_id, role: ctx.role, group: ctx.group })
-            });
-            var data = await res.json().catch(function () { return null; });
-            if (!res.ok || !data || data.status !== 1 || !data.data) {
-                alert((data && data.message) ? data.message : 'Failed to render letter');
-                return;
-            }
-
-            var w = window.open('', '_blank');
-            if (!w) return;
-            var title = data.data.template_name || 'Letter';
-            w.document.open();
-            w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + escHtml(title) + '</title>' +
-                '<style>body{font-family:Arial, sans-serif; padding:18px;} @media print{body{padding:0;}}</style>' +
-                '</head><body>' + (data.data.html || '') + '</body></html>');
-            w.document.close();
-            try { w.focus(); } catch (e) {}
-            setTimeout(function () { try { w.print(); } catch (e) {} }, 300);
-        }
-
         if (!openBtn.dataset.bound) {
             openBtn.dataset.bound = '1';
             openBtn.addEventListener('click', async function () {
                 try {
-                    if (!templates.length) {
-                        var list = await loadTemplates('email');
-                        setTplOptions(list);
+                    if (typeof window.__CR_OPEN_UNIFIED_COMM === 'function') {
+                        window.__CR_OPEN_UNIFIED_COMM({
+                            mode: 'workflow',
+                            action: 'insufficient_documents',
+                            component: activeComponentSectionKey() || CURRENT_SECTION_KEY || 'basic',
+                            notes: '',
+                            requiresMutation: false
+                        });
+                        return;
                     }
-
+                    var prefill = (window.__CR_COMM_PREFILL && typeof window.__CR_COMM_PREFILL === 'object') ? window.__CR_COMM_PREFILL : null;
                     var payload = getPayload ? getPayload() : null;
                     var basic = payload && payload.basic ? payload.basic : null;
-                    if (toEl && basic && (basic.email || basic.candidate_email)) {
-                        toEl.value = String(basic.email || basic.candidate_email || '');
-                    }
-
-                    previewEl.innerHTML = '<div style="color:#6b7280; font-size:13px;">Select a template to preview.</div>';
-                    if (subjEl) subjEl.value = '';
+                    if (toEl && basic && (basic.email || basic.candidate_email)) toEl.value = String(basic.email || basic.candidate_email || '');
+                    if (notesEl) notesEl.value = '';
                     setBoxMessage('cvMailMessage', '', '');
+                    previewEl.innerHTML = '<div style="color:#6b7280; font-size:13px;">Loading template...</div>';
+                    actionsEl.innerHTML = '<div style="font-size:12px; color:#64748b;">Loading actions...</div>';
+                    checklistEl.innerHTML = '<div style="font-size:12px; color:#64748b;">Loading checklist...</div>';
+                    historyEl.innerHTML = '<div style="font-size:12px; color:#64748b;">Loading communications...</div>';
                     openBsModal('cvMailModal');
+                    // Parallel load for fast modal readiness.
+                    var p1 = loadActionCards();
+                    var p2 = loadHistory().then(function (rows) {
+                        lastHistory = rows;
+                        renderHistory(lastHistory);
+                    });
+                    OPEN_PREFETCH = Promise.allSettled([p1, p2]);
+                    await OPEN_PREFETCH;
+                    if (prefill) {
+                        try {
+                            if (prefill.action) {
+                                await resolveAction(String(prefill.action || '').toLowerCase().trim());
+                            }
+                            if (notesEl && prefill.notes) {
+                                notesEl.value = String(prefill.notes || '');
+                                schedulePreview();
+                            }
+                        } catch (_prefErr) {}
+                        window.__CR_COMM_PREFILL = null;
+                    }
                 } catch (e) {
-                    setBoxMessage('cvTopMessage', (e && e.message) ? e.message : 'Failed to open mail', 'danger');
+                    setBoxMessage('cvTopMessage', (e && e.message) ? e.message : 'Failed to open communication center', 'danger');
                 }
             });
         }
 
-        if (!tplSel.dataset.bound) {
-            tplSel.dataset.bound = '1';
-            tplSel.addEventListener('change', function () {
-                renderSelected().catch(function (e) {
-                    setBoxMessage('cvMailMessage', (e && e.message) ? e.message : 'Failed to render', 'danger');
+        if (!actionsEl.dataset.bound) {
+            actionsEl.dataset.bound = '1';
+            actionsEl.addEventListener('click', function (e) {
+                var btn = e.target && e.target.closest ? e.target.closest('[data-comm-action]') : null;
+                if (!btn) return;
+                var action = String(btn.getAttribute('data-comm-action') || '').trim();
+                if (!action) return;
+                resolveAction(action).catch(function (err) {
+                    setBoxMessage('cvMailMessage', (err && err.message) ? err.message : 'Failed to resolve action', 'danger');
                 });
             });
         }
 
+        if (notesEl && !notesEl.dataset.bound) {
+            notesEl.dataset.bound = '1';
+            notesEl.addEventListener('input', schedulePreview);
+        }
+        if (deadlineEl && !deadlineEl.dataset.bound) {
+            deadlineEl.dataset.bound = '1';
+            deadlineEl.addEventListener('change', function () {
+                if (activeAction) resolveAction(activeAction).catch(function () { schedulePreview(); });
+            });
+        }
+        if (checklistEl && !checklistEl.dataset.bound) {
+            checklistEl.dataset.bound = '1';
+            checklistEl.addEventListener('change', schedulePreview);
+        }
         if (!sendBtn.dataset.bound) {
             sendBtn.dataset.bound = '1';
-            sendBtn.addEventListener('click', sendMail);
+            sendBtn.addEventListener('click', function () { sendComm('send'); });
+        }
+        if (draftBtn && !draftBtn.dataset.bound) {
+            draftBtn.dataset.bound = '1';
+            draftBtn.addEventListener('click', function () { sendComm('draft'); });
+        }
+        if (reuseBtn && !reuseBtn.dataset.bound) {
+            reuseBtn.dataset.bound = '1';
+            reuseBtn.addEventListener('click', function () {
+                if (!lastHistory.length) return;
+                var h = lastHistory[0];
+                if (subjEl) subjEl.value = String(h.subject || '');
+                if (notesEl) notesEl.value = String(h.notes || '');
+                activeAction = String(h.action_key || activeAction || '');
+                schedulePreview();
+            });
+        }
+        if (resendBtn && !resendBtn.dataset.bound) {
+            resendBtn.dataset.bound = '1';
+            resendBtn.addEventListener('click', function () {
+                if (!lastHistory.length) return;
+                sendComm('send');
+            });
+        }
+
+        if (historyEl && !historyEl.dataset.bound) {
+            historyEl.dataset.bound = '1';
+            historyEl.addEventListener('click', function (e) {
+                var row = e.target && e.target.closest ? e.target.closest('[data-history-idx]') : null;
+                if (!row) return;
+                var idx = parseInt(String(row.getAttribute('data-history-idx') || '-1'), 10);
+                if (!isFinite(idx) || idx < 0 || idx >= lastHistory.length) return;
+                var h = lastHistory[idx];
+                if (subjEl) subjEl.value = String(h.subject || '');
+                if (notesEl) notesEl.value = String(h.notes || '');
+                activeAction = String(h.action_key || activeAction || '');
+                schedulePreview();
+            });
         }
 
         if (printBtn && !printBtn.dataset.bound) {
             printBtn.dataset.bound = '1';
             printBtn.addEventListener('click', function () {
-                if (!tplSel.value) {
-                    openBtn.click();
-                    return;
-                }
-                printLetter();
+                openBtn.click();
             });
         }
+    }
+
+    async function initSectionVerificationMail(getPayload) {
+        var role = getRole();
+        if (!(role === 'validator' || role === 'verifier' || role === 'qa')) return;
+        var allowedMailComponents = { education: true, employment: true };
+        var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
+        var modalId = 'cvVerificationMailModal';
+        var modalEl = document.getElementById(modalId);
+        var titleEl = document.getElementById('cvVerificationMailTitle');
+        var toEl = document.getElementById('cvVerificationMailTo');
+        var subjectEl = document.getElementById('cvVerificationMailSubject');
+        var bodyEl = document.getElementById('cvVerificationMailBody');
+        var remarksEl = document.getElementById('cvVerificationMailRemarks');
+        var sendBtn = document.getElementById('cvVerificationMailSendBtn');
+        if (!toEl || !subjectEl || !bodyEl || !sendBtn) return;
+
+        var state = { component: '', resend: false, mode: 'verification', workflowAction: '', requiresMutation: false };
+
+        // Keep modal at top-level to avoid nested stacking contexts under report wrappers.
+        try {
+            if (modalEl && modalEl.parentElement && modalEl.parentElement !== document.body) {
+                document.body.appendChild(modalEl);
+            }
+        } catch (_eMove) {
+        }
+
+        function isValidEmail(v) {
+            var s = String(v || '').trim();
+            if (!s) return false;
+            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+        }
+
+        function refreshSendBtnState() {
+            if (!sendBtn || !toEl) return;
+            var valid = isValidEmail(toEl.value);
+            sendBtn.disabled = false;
+            if (!valid) {
+                setBoxMessage('cvVerificationMailMessage', 'Enter a valid recipient email to send verification mail.', 'warning');
+            } else {
+                setBoxMessage('cvVerificationMailMessage', '', '');
+            }
+        }
+
+        function pickFirstEmail(rows, keys) {
+            var list = Array.isArray(rows) ? rows : [];
+            for (var i = 0; i < list.length; i++) {
+                var row = list[i] || {};
+                for (var j = 0; j < keys.length; j++) {
+                    var v = String(row[keys[j]] || '').trim();
+                    if (v && v.indexOf('@') > 0) return v;
+                }
+            }
+            return '';
+        }
+
+        function prefillRecipientAndMessage(componentKey) {
+            var payload = getPayload ? getPayload() : null;
+            var app = payload && payload.application ? payload.application : {};
+            var basic = payload && payload.basic ? payload.basic : {};
+            var candidateName = String((app && app.candidate_name) || (basic && basic.name) || '').trim();
+            var appId = String((payload && payload.case && payload.case.application_id) || '').trim();
+            var companyName = String((app && (app.company_name || app.client_name)) || '').trim();
+            var actorName = String(window.CV_CURRENT_USER_NAME || role || '').trim();
+            if (state.mode === 'workflow') {
+                var wfRecipient = String((basic && (basic.email || basic.candidate_email)) || '').trim();
+                if (toEl) toEl.value = wfRecipient;
+                var wfSection = sectionLabel(componentKey) || 'Component';
+                var wfActionLabel = String((state.workflowAction || 'insufficient_documents')).replace(/_/g, ' ');
+                subjectEl.value = 'Workflow Communication - ' + wfSection + ' - ' + wfActionLabel;
+                bodyEl.value =
+                    'Hello ' + (candidateName || 'Candidate') + ',\n\n'
+                    + 'Please review the latest workflow update for ' + wfSection + '.\n'
+                    + (appId ? ('Application ID: ' + appId + '\n') : '')
+                    + '\nRegards,\n' + (actorName || 'Verification Team');
+                refreshSendBtnState();
+                return;
+            }
+            var rows = componentKey === 'education'
+                ? (Array.isArray(payload && payload.education) ? payload.education : [])
+                : (Array.isArray(payload && payload.employment) ? payload.employment : []);
+            var recipient = '';
+            var recipientName = '';
+            var institutionOrEmployer = '';
+            if (componentKey === 'education') {
+                recipient = pickFirstEmail(rows, ['institution_email', 'college_email', 'university_email', 'email', 'contact_email']);
+                recipientName = String((rows[0] && (rows[0].college_name || rows[0].university_board)) || '').trim();
+                institutionOrEmployer = recipientName || 'Institution';
+            } else {
+                recipient = pickFirstEmail(rows, ['hr_email', 'employer_email', 'official_email', 'email', 'contact_employer']);
+                recipientName = String((rows[0] && rows[0].employer_name) || '').trim();
+                institutionOrEmployer = recipientName || 'Employer';
+            }
+            if (toEl) toEl.value = recipient;
+            var defaultSubject = componentKey === 'education'
+                ? ('Education Verification Request - ' + (candidateName || appId || 'Candidate'))
+                : ('Employment Verification Request - ' + (candidateName || appId || 'Candidate'));
+            subjectEl.value = defaultSubject;
+            bodyEl.value =
+                'Hello ' + (recipientName || 'Team') + ',\n\n'
+                + 'Please assist with ' + (componentKey === 'education' ? 'education' : 'employment') + ' verification for '
+                + (candidateName || 'the candidate') + (appId ? (' (Application ID: ' + appId + ')') : '') + '.\n'
+                + (institutionOrEmployer ? ('Organization: ' + institutionOrEmployer + '\n') : '')
+                + (companyName ? ('Client: ' + companyName + '\n') : '')
+                + '\nRegards,\n' + (actorName || 'Verification Team');
+            if (!recipient) {
+                setBoxMessage('cvVerificationMailMessage', 'Recipient email is missing for this section. Update section data before sending.', 'warning');
+            }
+            refreshSendBtnState();
+        }
+
+        async function refreshButtonStates() {
+            var payload = getPayload ? getPayload() : null;
+            var caseId = payload && payload.case && payload.case.case_id ? parseInt(payload.case.case_id, 10) : 0;
+            var appId = payload && payload.case && payload.case.application_id ? String(payload.case.application_id) : '';
+            var buttons = document.querySelectorAll('[data-mail-component]');
+            for (var i = 0; i < buttons.length; i++) {
+                var btn = buttons[i];
+                var rawComponentKey = String(btn.getAttribute('data-mail-component') || '');
+                var component = normSection(rawComponentKey);
+                var shouldRenderSendMail = !!allowedMailComponents[component];
+                try {
+                    console.debug('[CR verification-mail render]', {
+                        rawComponentKey: rawComponentKey,
+                        normalizedComponentKey: component,
+                        shouldRenderSendMail: shouldRenderSendMail
+                    });
+                } catch (_dbgErr) {
+                }
+                if (!shouldRenderSendMail) {
+                    btn.style.display = 'none';
+                    continue;
+                }
+                if (!hasSnapshotComponent(payload, component)) {
+                    btn.style.display = 'none';
+                    continue;
+                }
+                btn.style.display = '';
+                if (!component || !appId) continue;
+                try {
+                    var res = await fetch(base + '/api/shared/send_verification_mail.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'same-origin',
+                        body: JSON.stringify({ mode: 'status', application_id: appId, case_id: caseId || null, component_key: component })
+                    });
+                    var data = await res.json().catch(function () { return null; });
+                    var hasPrev = !!(data && data.status === 1 && data.data && data.data.has_previous === true);
+                    btn.textContent = hasPrev ? (btn.getAttribute('data-mail-label-resend') || 'Resend Mail') : (btn.getAttribute('data-mail-label-send') || 'Send Mail');
+                } catch (_e) {
+                }
+            }
+        }
+
+        async function sendVerificationMail() {
+            var payload = getPayload ? getPayload() : null;
+            var caseId = payload && payload.case && payload.case.case_id ? parseInt(payload.case.case_id, 10) : 0;
+            var appId = payload && payload.case && payload.case.application_id ? String(payload.case.application_id) : '';
+            var lockedComponent = normSection((modalEl && modalEl.dataset && modalEl.dataset.mailComponent) ? modalEl.dataset.mailComponent : state.component);
+            var recipient = String(toEl.value || '').trim();
+            sendBtn.disabled = true;
+            var original = sendBtn.textContent;
+            sendBtn.textContent = state.mode === 'workflow' ? 'Sending...' : (state.resend ? 'Resending...' : 'Sending...');
+            try {
+                if (state.mode === 'workflow') {
+                    if (!state.workflowAction || ['approve', 'reject', 'hold', 'insufficient_documents', 'clarification_required'].indexOf(String(state.workflowAction).toLowerCase()) === -1) {
+                        throw new Error('Invalid workflow communication action.');
+                    }
+                    var notes = remarksEl ? String(remarksEl.value || '').trim() : '';
+                    if (!notes) {
+                        throw new Error('Notes are required.');
+                    }
+                    if (!recipient) {
+                        throw new Error('Recipient email is required.');
+                    }
+                    if (state.requiresMutation && typeof window.__CR_RUN_ACTION === 'function') {
+                        var actionLabelMap = {
+                            insufficient_documents: 'Insufficient Documents',
+                            hold: 'Hold',
+                            reject: 'Reject'
+                        };
+                        var ok = await window.__CR_RUN_ACTION(
+                            state.workflowAction || 'insufficient_documents',
+                            actionLabelMap[state.workflowAction || 'insufficient_documents'] || String(state.workflowAction || 'insufficient_documents'),
+                            { fromUnifiedModal: true, skipUnifiedModalAuto: true, reason: notes }
+                        );
+                        if (!ok) {
+                            throw new Error('Workflow update failed.');
+                        }
+                    }
+                    var wfRes = await fetch(base + '/api/shared/workflow_communications_send.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'same-origin',
+                        body: JSON.stringify({
+                            mode: 'send',
+                            role: role,
+                            component: lockedComponent,
+                            action: state.workflowAction || 'insufficient_documents',
+                            to_email: recipient,
+                            subject: String(subjectEl.value || '').trim(),
+                            body: String(bodyEl.value || ''),
+                            notes: notes,
+                            application_id: appId,
+                            case_id: caseId || null
+                        })
+                    });
+                    var wfData = await wfRes.json().catch(function () { return null; });
+                    if (!wfRes.ok || !wfData || wfData.status !== 1) throw new Error((wfData && wfData.message) ? wfData.message : 'Communication send failed');
+                    setBoxMessage('cvVerificationMailMessage', 'Workflow communication sent successfully.', 'success');
+                    setTimeout(function () { closeBsModal(modalId); }, 150);
+                } else {
+                    if (!recipient) {
+                        throw new Error('Recipient email is required.');
+                    }
+                    var res = await fetch(base + '/api/shared/send_verification_mail.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'same-origin',
+                        body: JSON.stringify({
+                            mode: 'send',
+                            application_id: appId,
+                            case_id: caseId || null,
+                            component_key: lockedComponent,
+                            recipient_email: recipient,
+                            subject: String(subjectEl.value || '').trim(),
+                            message_body: String(bodyEl.value || ''),
+                            remarks: remarksEl ? String(remarksEl.value || '').trim() : '',
+                            sender_role: role
+                        })
+                    });
+                    var rawText = await res.text();
+                    var data = null;
+                    try { data = JSON.parse(rawText); } catch (_e) { data = null; }
+                    if (!res.ok || !data || data.status !== 1) {
+                        var msg = (data && data.message) ? data.message : ('Send failed (HTTP ' + res.status + ')');
+                        if (data && data.debug) {
+                            msg += ' | debug: ' + JSON.stringify(data.debug);
+                        } else if (!data && rawText) {
+                            msg += ' | raw: ' + rawText.slice(0, 300);
+                        }
+                        throw new Error(msg);
+                    }
+                    setBoxMessage('cvVerificationMailMessage', 'Verification mail sent successfully.', 'success');
+                    state.resend = true;
+                    var b = document.querySelector('[data-mail-component="' + lockedComponent + '"]');
+                    if (b) b.textContent = b.getAttribute('data-mail-label-resend') || 'Resend Mail';
+                    setTimeout(function () { closeBsModal(modalId); }, 150);
+                }
+                loadTimeline(appId || '', { sync: false }).catch(function () {});
+            } catch (e) {
+                setBoxMessage('cvVerificationMailMessage', (e && e.message) ? e.message : 'Failed to send verification mail.', 'danger');
+            } finally {
+                sendBtn.disabled = false;
+                sendBtn.textContent = original || 'Send';
+            }
+        }
+
+        function openUnifiedCommunicationModal(config) {
+            var cfg = config && typeof config === 'object' ? config : {};
+            var mode = String(cfg.mode || 'verification').toLowerCase().trim();
+            var component = normSection(cfg.component || activeComponentSectionKey() || 'basic');
+            var actionDefault = (mode === 'workflow') ? 'insufficient_documents' : '';
+            var action = String((typeof cfg.action === 'string' ? cfg.action : actionDefault) || '').toLowerCase().trim();
+            if (mode === 'workflow' && ['approve', 'reject', 'hold', 'insufficient_documents', 'clarification_required'].indexOf(action) === -1) {
+                setBoxMessage('cvTopMessage', 'Invalid workflow communication action.', 'danger');
+                return;
+            }
+            if (mode !== 'workflow' && mode !== 'verification') {
+                setBoxMessage('cvTopMessage', 'Invalid communication mode.', 'danger');
+                return;
+            }
+            state.mode = (mode === 'workflow') ? 'workflow' : 'verification';
+            state.component = component;
+            if (modalEl && modalEl.dataset) modalEl.dataset.mailComponent = component;
+            state.workflowAction = (state.mode === 'workflow') ? action : '';
+            state.requiresMutation = !!cfg.requiresMutation;
+            state.resend = false;
+            if (titleEl) {
+                if (state.mode === 'workflow') {
+                    titleEl.textContent = 'Workflow Communication - ' + sectionLabel(component);
+                } else {
+                    titleEl.textContent = 'Send Verification Mail - ' + (component === 'education' ? 'Education' : 'Employment');
+                }
+            }
+            if (remarksEl) remarksEl.value = String(cfg.notes || '');
+            prefillRecipientAndMessage(component);
+            openBsModal(modalId);
+        }
+
+        window.__CR_OPEN_UNIFIED_COMM = openUnifiedCommunicationModal;
+
+        if (!sendBtn.dataset.boundVerificationMail) {
+            sendBtn.dataset.boundVerificationMail = '1';
+            sendBtn.addEventListener('click', sendVerificationMail);
+        }
+        if (toEl && !toEl.dataset.boundVerificationMail) {
+            toEl.dataset.boundVerificationMail = '1';
+            toEl.addEventListener('input', refreshSendBtnState);
+            toEl.addEventListener('change', refreshSendBtnState);
+        }
+
+        document.querySelectorAll('[data-mail-component]').forEach(function (btn) {
+            if (btn.dataset.boundVerificationMail) return;
+            btn.dataset.boundVerificationMail = '1';
+            btn.addEventListener('click', async function () {
+                var component = normSection(btn.getAttribute('data-mail-component') || '');
+                if (!allowedMailComponents[component]) return;
+                var payload = getPayload ? getPayload() : null;
+                if (!hasSnapshotComponent(payload, component)) {
+                    setBoxMessage('cvTopMessage', 'Verification mail is available only for snapshot-backed sections in this case.', 'info');
+                    return;
+                }
+                if (!canValidatorActOnComponent(component, 'send_mail', 'top')) return;
+                state.resend = (String(btn.textContent || '').toLowerCase().indexOf('resend') !== -1);
+                openUnifiedCommunicationModal({ mode: 'verification', component: component, notes: '' });
+                if (titleEl && state.resend) {
+                    titleEl.textContent = 'Resend Verification Mail - ' + (component === 'education' ? 'Education' : 'Employment');
+                }
+            });
+        });
+
+        refreshButtonStates().catch(function () {});
     }
 
     function getVerifierGroup() {
@@ -1473,6 +2420,7 @@ if (uploadInput) {
 
             var upBtn = t.closest ? t.closest('[data-comp-upload]') : null;
             if (upBtn) {
+                if (!canValidatorActOnComponent(section, 'upload_evidence', 'upload')) return;
                 var fileEl = panel.querySelector('[data-comp-file]');
                 var files = fileEl && fileEl.files ? fileEl.files : null;
                 if (!files || files.length === 0) {
@@ -1578,13 +2526,28 @@ if (uploadInput) {
         return Object.keys(out);
     }
 
+    function hasSnapshotComponent(payload, section) {
+        var k = normSection(section);
+        if (!k) return false;
+        var keys = getAssignedComponentKeys(payload || {});
+        for (var i = 0; i < keys.length; i++) {
+            if (normSection(keys[i]) === k) return true;
+        }
+        return false;
+    }
+
     function normSection(s) {
         s = String(s || '').toLowerCase().trim();
         if (!s) return '';
+        s = s.replace(/[\s\-]+/g, '_');
         if (s === 'identification') return 'id';
         if (s === 'address') return 'contact';
+        if (s === 'employment_details' || s === 'employement' || s === 'employement_details') return 'employment';
+        if (s === 'education_details') return 'education';
         if (s === 'references') return 'reference';
-        if (s === 'social_media' || s === 'social-media') return 'socialmedia';
+        if (s === 'social_media') return 'socialmedia';
+        if (s === 'e_court') return 'ecourt';
+        if (s === 'report') return 'reports';
         if (s === 'general') return '';
         return s;
     }
@@ -1663,6 +2626,20 @@ if (uploadInput) {
             return '<div style="color:#6b7280; font-size:13px;">No timeline yet.</div>';
         }
 
+        function toneBadgeClass(tone) {
+            var t = String(tone || '').toLowerCase();
+            if (t === 'red') return 'bg-danger';
+            if (t === 'green') return 'bg-success';
+            if (t === 'amber') return 'bg-warning text-dark';
+            return 'bg-primary';
+        }
+
+        function prettyEventType(type) {
+            var t = String(type || '').trim();
+            if (!t) return 'Timeline Event';
+            return t.replace(/[._]+/g, ' ').replace(/\b\w/g, function (m) { return m.toUpperCase(); });
+        }
+
         var groups = {};
         items.forEach(function (it) {
             var dt = null;
@@ -1691,6 +2668,11 @@ if (uploadInput) {
                 var type = it.event_type || '';
                 var section = it.section_key || it.section || '';
                 var msg = it.message || '';
+                var governance = (it && typeof it.governance === 'object' && it.governance) ? it.governance : null;
+                var displayTitle = governance && governance.title ? String(governance.title) : prettyEventType(type);
+                var displaySummary = governance && governance.summary ? String(governance.summary) : String(msg || '');
+                var displayReason = governance && governance.reason ? String(governance.reason) : '';
+                var displayLineage = governance && governance.lineage ? String(governance.lineage) : '';
                 var ts = '';
                 try {
                     ts = it.created_at ? window.GSS_DATE.formatDbDateTime(it.created_at) : '';
@@ -1699,17 +2681,26 @@ if (uploadInput) {
                 }
 
                 var dotTone = 'blue';
+                if (governance && governance.tone) {
+                    dotTone = String(governance.tone).toLowerCase();
+                }
                 var tLower = String(type || '').toLowerCase();
                 var mLower = String(msg || '').toLowerCase();
-                if (tLower.indexOf('hold') !== -1) dotTone = 'amber';
-                if (tLower.indexOf('reject') !== -1) dotTone = 'red';
-                if (tLower.indexOf('approve') !== -1 || tLower.indexOf('complete') !== -1) dotTone = 'green';
-                if (mLower.indexOf('hold') !== -1) dotTone = 'amber';
-                if (mLower.indexOf('reject') !== -1) dotTone = 'red';
-                if (mLower.indexOf('approve') !== -1 || mLower.indexOf('status: approved') !== -1) dotTone = 'green';
+                if (!governance) {
+                    if (tLower.indexOf('hold') !== -1) dotTone = 'amber';
+                    if (tLower.indexOf('reject') !== -1) dotTone = 'red';
+                    if (tLower.indexOf('approve') !== -1 || tLower.indexOf('complete') !== -1) dotTone = 'green';
+                    if (mLower.indexOf('hold') !== -1) dotTone = 'amber';
+                    if (mLower.indexOf('reject') !== -1) dotTone = 'red';
+                    if (mLower.indexOf('approve') !== -1 || mLower.indexOf('status: approved') !== -1) dotTone = 'green';
+                }
 
                 var badges = [];
-                if (type) badges.push('<span class="badge bg-secondary" style="margin-right:6px;">' + esc(type) + '</span>');
+                if (governance && governance.kind) {
+                    badges.push('<span class="badge ' + toneBadgeClass(governance.tone) + '" style="margin-right:6px;">' + esc(String(governance.kind).toUpperCase()) + '</span>');
+                } else if (type) {
+                    badges.push('<span class="badge bg-secondary" style="margin-right:6px;">' + esc(type) + '</span>');
+                }
                 if (section) badges.push('<span class="badge bg-light text-dark" style="margin-right:6px; border:1px solid rgba(148,163,184,0.35);">' + esc(section) + '</span>');
                 if (role) badges.push('<span class="badge bg-light text-dark" style="border:1px solid rgba(148,163,184,0.35);">' + esc(role) + '</span>');
 
@@ -1721,8 +2712,12 @@ if (uploadInput) {
                                 '<div class="cr-flow-actor">' + esc(actor) + '</div>' +
                                 '<div class="cr-flow-time">' + esc(ts) + '</div>' +
                             '</div>' +
+                            '<div class="cr-flow-actor" style="font-size:13px; font-weight:800; margin-bottom:4px;">' + esc(displayTitle) + '</div>' +
                             (badges.length ? ('<div class="cr-flow-badges">' + badges.join('') + '</div>') : '') +
-                            (msg ? ('<div class="cr-flow-msg">' + esc(msg) + '</div>') : '') +
+                            (displaySummary ? ('<div class="cr-flow-msg">' + esc(displaySummary) + '</div>') : '') +
+                            (displayReason ? ('<div class="cr-flow-msg" style="color:#92400e;"><strong>Reason:</strong> ' + esc(displayReason) + '</div>') : '') +
+                            (displayLineage ? ('<div class="cr-flow-msg" style="color:#64748b;">' + esc(displayLineage) + '</div>') : '') +
+                            (!governance && msg && displaySummary !== msg ? ('<div class="cr-flow-msg">' + esc(msg) + '</div>') : '') +
                         '</div>' +
                     '</div>'
                 );
@@ -1743,6 +2738,49 @@ if (uploadInput) {
     function emailRepliesHtml(items) {
         if (!Array.isArray(items) || items.length === 0) {
             return '<div style="color:#6b7280; font-size:13px;">No email replies yet.</div>';
+        }
+
+        function communicationBadge(item) {
+            var subject = String(item && item.subject ? item.subject : '').toLowerCase();
+            var type = String(item && item.communication_type ? item.communication_type : '').toLowerCase();
+            var direction = String(item && item.direction ? item.direction : '').toLowerCase();
+            var componentKey = String(item && item.component_key ? item.component_key : '').toLowerCase();
+
+            function badge(label, fg, bg, border) {
+                return '<span style="font-size:10px; color:' + fg + '; background:' + bg + '; border:1px solid ' + border + '; border-radius:999px; padding:1px 6px; font-weight:700;">' + esc(label) + '</span>';
+            }
+
+            var isNeedDocs = subject.indexOf('insufficient documents') !== -1
+                || subject.indexOf('need docs') !== -1
+                || type === 'insufficient_documents';
+            if (isNeedDocs) {
+                return direction === 'incoming'
+                    ? badge('Need Docs Reply', '#9a3412', '#fff7ed', '#fdba74')
+                    : badge('Need Docs', '#9a3412', '#fff7ed', '#fdba74');
+            }
+
+            var isVerificationMail = subject.indexOf('verification request') !== -1
+                || type === 'verification_request';
+            if (isVerificationMail) {
+                var label = 'Verification Mail';
+                if (componentKey === 'education') label = 'Education Mail';
+                if (componentKey === 'employment') label = 'Employment Mail';
+                if (direction === 'incoming') label = label.replace('Mail', 'Reply');
+                return badge(label, '#1d4ed8', '#eff6ff', '#93c5fd');
+            }
+
+            var isCorrection = subject.indexOf('candidate correction') !== -1
+                || type === 'correction_request';
+            if (isCorrection) {
+                return direction === 'incoming'
+                    ? badge('Correction Reply', '#7c3aed', '#f5f3ff', '#c4b5fd')
+                    : badge('Correction Mail', '#7c3aed', '#f5f3ff', '#c4b5fd');
+            }
+
+            if (direction === 'incoming') {
+                return badge('Reply', '#065f46', '#ecfdf3', '#a7f3d0');
+            }
+            return badge('Mail', '#334155', '#f8fafc', '#cbd5e1');
         }
 
         function isReplyNoiseLine(line) {
@@ -1815,77 +2853,196 @@ if (uploadInput) {
             var sender = it && it.sender ? String(it.sender) : 'Unknown';
             var msg = smartReplyText(it && it.message ? String(it.message) : '');
             var when = it && it.created_at ? String(it.created_at) : '';
+            var direction = String(it && it.direction ? it.direction : '').toLowerCase();
+            var actorRole = String(it && it.actor_role ? it.actor_role : '');
             var ts = '';
             try {
                 ts = when ? window.GSS_DATE.formatDbDateTime(when) : '';
             } catch (_e) {
                 ts = when;
             }
+            var badge = direction === 'incoming'
+                ? '<span style="font-size:10px; color:#065f46; background:#ecfdf3; border:1px solid #a7f3d0; border-radius:999px; padding:1px 6px;">Incoming</span>'
+                : '<span style="font-size:10px; color:#1e3a8a; background:#eff6ff; border:1px solid #bfdbfe; border-radius:999px; padding:1px 6px;">Outgoing</span>';
+            var commBadge = communicationBadge(it);
 
             var safeMsg = esc(msg).replace(/\n/g, '<br>');
 
             return ''
                 + '<div style="border:1px solid rgba(148,163,184,0.3); border-radius:10px; padding:10px; background:#fff;">'
                 + '<div style="display:flex; justify-content:space-between; gap:8px; margin-bottom:6px;">'
-                + '<b style="font-size:12px; color:#0f172a;">' + esc(sender) + '</b>'
+                + '<b style="font-size:12px; color:#0f172a;">' + esc(sender) + (actorRole ? ' (' + esc(actorRole) + ')' : '') + '</b>'
                 + '<span style="font-size:11px; color:#64748b;">' + esc(ts) + '</span>'
                 + '</div>'
+                + '<div style="margin-bottom:6px; display:flex; gap:6px; flex-wrap:wrap;">' + badge + commBadge + '</div>'
                 + '<div style="font-size:12px; color:#0f172a; line-height:1.5; white-space:normal;">' + safeMsg + '</div>'
                 + '</div>';
         }).join('');
     }
 
-    async function loadEmailReplies(applicationId) {
+    function emailRepliesRequestKey(applicationId, componentKey, shouldSync) {
+        return [
+            String(applicationId || '').trim(),
+            String(componentKey || '').trim(),
+            shouldSync ? 'sync' : 'nosync'
+        ].join('|');
+    }
+
+    function setRepliesSyncButtonState(isBusy) {
+        var btn = document.getElementById('cvRepliesSyncBtn');
+        if (!btn) return;
+        btn.disabled = !!isBusy;
+        btn.style.opacity = isBusy ? '0.65' : '1';
+        btn.style.cursor = isBusy ? 'wait' : 'pointer';
+        btn.innerHTML = isBusy
+            ? '<span aria-hidden="true" style="font-size:15px; line-height:1; display:inline-block; animation:cvRepliesSpin 0.9s linear infinite;">↻</span>'
+            : '<span aria-hidden="true" style="font-size:16px; line-height:1; font-weight:700;">↻</span>';
+        if (!document.getElementById('cvRepliesSpinStyle')) {
+            var style = document.createElement('style');
+            style.id = 'cvRepliesSpinStyle';
+            style.textContent = '@keyframes cvRepliesSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}';
+            document.head.appendChild(style);
+        }
+    }
+
+    function bindRepliesSyncButton() {
+        var btn = document.getElementById('cvRepliesSyncBtn');
+        if (!btn || btn.dataset.bound === '1') return;
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', function () {
+            if (!CURRENT_APP_ID) return;
+            setRepliesSyncButtonState(true);
+            loadEmailReplies(CURRENT_APP_ID, {
+                componentKey: currentRepliesScopeComponent(),
+                sync: true
+            }).catch(function () {
+            }).finally(function () {
+                setRepliesSyncButtonState(false);
+            });
+        });
+    }
+
+    async function loadEmailReplies(applicationId, opts) {
+        opts = opts || {};
         var hostModal = document.getElementById('cvEmailReplies');
         var hostSidebar = document.getElementById('emailReplies');
         var countEl = document.getElementById('cvEmailRepliesCount');
         if (!hostModal && !hostSidebar) return;
+        var componentKey = normSection(opts.componentKey || currentRepliesScopeComponent() || '');
+        var roleNow = String(getRole() || '').toLowerCase().trim();
+        var shouldSync = !!opts.sync;
+        if (!shouldSync && applicationId) {
+            var canAutoSync = (roleNow === 'validator' || roleNow === 'verifier' || roleNow === 'qa' || roleNow === 'team_lead')
+                && EMAIL_REPLIES_LAST_SYNC_APP_ID !== String(applicationId)
+                && EMAIL_REPLIES_LAST_SYNC_AT <= 0;
+            if (canAutoSync) {
+                shouldSync = true;
+            }
+        }
+        var requestKey = emailRepliesRequestKey(applicationId, componentKey, shouldSync);
 
         function renderTarget(el, html) {
             if (el) el.innerHTML = html;
         }
 
+        function parseRows(data) {
+            if (Array.isArray(data)) return data;
+            if (data && data.status === 1 && Array.isArray(data.data)) return data.data;
+            return null;
+        }
+
         if (!applicationId) {
             EMAIL_REPLIES_CACHE = [];
+            EMAIL_REPLIES_SIDEBAR_CACHE = [];
+            EMAIL_REPLIES_LAST_SYNC_AT = 0;
+            EMAIL_REPLIES_LAST_SYNC_APP_ID = '';
             renderTarget(hostModal, '<div style="color:#6b7280; font-size:13px;">application_id not found.</div>');
             renderTarget(hostSidebar, '<div style="color:#6b7280; font-size:13px;">application_id not found.</div>');
             if (countEl) countEl.textContent = '0';
             return;
         }
 
+        if (!shouldSync && EMAIL_REPLIES_LAST_RENDER_KEY === requestKey && (EMAIL_REPLIES_CACHE.length || EMAIL_REPLIES_SIDEBAR_CACHE.length)) {
+            renderTarget(hostModal, emailRepliesHtml(EMAIL_REPLIES_CACHE));
+            renderTarget(hostSidebar, emailRepliesHtml(EMAIL_REPLIES_SIDEBAR_CACHE.slice(0, 8)));
+            if (countEl) countEl.textContent = String(EMAIL_REPLIES_SIDEBAR_CACHE.length);
+            return;
+        }
+
+        if (EMAIL_REPLIES_INFLIGHT && EMAIL_REPLIES_INFLIGHT_KEY === requestKey) {
+            return EMAIL_REPLIES_INFLIGHT;
+        }
+
         renderTarget(hostModal, '<div style="color:#6b7280; font-size:13px;">Loading email replies...</div>');
         renderTarget(hostSidebar, '<div style="color:#6b7280; font-size:13px;">Loading email replies...</div>');
+        setRepliesSyncButtonState(true);
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-        var url = base + '/api/get_replies.php?application_id=' + encodeURIComponent(applicationId);
-
-        try {
-            var res = await fetch(url, { credentials: 'same-origin' });
-            var data = await res.json().catch(function () { return null; });
-            var rows = [];
-            if (Array.isArray(data)) {
-                rows = data;
-            } else if (data && data.status === 1 && Array.isArray(data.data)) {
-                rows = data.data;
-            } else {
-                renderTarget(hostModal, '<div style="color:#b91c1c; font-size:13px;">Failed to load email replies.</div>');
-                renderTarget(hostSidebar, '<div style="color:#b91c1c; font-size:13px;">Failed to load email replies.</div>');
-                if (countEl) countEl.textContent = '0';
-                return;
-            }
-
-            EMAIL_REPLIES_CACHE = rows;
-            renderTarget(hostModal, emailRepliesHtml(EMAIL_REPLIES_CACHE));
-            renderTarget(hostSidebar, emailRepliesHtml(EMAIL_REPLIES_CACHE.slice(0, 8)));
-            if (countEl) countEl.textContent = String(EMAIL_REPLIES_CACHE.length);
-        } catch (_e) {
-            renderTarget(hostModal, '<div style="color:#b91c1c; font-size:13px;">Network error loading email replies.</div>');
-            renderTarget(hostSidebar, '<div style="color:#b91c1c; font-size:13px;">Network error loading email replies.</div>');
-            if (countEl) countEl.textContent = '0';
+        var caseUrl = base + '/api/get_replies.php?application_id=' + encodeURIComponent(applicationId) + '&scope=case&sync=' + (shouldSync ? '1' : '0');
+        var sidebarUrl = caseUrl;
+        if (componentKey) {
+            sidebarUrl = base + '/api/get_replies.php?application_id=' + encodeURIComponent(applicationId)
+                + '&scope=component&component_key=' + encodeURIComponent(componentKey) + '&sync=0';
         }
+
+        EMAIL_REPLIES_INFLIGHT_KEY = requestKey;
+        EMAIL_REPLIES_INFLIGHT = (async function () {
+            try {
+                var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+                var tm = null;
+                var replyTimeoutMs = (roleNow === 'validator' || roleNow === 'verifier' || roleNow === 'qa' || roleNow === 'team_lead') ? 15000 : 8000;
+                if (ctrl) {
+                    tm = setTimeout(function () {
+                        try { ctrl.abort(); } catch (_e0) {}
+                    }, replyTimeoutMs);
+                }
+                var responses = await Promise.all([
+                    fetch(caseUrl, { credentials: 'same-origin', signal: ctrl ? ctrl.signal : undefined }),
+                    fetch(sidebarUrl, { credentials: 'same-origin', signal: ctrl ? ctrl.signal : undefined })
+                ]);
+                if (tm) clearTimeout(tm);
+                var caseData = await responses[0].json().catch(function () { return null; });
+                var sidebarData = await responses[1].json().catch(function () { return null; });
+                var caseRows = parseRows(caseData);
+                var sidebarRows = parseRows(sidebarData);
+                if (!caseRows || !sidebarRows) {
+                    renderTarget(hostModal, '<div style="color:#b91c1c; font-size:13px;">Failed to load email replies.</div>');
+                    renderTarget(hostSidebar, '<div style="color:#b91c1c; font-size:13px;">Failed to load email replies.</div>');
+                    if (countEl) countEl.textContent = '0';
+                    return;
+                }
+
+                EMAIL_REPLIES_CACHE = caseRows;
+                EMAIL_REPLIES_SIDEBAR_CACHE = sidebarRows;
+                EMAIL_REPLIES_LAST_RENDER_KEY = requestKey;
+                if (shouldSync) {
+                    EMAIL_REPLIES_LAST_SYNC_AT = Date.now();
+                    EMAIL_REPLIES_LAST_SYNC_APP_ID = String(applicationId || '');
+                }
+                renderTarget(hostModal, emailRepliesHtml(EMAIL_REPLIES_CACHE));
+                renderTarget(hostSidebar, emailRepliesHtml(EMAIL_REPLIES_SIDEBAR_CACHE.slice(0, 8)));
+                if (countEl) countEl.textContent = String(EMAIL_REPLIES_SIDEBAR_CACHE.length);
+            } catch (_e) {
+                renderTarget(hostModal, '<div style="color:#b91c1c; font-size:13px;">Network error loading email replies.</div>');
+                renderTarget(hostSidebar, '<div style="color:#b91c1c; font-size:13px;">Network error loading email replies.</div>');
+                if (countEl) countEl.textContent = '0';
+            } finally {
+                setRepliesSyncButtonState(false);
+                if (EMAIL_REPLIES_INFLIGHT_KEY === requestKey) {
+                    EMAIL_REPLIES_INFLIGHT = null;
+                    EMAIL_REPLIES_INFLIGHT_KEY = '';
+                }
+            }
+        })();
+        return EMAIL_REPLIES_INFLIGHT;
     }
 
-    async function loadTimeline(applicationId) {
-        loadEmailReplies(applicationId);
+    async function loadTimeline(applicationId, opts) {
+        opts = opts || {};
+        var doSync = !!opts.sync;
+        try {
+            var c = REPORT_PAYLOAD && REPORT_PAYLOAD.case ? REPORT_PAYLOAD.case : {};
+            loadCorrectionHistory(applicationId || String(c.application_id || ''), parseInt(String(c.case_id || '0'), 10) || 0);
+        } catch (_e0) {}
         var inWorkspace = !!document.querySelector('.cr-report-root.cr-validator-workspace');
         var host = inWorkspace
             ? (document.getElementById('cvValidatorTimeline') || document.getElementById('cvTimeline'))
@@ -2061,6 +3218,71 @@ if (uploadInput) {
         host.innerHTML = timelineHtml((Array.isArray(TL_CACHE) ? TL_CACHE : []).slice(-12).reverse());
     }
 
+    function isAuditLikeItem(it) {
+        if (!it || typeof it !== 'object') return false;
+        var type = it && it.event_type ? String(it.event_type).toLowerCase().trim() : '';
+        if (!type) return false;
+        if (type === 'comment') return false;
+        if (type === 'audit') return true;
+        if (String(it.isGovernanceEvent || '0') === '1') return true;
+        return type === 'create' || type === 'update' || type === 'action'
+            || type.indexOf('workflow.') === 0
+            || type === 'candidate_correction'
+            || type === 'reply';
+    }
+
+    function auditTrailHtml(items) {
+        if (!Array.isArray(items) || items.length === 0) {
+            return '<div style="color:#6b7280; font-size:13px;">No audit trail yet.</div>';
+        }
+
+        return items.slice(0, 40).map(function (it) {
+            var actorName = ((it.first_name || '') + ' ' + (it.last_name || '')).trim();
+            var actorUser = (it.username || '') ? String(it.username) : '';
+            var role2 = it.actor_role || '';
+            var actor = actorName || actorUser || (role2 ? String(role2).toUpperCase() : '') || 'System';
+            var when = '';
+            try {
+                when = it.created_at ? window.GSS_DATE.formatDbDateTime(it.created_at) : '';
+            } catch (_e) {
+                when = it.created_at ? String(it.created_at) : '';
+            }
+
+            var title = String(it.displayTitle || '').trim();
+            if (!title) {
+                var rawType = String(it.event_type || '').trim();
+                title = rawType ? rawType.replace(/[._]/g, ' ').replace(/\b\w/g, function (m) { return m.toUpperCase(); }) : 'Audit Event';
+            }
+
+            var summary = String(it.displaySummary || it.message || '').trim();
+            var section = String(it.section_key || it.section || '').trim();
+            var lineage = '';
+            if (it.governance && typeof it.governance === 'object' && it.governance.lineage) {
+                lineage = String(it.governance.lineage || '').trim();
+            }
+
+            return ''
+                + '<div class="cr-validator-remark">'
+                +     '<div class="cr-validator-remark-meta"><span>' + esc(actor) + ' - ' + esc(title) + '</span><span>' + esc(when) + '</span></div>'
+                +     (summary ? ('<div class="cr-validator-remark-text">' + esc(summary) + '</div>') : '')
+                +     ((section || lineage)
+                    ? ('<div class="cr-validator-remark-text" style="font-size:11px; color:#64748b;">'
+                        + (section ? ('Section: ' + esc(sectionLabel(section))) : '')
+                        + ((section && lineage) ? ' | ' : '')
+                        + (lineage ? esc(lineage) : '')
+                        + '</div>')
+                    : '')
+                + '</div>';
+        }).join('');
+    }
+
+    function renderValidatorAuditPanel() {
+        var host = document.getElementById('cvValidatorAuditTrail');
+        if (!host) return;
+        var items = (Array.isArray(TL_CACHE) ? TL_CACHE : []).filter(isAuditLikeItem);
+        host.innerHTML = auditTrailHtml(items);
+    }
+
     function reviewedSectionCount(payload) {
         var assigned = getAssignedComponentKeys(payload || {});
         if (!assigned.length) return { reviewed: 0, total: 0 };
@@ -2098,7 +3320,35 @@ if (uploadInput) {
         section = normSection(section || CURRENT_SECTION_KEY);
         renderValidatorRemarksPanel(section);
         renderValidatorTimelinePanel(section);
+        renderValidatorAuditPanel();
         setValidatorWorkspaceSummary(REPORT_PAYLOAD || {});
+        try {
+            var panel = document.getElementById('section-' + section);
+            if (panel) {
+                var isReadonly = (role === 'validator' && section && !isActionableComponent(section));
+                panel.setAttribute('data-readonly', isReadonly ? '1' : '0');
+                var secbar = panel.querySelector('.cr-secbar');
+                if (secbar) {
+                    var badge = secbar.querySelector('.cr-readonly-badge');
+                    if (!badge) {
+                        badge = document.createElement('span');
+                        badge.className = 'cr-readonly-badge';
+                        badge.style.cssText = 'margin-left:8px;padding:3px 8px;border-radius:999px;border:1px solid rgba(148,163,184,.35);font-size:11px;color:#64748b;background:#f8fafc;font-weight:700;display:none;';
+                        badge.textContent = 'Readonly';
+                        secbar.appendChild(badge);
+                    }
+                    badge.style.display = isReadonly ? '' : 'none';
+                }
+                panel.querySelectorAll('.cr-sec-action[data-proxy-action]').forEach(function (el) {
+                    el.style.display = isReadonly ? 'none' : '';
+                    el.disabled = !!isReadonly;
+                });
+                panel.querySelectorAll('[data-comp-upload], #cvUploadBtn, #cvOpenCorrectionModal').forEach(function (el) {
+                    el.disabled = !!isReadonly;
+                });
+            }
+        } catch (_e) {
+        }
     }
 
     function initValidatorWorkspace() {
@@ -2641,17 +3891,6 @@ if (uploadInput) {
         });
     }
 
-    function openBsModal(id) {
-        var el = document.getElementById(id);
-        if (!el) return;
-        if (window.bootstrap && window.bootstrap.Modal && typeof window.bootstrap.Modal.getOrCreateInstance === 'function') {
-            var m = window.bootstrap.Modal.getOrCreateInstance(el);
-            m.show();
-            return;
-        }
-        el.style.display = 'block';
-    }
-
     function initHeaderModals(applicationId) {
         var openUpload = document.getElementById('cvOpenUploadModal');
         if (openUpload && !openUpload.dataset.bound) {
@@ -2674,6 +3913,56 @@ if (uploadInput) {
         }
 
         // Remarks modal flow removed; remarks are handled via right sidebar only.
+    }
+
+    function initClientAdminEscalation() {
+        var role = getRole();
+        if (role !== 'client_admin') return;
+        var tlBtn = document.getElementById('cvEscalateTlBtn');
+        var gssBtn = document.getElementById('cvEscalateGssBtn');
+        if (!tlBtn && !gssBtn) return;
+
+        function postEscalation(targetLabel) {
+            var appId = String(CURRENT_APP_ID || qs('application_id') || '').trim();
+            if (!appId) {
+                setBoxMessage('cvTopMessage', 'application_id is required for escalation.', 'danger');
+                return;
+            }
+            var section = String(activeComponentSectionKey() || CURRENT_SECTION_KEY || 'general').toLowerCase().trim();
+            var msg = 'Escalation requested by Client Admin to ' + targetLabel + ' for section: ' + sectionLabel(section) + '.';
+            var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
+            fetch(base + '/api/shared/case_timeline_add.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({
+                    application_id: appId,
+                    event_type: 'action',
+                    section_key: section || 'general',
+                    message: msg
+                })
+            })
+                .then(function (res) { return res.json().catch(function () { return { status: 0, message: 'Invalid server response.' }; }); })
+                .then(function (data) {
+                    if (!data || data.status !== 1) {
+                        throw new Error((data && data.message) ? data.message : 'Failed to raise escalation.');
+                    }
+                    setBoxMessage('cvTopMessage', 'Escalation logged to timeline (' + targetLabel + ').', 'success');
+                    loadTimeline(appId).catch(function () {});
+                })
+                .catch(function (e) {
+                    setBoxMessage('cvTopMessage', (e && e.message) ? e.message : 'Failed to raise escalation.', 'danger');
+                });
+        }
+
+        if (tlBtn && !tlBtn.dataset.bound) {
+            tlBtn.dataset.bound = '1';
+            tlBtn.addEventListener('click', function () { postEscalation('Team Lead'); });
+        }
+        if (gssBtn && !gssBtn.dataset.bound) {
+            gssBtn.dataset.bound = '1';
+            gssBtn.addEventListener('click', function () { postEscalation('GSS Admin'); });
+        }
     }
 
     function esc(str) {
@@ -2873,43 +4162,165 @@ if (uploadInput) {
         var el = document.getElementById(id);
         if (!el) return;
         var k = String(kind || '').toLowerCase();
-        el.classList.remove('bg-success', 'bg-warning', 'bg-secondary', 'bg-danger', 'text-dark');
+        el.classList.remove('bg-success', 'bg-warning', 'bg-secondary', 'bg-danger', 'bg-primary', 'bg-info', 'text-dark');
+        el.style.removeProperty('background');
+        el.style.removeProperty('color');
+        el.style.removeProperty('border');
         if (k === 'done') {
             el.classList.add('bg-success');
-            el.textContent = text || '✔';
+            el.textContent = String(text || 'COMPLETED').toUpperCase();
             return;
         }
         if (k === 'wip') {
-            el.classList.add('bg-warning', 'text-dark');
-            el.textContent = text || 'WIP';
+            el.classList.add('bg-primary');
+            el.textContent = String(text || 'PENDING').toUpperCase();
             return;
         }
         if (k === 'rejected') {
             el.classList.add('bg-danger');
-            el.textContent = text || 'Rejected';
+            el.textContent = String(text || 'REJECTED').toUpperCase();
+            return;
+        }
+        if (k === 'hold') {
+            el.classList.add('bg-warning', 'text-dark');
+            el.textContent = String(text || 'HOLD').toUpperCase();
+            return;
+        }
+        if (k === 'need_docs') {
+            el.classList.add('bg-warning', 'text-dark');
+            el.style.background = '#fef08a';
+            el.style.color = '#854d0e';
+            el.style.border = '1px solid #facc15';
+            el.textContent = String(text || 'NEED DOCS').toUpperCase();
+            return;
+        }
+        if (k === 'candidate_pending') {
+            el.classList.add('bg-secondary');
+            el.style.background = '#c7d2fe';
+            el.style.color = '#3730a3';
+            el.style.border = '1px solid #a5b4fc';
+            el.textContent = String(text || 'CANDIDATE PENDING').toUpperCase();
+            return;
+        }
+        if (k === 'mail_sent') {
+            el.classList.add('bg-info');
+            el.textContent = String(text || 'MAIL SENT').toUpperCase();
             return;
         }
         el.classList.add('bg-secondary');
-        el.textContent = text || 'Pending';
+        el.textContent = String(text || 'PENDING').toUpperCase();
+    }
+    var __cvLineageStylesInjected = false;
+    function ensureSidebarLineageStyles() {
+        if (__cvLineageStylesInjected) return;
+        __cvLineageStylesInjected = true;
+        var st = document.createElement('style');
+        st.id = 'cv-lineage-style';
+        st.textContent =
+            '.cv-badge-wrap{display:flex;align-items:flex-start;gap:6px;flex:0 0 auto;}' +
+            '.cv-badge-info{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:999px;border:1px solid rgba(148,163,184,.55);color:#475569;background:#f8fafc;font-size:10px;font-weight:700;cursor:default;}' +
+            '.cv-lineage-card{position:fixed;z-index:1300;min-width:220px;max-width:300px;background:#fff;border:1px solid rgba(148,163,184,.35);border-radius:10px;box-shadow:0 12px 30px rgba(15,23,42,.16);padding:10px 12px;opacity:0;transform:translateY(4px);transition:opacity .14s ease, transform .14s ease;pointer-events:none;}' +
+            '.cv-lineage-card.show{opacity:1;transform:translateY(0);}' +
+            '.cv-lineage-title{font-size:11px;font-weight:800;color:#334155;margin-bottom:6px;letter-spacing:.02em;text-transform:uppercase;}' +
+            '.cv-lineage-row{display:flex;justify-content:space-between;gap:10px;font-size:12px;line-height:1.35;margin:3px 0;}' +
+            '.cv-lineage-stage{color:#64748b;font-weight:700;}' +
+            '.cv-lineage-state{color:#0f172a;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}';
+        document.head.appendChild(st);
     }
 
+    function primaryStatusText(stageLabel) {
+        var raw = String(stageLabel || '').trim();
+        if (!raw) return '';
+        var p = raw.indexOf('(');
+        return (p >= 0 ? raw.substring(0, p) : raw).trim();
+    }
+
+    function buildLineageData(stages) {
+        var row = (stages && typeof stages === 'object') ? stages : {};
+        var out = [];
+        ['validator', 'verifier', 'qa'].forEach(function (stage) {
+            var s = String(row[stage] && row[stage].status ? row[stage].status : '').trim();
+            if (!s) return;
+            if (window.WF_UI && typeof window.WF_UI.labelByRole === 'function') {
+                out.push({ stage: stage, label: String(window.WF_UI.labelByRole(s, stage)).toUpperCase() });
+            } else {
+                out.push({ stage: stage, label: String(s).toUpperCase() });
+            }
+        });
+        return out;
+    }
+
+    function attachBadgeLineage(badgeId, lineageRows) {
+        var badge = document.getElementById(badgeId);
+        if (!badge) return;
+        var rows = Array.isArray(lineageRows) ? lineageRows : [];
+        var row = badge.closest ? badge.closest('.list-group-item') : null;
+        if (!row) row = badge.parentElement;
+        if (!row) return;
+        ensureSidebarLineageStyles();
+        var right = row.querySelector('.section-right') || row;
+        var holder = right.querySelector('.cv-badge-wrap');
+        if (!holder) {
+            holder = document.createElement('span');
+            holder.className = 'cv-badge-wrap';
+            right.appendChild(holder);
+        }
+        if (badge.parentElement !== holder) {
+            holder.insertBefore(badge, holder.firstChild || null);
+        }
+
+        var oldInfo = holder.querySelector('.cv-badge-info');
+        if (oldInfo && oldInfo.parentNode) oldInfo.parentNode.removeChild(oldInfo);
+        if (!rows.length) return;
+
+        var info = document.createElement('span');
+        info.className = 'cv-badge-info';
+        info.textContent = 'i';
+        info.setAttribute('aria-label', 'Workflow lineage');
+
+        var card = null;
+        function hideCard() {
+            if (!card) return;
+            card.classList.remove('show');
+            setTimeout(function () {
+                if (card && card.parentNode) card.parentNode.removeChild(card);
+                card = null;
+            }, 140);
+        }
+        function showCard() {
+            hideCard();
+            card = document.createElement('div');
+            card.className = 'cv-lineage-card';
+            var rowsHtml = rows.map(function (r) {
+                return '<div class="cv-lineage-row"><span class="cv-lineage-stage">' + esc(String(r.stage || '').toUpperCase()) + '</span><span class="cv-lineage-state">' + esc(String(r.label || '').toUpperCase()) + '</span></div>';
+            }).join('');
+            card.innerHTML = '<div class="cv-lineage-title">Workflow History</div>' + rowsHtml;
+            document.body.appendChild(card);
+            var rect = info.getBoundingClientRect();
+            var top = rect.bottom + 8;
+            var left = rect.left - 120;
+            if (left < 8) left = 8;
+            if (left + 320 > window.innerWidth) left = Math.max(8, window.innerWidth - 320);
+            card.style.top = top + 'px';
+            card.style.left = left + 'px';
+            requestAnimationFrame(function () { if (card) card.classList.add('show'); });
+        }
+        info.addEventListener('mouseenter', showCard);
+        info.addEventListener('mouseleave', function () { setTimeout(hideCard, 60); });
+        info.addEventListener('click', function (e) { e.preventDefault(); if (card) hideCard(); else showCard(); });
+        holder.appendChild(info);
+    }
     function isFilled(v) {
         return v != null && String(v).trim() !== '';
     }
 
     function computeComponentStageLabel(stages) {
+        if (window.WF_UI && typeof window.WF_UI.resolveComponentWorkflowStatus === 'function') {
+            var resolved = window.WF_UI.resolveComponentWorkflowStatus(stages || {});
+            if (resolved && resolved.label) return String(resolved.label).toUpperCase();
+        }
         var cand = String(stages && stages.candidate ? stages.candidate : '').toLowerCase().trim();
-        var val = String(stages && stages.validator ? stages.validator : '').toLowerCase().trim();
-        var ver = String(stages && stages.verifier ? stages.verifier : '').toLowerCase().trim();
-        var qa = String(stages && stages.qa ? stages.qa : '').toLowerCase().trim();
-        if (qa === 'rejected') return 'QA Rejected';
-        if (qa === 'approved') return 'Completed';
-        if (ver === 'rejected') return 'VE Rejected';
-        if (ver === 'approved') return 'QA Pending';
-        if (val === 'rejected') return 'VA Rejected';
-        if (cand === 'rejected') return 'Candidate Rejected';
-        if (val === 'approved') return 'VE Pending';
-        if (cand === 'approved') return 'VA Pending';
+        if (cand === 'rejected') return 'CANDIDATE REJECTED';
         return '';
     }
 
@@ -2917,17 +4328,14 @@ if (uploadInput) {
         var raw = String(stageLabel || '').trim();
         var low = raw.toLowerCase();
         var role = getRole();
-        if (role === 'validator' && low === 'pending candidate') return 'VA Pending';
-        if (low === 'pendingverifier') return 'VE Pending'
-        if (low === 'pendingvalidator') return 'VA Pending';
-        if (low === 'pendingqa') return 'Pending QA';
-        if (low === 'in_progress' || low === 'in progress') return 'In Progress';
-        if (low === 'insufficient_documents') return 'Need Docs';
-        if (low === 'waiting_candidate') return 'Waiting Candidate';
-        if (low === 'blocked') return 'Blocked';
-        return raw;
+        if (raw.indexOf('(') !== -1 && raw.indexOf(')') !== -1) {
+            return raw.toUpperCase();
+        }
+        if (window.WF_UI && typeof window.WF_UI.labelByRole === 'function') {
+            return String(window.WF_UI.labelByRole(low || raw, role || 'validator')).toUpperCase();
+        }
+        return raw.toUpperCase();
     }
-
     function getWorkflowComponentRow(d, componentKey) {
         try {
             componentKey = normSection(componentKey);
@@ -2954,72 +4362,139 @@ if (uploadInput) {
         try {
             componentKey = normSection(componentKey);
             if (!componentKey) return '';
-
-            // Prefer workflow table status (freshest source) when available.
-            var byComp = getWorkflowComponentRow(d, componentKey);
-            if (byComp && typeof byComp === 'object') {
-                var role = String(getRole() || '').toLowerCase().trim();
-                var stageStatus = '';
-                if (role === 'validator') {
-                    stageStatus = byComp.validator && byComp.validator.status ? String(byComp.validator.status) : '';
-                } else if (role === 'verifier') {
-                    stageStatus = byComp.verifier && byComp.verifier.status ? String(byComp.verifier.status) : '';
-                } else if (role === 'qa') {
-                    stageStatus = byComp.qa && byComp.qa.status ? String(byComp.qa.status) : '';
-                } else {
-                    stageStatus = byComp.candidate && byComp.candidate.status ? String(byComp.candidate.status) : '';
+            function isVerifierReportContext() {
+                try {
+                    var roleNow = String(getRole() || '').toLowerCase().trim();
+                    return roleNow === 'verifier' || roleNow === 'db_verifier';
+                } catch (_eRole) {
+                    return false;
                 }
-
-                var low = String(stageStatus || '').toLowerCase().trim();
-                if (!low || low === 'pending') {
-                    if (role === 'validator') return 'VA Pending';
-                    if (role === 'verifier') return 'Verifier Pending';
-                    if (role === 'qa') return 'QA Pending';
-                    return 'Candidate Pending';
+            }
+            function isVerifierParticipatedContext() {
+                try {
+                    var roleNow = String(getRole() || '').toLowerCase().trim();
+                    if (roleNow !== 'verifier' && roleNow !== 'db_verifier') return false;
+                    var v = String(qs('list_view') || qs('view') || '').toLowerCase().trim();
+                    return v === 'participated' || v === 'history' || v === 'completed';
+                } catch (_eCtx) {
+                    return false;
                 }
-                if (low === 'approved') return 'Approved';
-                if (low === 'rejected') return 'Rejected';
-                if (low === 'hold') return 'On Hold';
-                return normalizeStageLabelForRole(stageStatus);
+            }
+            var caseStatus = '';
+            try {
+                var c = d && d.case && typeof d.case === 'object' ? d.case : null;
+                caseStatus = String((c && c.case_status) || '').toLowerCase().trim();
+            } catch (_eCase) {
+                caseStatus = '';
             }
 
+            var byComp = getWorkflowComponentRow(d, componentKey);
+            if (byComp && typeof byComp === 'object') {
+                if (isVerifierReportContext()) {
+                    var vStage = byComp.verifier && typeof byComp.verifier === 'object'
+                        ? String(byComp.verifier.status || '').toLowerCase().trim()
+                        : '';
+                    var qaStage = byComp.qa && typeof byComp.qa === 'object'
+                        ? String(byComp.qa.status || '').toLowerCase().trim()
+                        : '';
+                    var verifierPrimaryStatuses = {
+                        approved: true,
+                        rejected: true,
+                        hold: true,
+                        insufficient_documents: true,
+                        waiting_candidate: true,
+                        reopened: true,
+                        blocked: true,
+                        completed: true,
+                        done: true,
+                        verified: true,
+                        clear: true,
+                        invalidated_by_validator_reopen: true,
+                        invalidated_by_verifier_reopen: true
+                    };
+                    if (vStage && verifierPrimaryStatuses[vStage]) {
+                        if (window.WF_UI && typeof window.WF_UI.labelByRole === 'function') {
+                            return String(window.WF_UI.labelByRole(vStage, 'verifier')).toUpperCase();
+                        }
+                        return String(vStage || '').toUpperCase();
+                    }
+                    if (isVerifierParticipatedContext() && vStage) {
+                        if (window.WF_UI && typeof window.WF_UI.labelByRole === 'function') {
+                            return String(window.WF_UI.labelByRole(vStage, 'verifier')).toUpperCase();
+                        }
+                        return String(vStage || '').toUpperCase();
+                    }
+                    if (!vStage && qaStage && (qaStage === 'pending' || qaStage === 'in_progress')) {
+                        if (window.WF_UI && typeof window.WF_UI.labelByRole === 'function') {
+                            return String(window.WF_UI.labelByRole('pending', 'verifier')).toUpperCase();
+                        }
+                        return 'VE PENDING';
+                    }
+                }
+                if (window.WF_UI && typeof window.WF_UI.resolveComponentWorkflowStatus === 'function') {
+                    var resolved = window.WF_UI.resolveComponentWorkflowStatus(byComp, { case_status: caseStatus });
+                    if (resolved && resolved.label) return String(resolved.label).toUpperCase();
+                }
+                var role = String(getRole() || '').toLowerCase().trim();
+                if (window.WF_UI && typeof window.WF_UI.labelByRole === 'function') {
+                    return String(window.WF_UI.labelByRole('pending', role || 'validator')).toUpperCase();
+                }
+                return 'PENDING';
+            }
             return '';
         } catch (e) {
             return '';
         }
     }
 
+    function getWorkflowLineageRows(d, componentKey) {
+        var byComp = getWorkflowComponentRow(d, componentKey);
+        return buildLineageData(byComp || {});
+    }
+
     function setStageBadge(badgeId, stageLabel) {
         stageLabel = normalizeStageLabelForRole(stageLabel);
         stageLabel = String(stageLabel || '').trim();
         if (!stageLabel) return false;
+        var compact = primaryStatusText(stageLabel) || stageLabel;
 
-        var low = stageLabel.toLowerCase();
+        var low = compact.toLowerCase();
         if (low.indexOf('rejected') !== -1) {
-            setBadge(badgeId, 'rejected', stageLabel);
+            setBadge(badgeId, 'rejected', compact);
             return true;
         }
-        if (low === 'approved' || low === 'completed') {
-            setBadge(badgeId, 'done', 'Completed');
+        if (low.indexOf('approved') !== -1 || low.indexOf('completed') !== -1) {
+            setBadge(badgeId, 'done', compact);
             return true;
         }
-        if (low === 'completed') {
-            setBadge(badgeId, 'done', 'Completed');
+        if (low.indexOf('hold') !== -1) {
+            setBadge(badgeId, 'hold', compact);
             return true;
         }
-        if (low === 'on hold' || low === 'need docs' || low === 'blocked' || low === 'in progress' || low === 'waiting candidate') {
-            setBadge(badgeId, 'wip', stageLabel);
+        if (low.indexOf('need docs') !== -1) {
+            setBadge(badgeId, 'need_docs', compact);
+            return true;
+        }
+        if (low.indexOf('candidate pending') !== -1 || low.indexOf('waiting candidate') !== -1 || low.indexOf('reopened') !== -1) {
+            setBadge(badgeId, 'candidate_pending', compact);
+            return true;
+        }
+        if (low.indexOf('mail sent') !== -1) {
+            setBadge(badgeId, 'mail_sent', compact);
+            return true;
+        }
+        if (low.indexOf('blocked') !== -1 || low.indexOf('in progress') !== -1 || low.indexOf('on hold') !== -1) {
+            setBadge(badgeId, 'wip', compact);
             return true;
         }
         if (low.indexOf('pending') === 0) {
-            setBadge(badgeId, 'wip', stageLabel);
+            setBadge(badgeId, 'wip', compact);
             return true;
         }
 
-        setBadge(badgeId, 'pending', stageLabel);
+        setBadge(badgeId, 'pending', compact);
         return true;
     }
-
     function isValidatorRejectedOpenState(d, componentKey) {
         try {
             componentKey = normSection(componentKey);
@@ -3089,30 +4564,47 @@ if (uploadInput) {
             employment: isValidatorRejectedOpenState(d, 'employment'),
             reference: isValidatorRejectedOpenState(d, 'reference'),
             socialmedia: isValidatorRejectedOpenState(d, 'socialmedia'),
-            ecourt: isValidatorRejectedOpenState(d, 'ecourt')
+            ecourt: isValidatorRejectedOpenState(d, 'ecourt'),
+            reports: isValidatorRejectedOpenState(d, 'reports')
         };
-        if (forcedRejected.basic) setBadge('cvNavBadgeBasic', 'rejected', 'VA Rejected');
-        if (forcedRejected.id) setBadge('cvNavBadgeId', 'rejected', 'VA Rejected');
-        if (forcedRejected.contact) setBadge('cvNavBadgeContact', 'rejected', 'VA Rejected');
-        if (forcedRejected.education) setBadge('cvNavBadgeEducation', 'rejected', 'VA Rejected');
-        if (forcedRejected.employment) setBadge('cvNavBadgeEmployment', 'rejected', 'VA Rejected');
-        if (forcedRejected.reference) setBadge('cvNavBadgeReference', 'rejected', 'VA Rejected');
-        if (forcedRejected.socialmedia) setBadge('cvNavBadgeSocialmedia', 'rejected', 'VA Rejected');
-        if (forcedRejected.ecourt) setBadge('cvNavBadgeEcourt', 'rejected', 'VA Rejected');
+        var forcedRejectedLabel = (window.WF_UI && typeof window.WF_UI.labelByRole === 'function')
+            ? window.WF_UI.labelByRole('rejected', 'validator')
+            : 'Rejected';
+        if (forcedRejected.basic) setBadge('cvNavBadgeBasic', 'rejected', forcedRejectedLabel);
+        if (forcedRejected.id) setBadge('cvNavBadgeId', 'rejected', forcedRejectedLabel);
+        if (forcedRejected.contact) setBadge('cvNavBadgeContact', 'rejected', forcedRejectedLabel);
+        if (forcedRejected.education) setBadge('cvNavBadgeEducation', 'rejected', forcedRejectedLabel);
+        if (forcedRejected.employment) setBadge('cvNavBadgeEmployment', 'rejected', forcedRejectedLabel);
+        if (forcedRejected.reference) setBadge('cvNavBadgeReference', 'rejected', forcedRejectedLabel);
+        if (forcedRejected.socialmedia) setBadge('cvNavBadgeSocialmedia', 'rejected', forcedRejectedLabel);
+        if (forcedRejected.ecourt) setBadge('cvNavBadgeEcourt', 'rejected', forcedRejectedLabel);
+        if (forcedRejected.reports) setBadge('cvNavBadgeReports', 'rejected', forcedRejectedLabel);
 
         // Prefer workflow stage when available
         var usedWorkflow = false;
         if (!forcedRejected.basic) usedWorkflow = setStageBadge('cvNavBadgeBasic', getWorkflowStageLabel(d, 'basic')) || usedWorkflow;
+        attachBadgeLineage('cvNavBadgeBasic', getWorkflowLineageRows(d, 'basic'));
         if (!forcedRejected.id) usedWorkflow = setStageBadge('cvNavBadgeId', getWorkflowStageLabel(d, 'id')) || usedWorkflow;
+        attachBadgeLineage('cvNavBadgeId', getWorkflowLineageRows(d, 'id'));
         if (!forcedRejected.contact) usedWorkflow = setStageBadge('cvNavBadgeContact', getWorkflowStageLabel(d, 'contact')) || usedWorkflow;
+        attachBadgeLineage('cvNavBadgeContact', getWorkflowLineageRows(d, 'contact'));
         if (!forcedRejected.education) usedWorkflow = setStageBadge('cvNavBadgeEducation', getWorkflowStageLabel(d, 'education')) || usedWorkflow;
+        attachBadgeLineage('cvNavBadgeEducation', getWorkflowLineageRows(d, 'education'));
         if (!forcedRejected.employment) usedWorkflow = setStageBadge('cvNavBadgeEmployment', getWorkflowStageLabel(d, 'employment')) || usedWorkflow;
+        attachBadgeLineage('cvNavBadgeEmployment', getWorkflowLineageRows(d, 'employment'));
         if (!forcedRejected.reference) usedWorkflow = setStageBadge('cvNavBadgeReference', getWorkflowStageLabel(d, 'reference')) || usedWorkflow;
+        attachBadgeLineage('cvNavBadgeReference', getWorkflowLineageRows(d, 'reference'));
         if (!forcedRejected.socialmedia) usedWorkflow = setStageBadge('cvNavBadgeSocialmedia', getWorkflowStageLabel(d, 'socialmedia')) || usedWorkflow;
+        attachBadgeLineage('cvNavBadgeSocialmedia', getWorkflowLineageRows(d, 'socialmedia'));
         if (!forcedRejected.ecourt) usedWorkflow = setStageBadge('cvNavBadgeEcourt', getWorkflowStageLabel(d, 'ecourt')) || usedWorkflow;
+        attachBadgeLineage('cvNavBadgeEcourt', getWorkflowLineageRows(d, 'ecourt'));
+        if (!forcedRejected.reports) usedWorkflow = setStageBadge('cvNavBadgeReports', getWorkflowStageLabel(d, 'reports')) || usedWorkflow;
+        attachBadgeLineage('cvNavBadgeReports', getWorkflowLineageRows(d, 'reports'));
 
         if (!usedWorkflow) {
-            var pendingLabel = (role === 'validator') ? 'VA Pending' : ((role === 'verifier') ? 'Verifier Pending' : ((role === 'qa') ? 'QA Pending' : 'Candidate Pending'));
+            var pendingLabel = (window.WF_UI && typeof window.WF_UI.labelByRole === 'function')
+                ? window.WF_UI.labelByRole('pending', role || 'validator')
+                : 'Pending';
             setBadge('cvNavBadgeBasic', 'wip', pendingLabel);
             setBadge('cvNavBadgeId', 'wip', pendingLabel);
             setBadge('cvNavBadgeContact', 'wip', pendingLabel);
@@ -3121,13 +4613,23 @@ if (uploadInput) {
             setBadge('cvNavBadgeReference', 'wip', pendingLabel);
             setBadge('cvNavBadgeSocialmedia', 'wip', pendingLabel);
             setBadge('cvNavBadgeEcourt', 'wip', pendingLabel);
+            setBadge('cvNavBadgeReports', 'wip', pendingLabel);
         }
 
-        if (reportsDone) {
-            setBadge('cvNavBadgeReports', role === 'validator' ? 'wip' : 'done', role === 'validator' ? 'VA Pending' : 'Completed');
-        } else {
-            setBadge('cvNavBadgeReports', 'pending', 'Pending');
+        // Fallback only when workflow stage label is not available for reports.
+        if (!getWorkflowStageLabel(d, 'reports')) {
+            if (reportsDone) {
+                var reportsLabel = role === 'validator'
+                    ? ((window.WF_UI && typeof window.WF_UI.labelByRole === 'function') ? window.WF_UI.labelByRole('pending', 'validator') : 'Pending')
+                    : ((window.WF_UI && typeof window.WF_UI.labelByRole === 'function') ? window.WF_UI.labelByRole('completed', role || 'verifier') : 'Completed');
+                setBadge('cvNavBadgeReports', role === 'validator' ? 'wip' : 'done', reportsLabel);
+            } else {
+                setBadge('cvNavBadgeReports', 'pending', 'Pending');
+            }
         }
+
+        // Keep status badges visible for validator readonly sections.
+        // Readonly should affect actions, not visibility semantics.
     }
 
     function setVal(id, value) {
@@ -3139,12 +4641,21 @@ if (uploadInput) {
     function setFileField(id, fieldKey, value) {
         var el = document.getElementById(id);
         if (!el) return;
+        try {
+            var parent = el.parentNode;
+            if (parent) {
+                var old = parent.querySelectorAll('[data-cr-filefield-for="' + id + '"]');
+                old.forEach(function (n) { if (n && n.parentNode) n.parentNode.removeChild(n); });
+            }
+        } catch (_e) {
+        }
         var v = (value === null || typeof value === 'undefined') ? '' : String(value);
         v = v.trim();
 
         var href = fileUrlForField(fieldKey, v);
         if (href) {
             var wrap = document.createElement('div');
+            wrap.setAttribute('data-cr-filefield-for', id);
             wrap.style.display = 'flex';
             wrap.style.alignItems = 'center';
             wrap.style.gap = '10px';
@@ -3216,10 +4727,41 @@ if (uploadInput) {
         textEl.style.padding = '6px 0';
         textEl.style.fontWeight = '800';
         textEl.style.color = '#0f172a';
+        textEl.style.display = 'block';
+        textEl.style.width = '100%';
+        textEl.style.whiteSpace = 'normal';
+        textEl.style.overflowWrap = 'anywhere';
+        textEl.style.wordBreak = 'break-word';
 
         el.style.display = 'none';
         el.insertAdjacentElement('afterend', textEl);
         el.dataset.simpleDone = '1';
+    }
+
+    function setCandidateAvatar(basic, cs) {
+        var host = document.getElementById('cvHeaderAvatar');
+        var fallback = document.getElementById('cvHeaderAvatarFallback');
+        if (!host) return;
+
+        var first = String((basic && basic.first_name) || (cs && cs.candidate_first_name) || '').trim();
+        var last = String((basic && basic.last_name) || (cs && cs.candidate_last_name) || '').trim();
+        var initials = ((first ? first.charAt(0) : '') + (last ? last.charAt(0) : '')).toUpperCase() || 'NA';
+
+        if (fallback) fallback.textContent = initials;
+        host.innerHTML = fallback ? fallback.outerHTML : ('<span class="cr-avatar-fallback">' + initials + '</span>');
+
+        var photoRaw = String((basic && (basic.photo_path || basic.photo || basic.profile_photo || basic.candidate_photo)) || '').trim();
+        if (!photoRaw) return;
+
+        var src = fileUrlForField('photo_path', photoRaw) || photoRaw;
+        if (!src) return;
+
+        var img = document.createElement('img');
+        img.alt = 'Candidate photo';
+        img.src = src;
+        img.onerror = function () {};
+        host.innerHTML = '';
+        host.appendChild(img);
     }
 
     function simplifyAllReadonlyFields() {
@@ -3253,6 +4795,23 @@ if (uploadInput) {
             'cv_reference_email',
             'cv_reference_relationship',
             'cv_reference_years_known',
+
+            'cv_social_linkedin_url',
+            'cv_social_facebook_url',
+            'cv_social_instagram_url',
+            'cv_social_twitter_url',
+            'cv_social_other_url',
+            'cv_social_consent_bgv',
+            'cv_social_content',
+
+            'cv_ecourt_current_address',
+            'cv_ecourt_permanent_address',
+            'cv_ecourt_evidence_document',
+            'cv_ecourt_period_from_date',
+            'cv_ecourt_period_to_date',
+            'cv_ecourt_period_duration_years',
+            'cv_ecourt_dob',
+            'cv_ecourt_comments',
 
             'cv_app_submitted_at',
             'cv_auth_signature',
@@ -3386,8 +4945,10 @@ if (uploadInput) {
                 var key = c && c.key ? String(c.key) : '';
                 var label = c && c.label ? String(c.label) : key;
                 var v = r ? r[key] : '';
-                var href = fileUrlForField(key, v);
-                var valHtml = href ? fileCellHtml(key, v) : ('<span style="font-weight:800; color:#0f172a;">' + esc(v) + '</span>');
+                var forceText = !!(c && c.forceText);
+                var href = forceText ? '' : fileUrlForField(key, v);
+                var safeVal = (v === null || typeof v === 'undefined' || String(v).trim() === '') ? '-' : String(v);
+                var valHtml = href ? fileCellHtml(key, v) : ('<span style="font-weight:800; color:#0f172a; white-space:normal; overflow-wrap:break-word; word-break:normal;">' + esc(safeVal) + '</span>');
                 return '<div class="cr-kv2-cell">' +
                     '<div class="cr-kv2-k">' + esc(label) + '</div>' +
                     '<div class="cr-kv2-v">' + valHtml + '</div>' +
@@ -3477,7 +5038,8 @@ if (uploadInput) {
                 var label = c && c.label ? String(c.label) : key;
                 var v = r ? r[key] : '';
                 var href = fileUrlForField(key, v);
-                var valHtml = href ? fileCellHtml(key, v) : ('<span style="font-weight:800; color:#0f172a;">' + esc(v) + '</span>');
+                var safeVal = (v === null || typeof v === 'undefined' || String(v).trim() === '') ? '-' : String(v);
+                var valHtml = href ? fileCellHtml(key, v) : ('<span style="font-weight:800; color:#0f172a; white-space:normal; overflow-wrap:break-word; word-break:normal;">' + esc(safeVal) + '</span>');
                 return '<div class="cr-kv2-cell">' +
                     '<div class="cr-kv2-k">' + esc(label) + '</div>' +
                     '<div class="cr-kv2-v">' + valHtml + '</div>' +
@@ -3945,14 +5507,109 @@ if (uploadInput) {
             return s;
         }
 
+        var WORKFLOW_ACTION_RULES = {
+            pending: ['hold', 'insufficient_documents', 'reject', 'approve'],
+            hold: ['approve', 'reject', 'insufficient_documents'],
+            insufficient_documents: ['approve', 'hold', 'reject', 'insufficient_documents'],
+            approved: ['hold', 'insufficient_documents', 'reject'],
+            rejected: ['hold', 'insufficient_documents', 'approve'],
+            waiting_candidate: ['hold', 'insufficient_documents', 'reject', 'approve'],
+            blocked: ['hold', 'insufficient_documents', 'reject', 'approve'],
+            reopened: ['hold', 'insufficient_documents', 'reject', 'approve'],
+            invalidated_by_validator_reopen: ['hold', 'insufficient_documents', 'reject', 'approve'],
+            invalidated_by_verifier_reopen: ['hold', 'insufficient_documents', 'reject', 'approve'],
+            completed: ['hold', 'insufficient_documents', 'reject', 'approve'],
+            clear: ['hold', 'insufficient_documents', 'reject', 'approve'],
+            verified: ['hold', 'insufficient_documents', 'reject', 'approve'],
+            stop_bgv: [],
+            archived: [],
+            terminated: []
+        };
+
+        function isEvaluatedWorkflowStatus(status) {
+            var s = normalizeStageStatus(status);
+            return s === 'approved' || s === 'rejected' || s === 'hold' || s === 'insufficient_documents' || s === 'completed' || s === 'clear' || s === 'verified';
+        }
+
+        function supervisoryReopenTargetFor(componentKey, actorStage) {
+            return '';
+        }
+
+        function componentWorkflowStageMeta(componentKey, stageKey) {
+            try {
+                var d = REPORT_PAYLOAD || {};
+                var wf = d && d.component_workflow && typeof d.component_workflow === 'object' ? d.component_workflow : {};
+                var row = wf[normSection(componentKey)] || null;
+                if (!row || typeof row !== 'object') return null;
+                var meta = row[String(stageKey || '').toLowerCase().trim()] || null;
+                return (meta && typeof meta === 'object') ? meta : null;
+            } catch (_e) {
+                return null;
+            }
+        }
+
+        function lockMetaTextForComponent(componentKey, stageNow, stageStatus) {
+            componentKey = normSection(componentKey);
+            if (!componentKey) return '';
+            var meta = componentWorkflowStageMeta(componentKey, stageNow);
+            if (stageStatus === 'invalidated_by_validator_reopen' || stageStatus === 'invalidated_by_verifier_reopen') {
+                var invalidatedBy = String((meta && meta.invalidated_by_role) || '').trim();
+                var invalidatedAt = String((meta && meta.invalidated_at) || '').trim();
+                var invalidatedReason = String((meta && meta.invalidation_reason) || '').trim();
+                var invalidatedSource = String((meta && meta.invalidated_source_stage) || '').trim();
+                var invalidTxt = 'Invalidated';
+                if (invalidatedSource) invalidTxt += ' after ' + invalidatedSource.toUpperCase() + ' decision change';
+                if (invalidatedBy) invalidTxt += ' via ' + invalidatedBy.toUpperCase();
+                if (invalidatedAt) invalidTxt += ' at ' + invalidatedAt;
+                if (invalidatedReason) invalidTxt += ' - ' + invalidatedReason;
+                return invalidTxt;
+            }
+            if (normalizeStageStatus(stageStatus) === 'reopened') {
+                var reopenedBy = String((meta && meta.reopened_by_role) || '').trim();
+                var reopenedAt = String((meta && meta.reopened_at) || '').trim();
+                var reason = String((meta && meta.reopen_reason) || '').trim();
+                var txt = 'Decision update in progress';
+                if (reopenedBy) txt += ' by ' + reopenedBy.toUpperCase();
+                if (reopenedAt) txt += ' at ' + reopenedAt;
+                if (reason) txt += ' - ' + reason;
+                return txt;
+            }
+            if (meta) {
+                var relockedAt = String(meta.relocked_at || '').trim();
+                if (relockedAt && isEvaluatedWorkflowStatus(stageStatus)) {
+                    return 'Decision finalized at ' + relockedAt;
+                }
+            }
+            return '';
+        }
+
+        function applySectionLockHint(sectionEl, hintText, kind) {
+            try {
+                if (!sectionEl) return;
+                var titleBlock = sectionEl.querySelector('.cr-secbar-titleblock');
+                if (!titleBlock) return;
+                var host = titleBlock.querySelector('.cr-lock-state-hint');
+                if (!hintText) {
+                    if (host && host.parentNode) host.parentNode.removeChild(host);
+                    return;
+                }
+                if (!host) {
+                    host = document.createElement('div');
+                    host.className = 'cr-lock-state-hint';
+                    titleBlock.appendChild(host);
+                }
+                host.classList.remove('is-locked', 'is-reopened', 'is-relocked');
+                host.classList.add(kind === 'reopened' ? 'is-reopened' : (kind === 'relocked' ? 'is-relocked' : 'is-locked'));
+                host.textContent = hintText;
+            } catch (_e) {}
+        }
+
         function allowedActionsForStageStatus(status) {
             var s = normalizeStageStatus(status);
-            if (s === 'pending') return ['hold', 'insufficient_documents', 'reject', 'approve'];
-            if (s === 'hold') return ['approve', 'reject', 'insufficient_documents'];
-            if (s === 'insufficient_documents') return ['approve', 'hold', 'reject'];
-            if (s === 'approved') return ['hold', 'insufficient_documents', 'reject'];
-            if (s === 'rejected') return ['hold', 'insufficient_documents', 'approve'];
-            return ['hold', 'insufficient_documents', 'reject', 'approve'];
+            if (Object.prototype.hasOwnProperty.call(WORKFLOW_ACTION_RULES, s)) {
+                return WORKFLOW_ACTION_RULES[s].slice();
+            }
+            return WORKFLOW_ACTION_RULES.pending.slice();
         }
 
         function setComponentActionAvailabilityForStatus(status) {
@@ -3976,19 +5633,60 @@ if (uploadInput) {
 
         function syncSectionActionVisibility() {
             try {
+                var navBadgeMap = {
+                    basic: 'cvNavBadgeBasic',
+                    id: 'cvNavBadgeId',
+                    contact: 'cvNavBadgeContact',
+                    education: 'cvNavBadgeEducation',
+                    employment: 'cvNavBadgeEmployment',
+                    reference: 'cvNavBadgeReference',
+                    socialmedia: 'cvNavBadgeSocialmedia',
+                    ecourt: 'cvNavBadgeEcourt',
+                    reports: 'cvNavBadgeReports'
+                };
                 var sections = document.querySelectorAll('.candidate-section[id^="section-"]');
                 if (!sections || !sections.length) return;
                 sections.forEach(function (sectionEl) {
                     var sid = String(sectionEl.id || '').replace(/^section-/, '');
                     var key = normSection(sid);
                     var showActions = isActionableComponent(key);
+                    var isReadonly = (getRole() === 'validator' && !showActions);
+                    var roleNow = getRole();
+                    var stageNow = roleToStage(roleNow);
+                    var stageStatus = getStageStatusFor(key, stageNow, '');
+                    var allowed = allowedActionsForStageStatus(stageStatus);
+                    var isInvalidatedStage = (stageStatus === 'invalidated_by_validator_reopen' || stageStatus === 'invalidated_by_verifier_reopen');
+                    var lockHint = lockMetaTextForComponent(key, stageNow, stageStatus);
+                    applySectionLockHint(
+                        sectionEl,
+                        lockHint,
+                        isInvalidatedStage
+                            ? 'relocked'
+                            : ((normalizeStageStatus(stageStatus) === 'reopened')
+                                ? 'reopened'
+                                : (lockHint ? 'relocked' : ''))
+                    );
                     sectionEl.querySelectorAll('.cr-secbar-actions').forEach(function (actionsEl) {
                         if (showActions) {
                             actionsEl.style.setProperty('display', 'flex', 'important');
                         } else {
                             actionsEl.style.setProperty('display', 'none', 'important');
                         }
+                        actionsEl.querySelectorAll('[data-proxy-action]').forEach(function (btn) {
+                            var act = String(btn.getAttribute('data-proxy-action') || '').toLowerCase().trim();
+                            var can = showActions && (allowed.indexOf(act) !== -1);
+                            btn.style.display = can ? '' : 'none';
+                            btn.disabled = !can;
+                        });
                     });
+                    var badgeId = navBadgeMap[key] || '';
+                    if (badgeId) {
+                        var navBadge = document.getElementById(badgeId);
+                        if (navBadge) {
+                            // Keep badge visible even when section actions are readonly.
+                            navBadge.style.display = '';
+                        }
+                    }
                 });
             } catch (_e) {
             }
@@ -4217,6 +5915,11 @@ function askActionConfirm(label) {
                 } catch (_e0) {}
                 syncSectionActionVisibility();
                 applyComponentActionLock();
+                try {
+                    if (CURRENT_APP_ID) {
+                        loadEmailReplies(CURRENT_APP_ID, { componentKey: currentRepliesScopeComponent(), sync: false }).catch(function () {});
+                    }
+                } catch (_e1) {}
             });
             document.addEventListener('cv:record-tab-changed', function () {
                 syncSectionActionVisibility();
@@ -4261,7 +5964,31 @@ function askActionConfirm(label) {
             return sec;
         }
 
-        async function run(action, label) {
+        var ACTION_CONTRACT = {
+            approve: { isWorkflowMutation: true, requiresReason: false, communicationMode: null },
+            reject: { isWorkflowMutation: true, requiresReason: true, communicationMode: null },
+            hold: { isWorkflowMutation: true, requiresReason: true, communicationMode: null },
+            insufficient_documents: { isWorkflowMutation: true, requiresReason: true, communicationMode: 'workflow' },
+            clarification_required: { isWorkflowMutation: false, requiresReason: false, communicationMode: 'workflow' },
+            send_mail: { isWorkflowMutation: false, requiresReason: false, communicationMode: 'verification' }
+        };
+
+        function resolveActionPolicy(action) {
+            var a = String(action || '').toLowerCase().trim();
+            return ACTION_CONTRACT[a] || null;
+        }
+
+        async function run(action, label, options) {
+            options = options && typeof options === 'object' ? options : {};
+            action = String(action || '').toLowerCase().trim();
+            var fromUnifiedModal = !!options.fromUnifiedModal;
+            var skipUnifiedModalAuto = !!options.skipUnifiedModalAuto;
+            var targetStage = String(options.targetStage || '').toLowerCase().trim();
+            var policy = resolveActionPolicy(action);
+            if (!policy) {
+                setBoxMessage('cvTopMessage', 'Unsupported action.', 'danger');
+                return false;
+            }
             if (!applicationId) return;
             var dedupeKey = [String(action || ''), String(currentSectionKey() || ''), String(getActiveItemKeyForSection(currentSectionKey()) || '')].join('|');
             var nowTs = Date.now();
@@ -4285,10 +6012,13 @@ function askActionConfirm(label) {
 
                 var role = getRole();
                 var isComponentRole = canUseComponentWorkflowRole(role);
-                var overrideReason = '';
+                var overrideReason = String(options.reason || '').trim();
                 var componentKey = '';
                 var itemKey = '';
                 var reasonType = '';
+                var reasonRequiredActions = { hold: true, reject: true, insufficient_documents: true };
+                var isWorkflowMutation = !!policy.isWorkflowMutation;
+                var communicationMode = String(policy.communicationMode || '').toLowerCase();
 
                 if (isComponentRole && (action === 'hold' || action === 'reject' || action === 'approve' || action === 'insufficient_documents')) {
                     componentKey = currentSectionKey();
@@ -4297,9 +6027,23 @@ function askActionConfirm(label) {
                         return;
                     }
                     if (!isActionableComponent(componentKey)) {
+                        canValidatorActOnComponent(componentKey, action, 'top');
                         return;
                     }
+                    if (!canValidatorActOnComponent(componentKey, action, 'top')) return;
                     itemKey = getActiveItemKeyForSection(componentKey);
+                    if (communicationMode === 'workflow' && !fromUnifiedModal) {
+                        if (typeof window.__CR_OPEN_UNIFIED_COMM === 'function') {
+                            window.__CR_OPEN_UNIFIED_COMM({
+                                mode: 'workflow',
+                                action: action,
+                                component: componentKey || '',
+                                notes: '',
+                                requiresMutation: isWorkflowMutation
+                            });
+                        }
+                        return false;
+                    }
                 }
 
                 var requiresReason = (action === 'reject' || action === 'hold' || action === 'insufficient_documents');
@@ -4308,14 +6052,22 @@ function askActionConfirm(label) {
                 if (action === 'reject') reasonType = 'reject';
                 if (action === 'hold') reasonType = 'hold';
                 if (action === 'insufficient_documents') reasonType = 'insufficient_documents';
+                // Workflow mutations always enforce their own reason policy deterministically.
+                requiresReason = !!policy.requiresReason;
 
                 if (action === 'approve' && componentKey) {
                     var currentStageStatus = normalizeStageStatus(getStageStatusFor(componentKey, roleToStage(role), itemKey));
                     if (currentStageStatus === 'rejected') {
                         requiresReason = true;
-                        reasonTitle = 'Reopen Reason Required';
+                        reasonTitle = 'Decision Change Reason Required';
                         reasonPrompt = 'This item was rejected. Enter reason to approve';
-                        reasonType = 'reprocess_action';
+                        reasonType = 'decision_change';
+                    }
+                    if (isEvaluatedWorkflowStatus(currentStageStatus)) {
+                        requiresReason = true;
+                        reasonTitle = 'Decision Change Reason Required';
+                        reasonPrompt = 'Enter reason to replace the previous decision';
+                        reasonType = 'decision_change';
                     }
                 }
 
@@ -4335,7 +6087,7 @@ function askActionConfirm(label) {
                     }
                 }
 
-                if (requiresReason) {
+                if (requiresReason && !overrideReason) {
                     var reasonPayload = await askOverrideReason(
                         componentKey || 'case',
                         reasonPrompt,
@@ -4350,6 +6102,11 @@ function askActionConfirm(label) {
                     }
                 }
 
+                if (requiresReason && !overrideReason) {
+                    setBoxMessage('cvTopMessage', 'Reason is required to continue.', 'warning');
+                    return false;
+                }
+
                 if (action === 'stop_bgv') {
                     var ok = await askActionConfirm(label);
                     if (!ok) return;
@@ -4358,9 +6115,21 @@ function askActionConfirm(label) {
                 actionInFlight = true;
                 setActionsDisabled(true);
                 setBoxMessage('cvTopMessage', '', '');
+                try {
+                    if (window.WF_STATUS_DEBUG_LOGS === 1 || window.WF_STATUS_DEBUG_LOGS === '1') {
+                        console.debug('[WF action route]', {
+                            action: action,
+                            role: role,
+                            component: componentKey || null,
+                            endpoint: (isWorkflowMutation ? compUrl : url),
+                            modal_mode: communicationMode || null,
+                            transition_invoked: !!isWorkflowMutation
+                        });
+                    }
+                } catch (_dbg1) {}
 
                 var out;
-                if (isComponentRole && (action === 'hold' || action === 'reject' || action === 'approve' || action === 'insufficient_documents')) {
+                if (isWorkflowMutation && isComponentRole && (action === 'hold' || action === 'reject' || action === 'approve' || action === 'insufficient_documents')) {
                     var group2 = null;
                     if (role === 'verifier') {
                         group2 = getVerifierGroup() || null;
@@ -4378,6 +6147,7 @@ function askActionConfirm(label) {
                         group: group2,
                         reason: overrideReason || null,
                         override_reason: overrideReason || null,
+                        send_mail: 0,
                         expected_workflow_version: (Number.isFinite(expectedVersion) ? expectedVersion : -1),
                         transition_request_id: transitionRequestId
                     });
@@ -4391,6 +6161,11 @@ function askActionConfirm(label) {
                     });
                 }
                 if (!out.res.ok || !out.payload || out.payload.status !== 1) {
+                    var code = String((out.payload && out.payload.code) ? out.payload.code : '').trim();
+                    if (code === 'WF_DECISION_REPLACEMENT_REASON_REQUIRED') {
+                        setBoxMessage('cvTopMessage', 'Reason is required when changing a previous decision.', 'warning');
+                        return false;
+                    }
                     var msg = (out.payload && out.payload.message) ? out.payload.message : 'Action failed.';
                     var msgLower = String(msg || '').toLowerCase();
                     if (msgLower.indexOf('validator rejected') !== -1) {
@@ -4407,10 +6182,22 @@ function askActionConfirm(label) {
                         }
                     }
                     setBoxMessage('cvTopMessage', msg, 'danger');
-                    return;
+                    return false;
                 }
 
                 var d = out.payload.data || {};
+                try {
+                    if (window.WF_STATUS_DEBUG_LOGS === 1 || window.WF_STATUS_DEBUG_LOGS === '1') {
+                        console.debug('[WF action result]', {
+                            action: action,
+                            workflow_status: d.workflow_status || d.component_status || null,
+                            case_status: d.case_status || null,
+                            application_status: d.application_status || null,
+                            transition_invoked: !!isWorkflowMutation,
+                            communication_side_effect: (isWorkflowMutation && communicationMode === 'workflow')
+                        });
+                    }
+                } catch (_dbg2) {}
                 var statusLabel = d.application_status || d.case_status || '';
                 if ((role === 'qa' || role === 'team_lead') && action === 'reject') {
                     statusLabel = 'QA Rejected';
@@ -4486,15 +6273,38 @@ function askActionConfirm(label) {
                 }
                 // Canonical re-sync to eliminate stale derived local state after mutation.
                 try {
-                    await loadReport();
+                    loadReport({ preserveUi: true, section: componentKey2 }).catch(function () {});
                 } catch (_syncErr) {}
-                setBoxMessage('cvTopMessage', 'Updated successfully.', 'success');
+                if (Array.isArray(d.invalidated_stages) && d.invalidated_stages.length > 0) {
+                    setBoxMessage('cvTopMessage', 'Decision updated. Downstream review was invalidated for reconciliation.', 'success');
+                } else if ((stageStatusForComponent || '') && isEvaluatedWorkflowStatus(stageStatusForComponent)) {
+                    setBoxMessage('cvTopMessage', 'Decision updated successfully.', 'success');
+                } else {
+                    setBoxMessage('cvTopMessage', 'Updated successfully.', 'success');
+                }
+
+                // Communication side-effect only after canonical mutation succeeds.
+                if (isWorkflowMutation && communicationMode === 'workflow' && isComponentRole && action === 'insufficient_documents') {
+                    try {
+                        if (!fromUnifiedModal && !skipUnifiedModalAuto && typeof window.__CR_OPEN_UNIFIED_COMM === 'function') {
+                            window.__CR_OPEN_UNIFIED_COMM({
+                                mode: 'workflow',
+                                action: 'insufficient_documents',
+                                component: componentKey2 || componentKey || '',
+                                notes: '',
+                                requiresMutation: false
+                            });
+                        }
+                    } catch (_eComm) {}
+                }
             } catch (e) {
                 setBoxMessage('cvTopMessage', (e && e.message) ? e.message : 'Action failed.', 'danger');
+                return false;
             } finally {
                 setActionsDisabled(false);
                 actionInFlight = false;
             }
+            return true;
         }
 
         // expose for per-component toolbars
@@ -4726,7 +6536,10 @@ function askActionConfirm(label) {
             var firstVisible = items.find(function (b) { return b.style.display !== 'none'; });
             initial = firstVisible ? firstVisible.getAttribute('data-section') : '';
         }
-        if (assignedKeys && assignedKeys.length) {
+        var preferred = normSection(CURRENT_SECTION_KEY || LAST_COMPONENT_SECTION_KEY || '');
+        if (preferred && sectionVisibleInNav(preferred)) {
+            initial = preferred;
+        } else if (assignedKeys && assignedKeys.length) {
             initial = assignedKeys[0] || initial;
         }
 
@@ -5053,6 +6866,11 @@ function askActionConfirm(label) {
         var btn = document.getElementById('cvUploadBtn');
         var filesEl = document.getElementById('cvUploadFiles');
         var typeEl = document.getElementById('cvUploadDocType');
+        var roleNow = getRole();
+        var activeSection = normSection(CURRENT_SECTION_KEY || activeComponentSectionKey() || '');
+        if (roleNow === 'validator' && activeSection && !canValidatorActOnComponent(activeSection, 'upload_docs', 'upload')) {
+            return;
+        }
 
         if (!filesEl || !typeEl) return;
 
@@ -5110,9 +6928,18 @@ function askActionConfirm(label) {
         }
     }
 
-    async function loadReport() {
+    async function loadReport(options) {
+        if (LOAD_REPORT_IN_FLIGHT) {
+            LOAD_REPORT_PENDING_OPTS = options || {};
+            return REPORT_PAYLOAD || null;
+        }
+        LOAD_REPORT_IN_FLIGHT = true;
+        options = options || {};
+        try {
         var root = document.querySelector('.cr-report-root');
-        if (root) root.setAttribute('data-ui-ready', '0');
+        var hasExistingPayload = !!(REPORT_PAYLOAD && typeof REPORT_PAYLOAD === 'object');
+        var shouldHideUi = !options.preserveUi && !hasExistingPayload;
+        if (root && shouldHideUi) root.setAttribute('data-ui-ready', '0');
 
         var applicationId = qs('application_id') || '';
         var caseId = qs('case_id') || '';
@@ -5140,6 +6967,7 @@ function askActionConfirm(label) {
             url = base + '/api/shared/candidate_report_get.php?case_id=' + encodeURIComponent(caseId);
         } else {
             setText('cvTopMessage', 'application_id is required in URL');
+            if (root) root.setAttribute('data-ui-ready', '1');
             return;
         }
 
@@ -5172,6 +7000,7 @@ function askActionConfirm(label) {
         if (!res.ok || !payload || payload.status !== 1) {
             var msg = (payload && payload.message) ? payload.message : 'Failed to load report.';
             setText('cvTopMessage', msg);
+            if (root) root.setAttribute('data-ui-ready', '1');
             return;
         }
 
@@ -5186,9 +7015,11 @@ function askActionConfirm(label) {
         var d = payload.data || {};
         if (!hasSnapshotContract(d)) {
             setText('cvTopMessage', 'Workflow snapshot is unavailable for this case. Please refresh.');
+            if (root) root.setAttribute('data-ui-ready', '1');
             return;
         }
         REPORT_PAYLOAD = d;
+        applyRoleActionabilityFromPayload(d);
         resetComponentTableRenderState(d);
         applyCaseActionCardVisibility();
 
@@ -5289,6 +7120,7 @@ function askActionConfirm(label) {
         setText('cvHeaderCandidate', (cs.candidate_first_name || '') + ' ' + (cs.candidate_last_name || ''));
         setText('cvHeaderAppId', applicationId);
         setText('cvHeaderStatus', (displayCaseStatus(app.status, cs.case_status) || ''));
+        setCandidateAvatar(basic, cs);
         var tatDays = cs && typeof cs.internal_tat !== 'undefined' ? (parseInt(cs.internal_tat || '20', 10) || 20) : 20;
         var rules = cs && cs.weekend_rules ? cs.weekend_rules : 'exclude';
         setText('cvHeaderTat', tatLabelFromCreated(cs.created_at || '', { internal_tat: tatDays, weekend_rules: rules }));
@@ -5335,6 +7167,9 @@ function askActionConfirm(label) {
 
         initCaseActions(applicationId);
         initVerifierMailAndPrint(function () { return REPORT_PAYLOAD; });
+        initSectionVerificationMail(function () { return REPORT_PAYLOAD; });
+        initCandidateAccessResend(function () { return REPORT_PAYLOAD; });
+        initCandidateCorrectionRequest(function () { return REPORT_PAYLOAD; });
 
         setVal('cv_basic_first_name', basic.first_name || cs.candidate_first_name || '');
         setVal('cv_basic_last_name', basic.last_name || cs.candidate_last_name || '');
@@ -5375,6 +7210,56 @@ function askActionConfirm(label) {
             { key: 'state', label: 'State' },
             { key: 'nationality', label: 'Nationality' },
             { key: 'marital_status', label: 'Marital Status' }
+        ]);
+
+        renderTable('cv_socialmedia_table', [{
+            linkedin_url: social.linkedin_url || '',
+            facebook_url: social.facebook_url || '',
+            instagram_url: social.instagram_url || '',
+            twitter_url: social.twitter_url || '',
+            other_url: social.other_url || '',
+            consent_bgv: Number(social.consent_bgv || 0) === 1 ? 'Yes' : (social.consent_bgv === null || typeof social.consent_bgv === 'undefined' ? '' : 'No'),
+            content: social.content || ''
+        }], [
+            { key: 'linkedin_url', label: 'LinkedIn', forceText: true },
+            { key: 'facebook_url', label: 'Facebook', forceText: true },
+            { key: 'instagram_url', label: 'Instagram', forceText: true },
+            { key: 'twitter_url', label: 'Twitter', forceText: true },
+            { key: 'other_url', label: 'Other URL', forceText: true },
+            { key: 'consent_bgv', label: 'Consent', forceText: true },
+            { key: 'content', label: 'Content', forceText: true }
+        ]);
+
+        renderTable('cv_ecourt_table', [{
+            current_address: ecourt.current_address || '',
+            permanent_address: ecourt.permanent_address || '',
+            evidence_document: ecourt.evidence_document || '',
+            period_from_date: window.GSS_DATE.formatDbDateTime(ecourt.period_from_date || ''),
+            period_to_date: window.GSS_DATE.formatDbDateTime(ecourt.period_to_date || ''),
+            period_duration_years: ecourt.period_duration_years || '',
+            dob: window.GSS_DATE.formatDbDateTime(ecourt.dob || ''),
+            comments: ecourt.comments || ''
+        }], [
+            { key: 'current_address', label: 'Current Address' },
+            { key: 'permanent_address', label: 'Permanent Address' },
+            { key: 'evidence_document', label: 'Evidence Document' },
+            { key: 'period_from_date', label: 'Period From' },
+            { key: 'period_to_date', label: 'Period To' },
+            { key: 'period_duration_years', label: 'Duration (Years)' },
+            { key: 'dob', label: 'Date Of Birth' },
+            { key: 'comments', label: 'Comments' }
+        ]);
+
+        renderTable('cv_reports_table', [{
+            submitted_at: window.GSS_DATE.formatDbDateTime(app.submitted_at || ''),
+            auth_signature: auth.digital_signature || auth.signature || auth.authorization_signature || auth.auth_signature || '',
+            auth_file_name: auth.file_name || auth.authorization_file_name || auth.auth_file_name || auth.filename || '',
+            auth_uploaded_at: window.GSS_DATE.formatDbDateTime(auth.uploaded_at || auth.authorization_uploaded_at || auth.auth_uploaded_at || auth.uploadedAt || '')
+        }], [
+            { key: 'submitted_at', label: 'Application Submitted At' },
+            { key: 'auth_signature', label: 'Authorization Signature' },
+            { key: 'auth_file_name', label: 'Authorization File Name' },
+            { key: 'auth_uploaded_at', label: 'Authorization Uploaded At' }
         ]);
 
         setVal('cv_contact_current_address', [contact.address1, contact.address2, contact.city, contact.state, contact.country, contact.postal_code].filter(Boolean).join(', '));
@@ -5461,12 +7346,22 @@ function askActionConfirm(label) {
         }
 
         setTimeout(function () {
-            loadTimeline(applicationId);
+            loadTimeline(applicationId, { sync: false });
         }, 120);
 
         if (root) root.setAttribute('data-ui-ready', '1');
 
         return d;
+    } finally {
+        LOAD_REPORT_IN_FLIGHT = false;
+        if (LOAD_REPORT_PENDING_OPTS) {
+            var pendingOpts = LOAD_REPORT_PENDING_OPTS;
+            LOAD_REPORT_PENDING_OPTS = null;
+            setTimeout(function () {
+                loadReport(pendingOpts).catch(function () {});
+            }, 0);
+        }
+    }
     }
 
     document.addEventListener('DOMContentLoaded', function () {
@@ -5479,6 +7374,8 @@ function askActionConfirm(label) {
         initValidatorRemarks();
         initDocViewer();
         initDocViewModal();
+        initClientAdminEscalation();
+        bindRepliesSyncButton();
         if (document.querySelector('.cr-report-root.cr-validator-workspace') && String(qs('print') || '') !== '1') {
             document.body.style.overflow = 'hidden';
         }
@@ -5531,3 +7428,6 @@ setTimeout(function () {
 
 }, 500);
 })();
+
+
+

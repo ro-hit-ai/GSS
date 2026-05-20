@@ -361,6 +361,8 @@ class Contact {
         const permanentPane = document.getElementById('permanent_address_tab');
         const hiddenCurrent = form.querySelector('[name="has_current_address"]');
         const hiddenPermanent = form.querySelector('[name="has_permanent_address"]');
+        const singleHeadings = form.querySelectorAll('[data-single-address-heading]');
+        const showSingleHeading = (hasCurrent ? 1 : 0) + (hasPermanent ? 1 : 0) === 1;
 
         if (hiddenCurrent) hiddenCurrent.value = hasCurrent ? '1' : '0';
         if (hiddenPermanent) hiddenPermanent.value = hasPermanent ? '1' : '0';
@@ -371,6 +373,15 @@ class Contact {
         if (tabsWrap) tabsWrap.style.display = (hasCurrent && hasPermanent) ? '' : 'none';
         if (currentPane) currentPane.style.display = hasCurrent ? '' : 'none';
         if (permanentPane) permanentPane.style.display = hasPermanent ? '' : 'none';
+
+        singleHeadings.forEach((heading) => {
+            const key = String(heading.getAttribute('data-single-address-heading') || '').trim();
+            const shouldShow = showSingleHeading && (
+                (key === 'current_address' && hasCurrent) ||
+                (key === 'permanent_address' && hasPermanent)
+            );
+            heading.style.display = shouldShow ? '' : 'none';
+        });
 
         this.toggleCurrentFields(hasCurrent);
         this.togglePermanentFields(hasPermanent && (!isSame || !hasCurrent));

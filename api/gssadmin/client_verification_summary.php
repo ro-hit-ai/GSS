@@ -2,7 +2,7 @@
 header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../config/db.php';
-require_once __DIR__ . '/../../includes/component_resolver.php';
+require_once __DIR__ . '/../shared/case_component_binding.php';
 
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, OPTIONS');
@@ -11,6 +11,13 @@ header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-W
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit;
+}
+
+function norm_component_key_local(string $key): string {
+    $k = strtolower(trim($key));
+    if ($k === 'identification') return 'id';
+    if ($k === 'social_media' || $k === 'social-media') return 'socialmedia';
+    return $k;
 }
 
 try {
@@ -166,19 +173,51 @@ try {
 
     // Group steps by role
     $stepsByRole = [];
+    $unknownTypes = [];
+    $pageByComponent = [
+        'basic' => 'basic-details',
+        'id' => 'identification',
+        'contact' => 'contact',
+        'education' => 'education',
+        'employment' => 'employment',
+        'reference' => 'reference',
+        'ecourt' => 'ecourt',
+        'socialmedia' => 'social',
+    ];
     foreach ($steps as $s) {
         $rid = isset($s['job_role_id']) ? (int)$s['job_role_id'] : 0;
         if ($rid <= 0) continue;
         if (!isset($stepsByRole[$rid])) $stepsByRole[$rid] = [];
+        $resolved = case_component_binding_map_verification_type_to_components((string)($s['type_name'] ?? ''), (string)($s['type_category'] ?? ''));
+        $resolved = array_values(array_unique(array_filter(array_map(function ($k) {
+            return norm_component_key_local((string)$k);
+        }, $resolved), function ($k) {
+            return $k !== '';
+        })));
+        $componentKey = $resolved[0] ?? '';
+        $candidatePage = ($componentKey !== '' && isset($pageByComponent[$componentKey])) ? $pageByComponent[$componentKey] : '';
+        $candidateSubsection = '';
+        $displayLabel = $componentKey !== '' ? $componentKey : (string)($s['type_name'] ?? '');
+        if ($componentKey === 'contact') {
+            $candidateSubsection = case_component_binding_contact_subsection((string)($s['type_name'] ?? ''), (string)($s['type_category'] ?? ''));
+            $displayLabel = case_component_binding_contact_display_label((string)($s['type_name'] ?? ''), (string)($s['type_category'] ?? ''));
+        }
+        if ($componentKey === '') {
+            $unknownTypes[] = [
+                'verification_type_id' => isset($s['verification_type_id']) ? (int)$s['verification_type_id'] : 0,
+                'type_name' => (string)($s['type_name'] ?? ''),
+                'type_category' => (string)($s['type_category'] ?? ''),
+            ];
+        }
         $stepsByRole[$rid][] = [
             'stage_key' => (string)($s['stage_key'] ?? ''),
             'verification_type_id' => isset($s['verification_type_id']) ? (int)$s['verification_type_id'] : 0,
             'type_name' => (string)($s['type_name'] ?? ''),
             'type_category' => (string)($s['type_category'] ?? ''),
-            'component_key' => resolve_component_key((string)($s['type_name'] ?? ''), (string)($s['type_category'] ?? '')),
-            'display_label' => resolve_component_label((string)($s['type_name'] ?? ''), (string)($s['type_category'] ?? '')),
-            'candidate_page' => resolve_component_page((string)($s['type_name'] ?? ''), (string)($s['type_category'] ?? '')),
-            'candidate_subsection' => resolve_component_subsection((string)($s['type_name'] ?? ''), (string)($s['type_category'] ?? '')),
+            'component_key' => $componentKey,
+            'display_label' => $displayLabel,
+            'candidate_page' => $candidatePage,
+            'candidate_subsection' => $candidateSubsection,
             'execution_group' => isset($s['execution_group']) ? (int)$s['execution_group'] : 1,
             'assigned_role' => (string)($s['assigned_role'] ?? ''),
             'is_active' => isset($s['is_active']) ? (int)$s['is_active'] : 1,
@@ -211,9 +250,15 @@ try {
         }
 
         $resp['debug'] = [
+            'resolver_owner' => 'case_component_binding',
+            'unknown_types' => $unknownTypes,
             'database' => $dbName,
             'hostname' => $dbHost,
         ];
+    }
+
+    if (!empty($unknownTypes)) {
+        error_log('CLIENT_VERIFICATION_SUMMARY_UNKNOWN_MAP: ' . json_encode($unknownTypes));
     }
 
     echo json_encode($resp);

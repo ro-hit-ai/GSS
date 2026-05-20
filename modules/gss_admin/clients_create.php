@@ -1,7 +1,9 @@
 <?php
 require_once __DIR__ . '/../../includes/layout.php';
+require_once __DIR__ . '/../../includes/auth.php';
 
 require_once __DIR__ . '/../../includes/menus.php';
+auth_require_login('gss_admin');
 
 $menu = gss_admin_menu();
 
@@ -39,7 +41,7 @@ ob_start();
                         <div style="display:flex; gap:10px; align-items:center;">
                             <div style="width:54px; height:54px; border:1px solid #e5e7eb; border-radius:8px; overflow:hidden; display:flex; align-items:center; justify-content:center; background:#fff;">
                                 <span id="customerLogoPreviewPlaceholder" style="font-size:11px; color:#6b7280;">No logo</span>
-                                <img id="customerLogoPreview" alt="Customer Logo" style="display:none; width:100%; height:100%; object-fit:contain;" />
+                                <img id="customerLogoPreview" alt="Customer Logo" style="display:none; width:100%; height:100%; object-fit:contain;" >
                             </div>
                             <div style="flex:1;">
                                 <input type="file" name="customer_logo" id="customerLogoInput" accept="image/*">
@@ -57,7 +59,7 @@ ob_start();
                         <div class="multi-select" data-label-default="Select options">
                             <div class="multi-select-trigger">
                                 <span class="multi-select-label">Select options</span>
-                                <span class="multi-select-arrow">▾</span>
+                                <span class="multi-select-arrow">â–¾</span>
                             </div>
                             <div class="multi-select-dropdown">
                                 <label class="basic-toggle">
@@ -155,7 +157,7 @@ ob_start();
                 <div class="cv-vp-box">
                     <div class="cv-vp-head">
                         <div class="cv-vp-title">Levels</div>
-                        <div class="cv-vp-sub">Add / select (multi).</div>
+                        <div class="cv-vp-sub">Add / select (multi)</div>
                     </div>
 
                     <div style="display:flex; gap:8px; align-items:center; margin-top:10px;">
@@ -241,7 +243,7 @@ ob_start();
                     <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px;">
                         <div>
                             <div class="cv-vp-title">Saved Mapping</div>
-                            <div class="cv-vp-sub">Level → Job Role → Stage → Verification Types</div>
+                            <div class="cv-vp-sub">Level â†’ Job Role â†’ Stage â†’ Verification Types</div>
                         </div>
                         <div style="display:flex; gap:8px; align-items:center;">
                             <button type="button" class="btn" id="cv_summary_view_list" style="padding:6px 10px;">List</button>
@@ -909,3 +911,4 @@ ob_start();
 <?php
 $content = ob_get_clean();
 render_layout('Create Client', 'GSS Admin', $menu, $content);
+?> <!-- EOF -->

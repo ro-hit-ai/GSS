@@ -67,23 +67,11 @@ ob_start();
                 <option value="">Loading...</option>
             </select>
         </div>
-        <div class="form-control">
-            <label>Job Level *</label>
-            <select name="job_level" id="selected_level" required>
-                <option value="">-- Select Job Level --</option>
-            </select>
-        </div>
-        <div class="form-control">
-            <label>Stage *</label>
-            <select name="stage_key" id="stage_key" required>
-                <option value="">-- Select Stage --</option>
-            </select>
-        </div>
 
         <div class="form-control" style="grid-column: 1 / -1;">
-            <label>Mapped Checks (Selected Job Role + Job Level + Stage)</label>
+            <label>Mapped Checks (Selected Job Role)</label>
             <div id="jobRoleMappingPreview" class="card" style="margin:0; padding:12px; background:#f8fafc;">
-                <div class="text-muted" style="font-size:12px;">Select a job role, job level and stage to view mapped verification checks.</div>
+                <div class="text-muted" style="font-size:12px;">Select a job role to view mapped verification checks.</div>
             </div>
         </div>
         <div class="form-control">

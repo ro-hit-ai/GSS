@@ -28,6 +28,10 @@ require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/integration.php';
 require_once __DIR__ . '/../shared/case_component_binding.php';
 require_once __DIR__ . '/../shared/candidate_account_notify.php';
+require_once __DIR__ . '/../shared/candidate_correction_service.php';
+require_once __DIR__ . '/../shared/workflow/WorkflowTransitionService.php';
+require_once __DIR__ . '/../shared/workflow_stage_config.php';
+require_once __DIR__ . '/../shared/application_status_guard.php';
 
 function submission_mail_debug_log(string $message): void
 {
@@ -43,6 +47,18 @@ function submission_mail_debug_log(string $message): void
         }
     }
 
+    @error_log($line);
+}
+
+function validator_activation_debug_log(string $message): void
+{
+    $root = realpath(__DIR__ . '/../..');
+    $logFile = $root ? ($root . DIRECTORY_SEPARATOR . 'logs' . DIRECTORY_SEPARATOR . 'validator_activation_debug.log') : '';
+    $line = '[' . date('Y-m-d H:i:s') . '] ' . $message . "\r\n";
+    if ($logFile !== '') {
+        @file_put_contents($logFile, $line, FILE_APPEND);
+        return;
+    }
     @error_log($line);
 }
 
@@ -74,6 +90,19 @@ function ensureValidatorWorkflowPending(PDO $pdo, string $applicationId): int
     return (int)$stmt->rowCount();
 }
 
+function is_authorization_completed(PDO $pdo, string $applicationId): bool
+{
+    $st = $pdo->prepare(
+        "SELECT 1
+           FROM Vati_Payfiller_Candidate_Authorization_documents
+          WHERE application_id = ?
+            AND TRIM(COALESCE(digital_signature, '')) <> ''
+          LIMIT 1"
+    );
+    $st->execute([$applicationId]);
+    return (bool)$st->fetchColumn();
+}
+
 try {
 
     if (empty($_SESSION['application_id'])) {
@@ -88,6 +117,83 @@ try {
     }
 
     $pdo->query("SELECT 1");
+
+    if (!is_authorization_completed($pdo, $application_id)) {
+        validator_activation_debug_log(
+            'source=submit'
+            . ' application_id=' . $application_id
+            . ' final_submit_completed=0 authorization_completed=0 queue_created=0 queue_seed_reason=blocked_missing_authorization'
+        );
+        throw new Exception('Please complete authorization before final submit.');
+    }
+
+    // Correction mode submit: complete only targeted correction workflow.
+    if (!empty($_SESSION['candidate_correction_mode']) && !empty($_SESSION['candidate_correction_session_id'])) {
+        ccs_ensure_table($pdo);
+        $corrId = (int)$_SESSION['candidate_correction_session_id'];
+        $corr = $pdo->prepare('SELECT * FROM candidate_correction_sessions WHERE correction_session_id = ? LIMIT 1');
+        $corr->execute([$corrId]);
+        $corrRow = $corr->fetch(PDO::FETCH_ASSOC) ?: null;
+        if (!$corrRow || strtolower(trim((string)($corrRow['status'] ?? ''))) !== 'active') {
+            throw new Exception('Correction session is not active.');
+        }
+        $allowed = json_decode((string)($corrRow['allowed_components_json'] ?? '[]'), true);
+        if (!is_array($allowed) || !$allowed) {
+            throw new Exception('No correction components found for session.');
+        }
+        $components = [];
+        foreach ($allowed as $ac) {
+            $k = ccs_component_norm((string)$ac);
+            if ($k !== '') $components[$k] = true;
+        }
+        $components = array_values(array_keys($components));
+        $pdo->beginTransaction();
+        $changed = ccs_resume_components_after_candidate_submit($pdo, (int)$corrRow['case_id'], $application_id, $components);
+        $requestedRole = ccs_role_norm((string)($corrRow['requested_role'] ?? 'validator'));
+        $resumeStage = ccs_component_stage_for_role($requestedRole);
+        if ($resumeStage === '') {
+            $resumeStage = wf_stage_keys()[0] ?? 'validator';
+        }
+        $setAppPending = $pdo->prepare(
+            "UPDATE Vati_Payfiller_Candidate_Applications
+                SET status = 'submitted',
+                    updated_at = NOW()
+              WHERE application_id = ?"
+        );
+        $setAppPending->execute([$application_id]);
+        $done = $pdo->prepare("UPDATE candidate_correction_sessions SET status = 'completed', completed_at = NOW(), updated_at = NOW(), completed_by_role = 'candidate' WHERE correction_session_id = ?");
+        $done->execute([$corrId]);
+        $svc = new WorkflowTransitionService($pdo);
+        $reconcile = $svc->reconcileCorrectionLifecycle(
+            (int)$corrRow['case_id'],
+            $application_id,
+            $resumeStage,
+            $components,
+            0,
+            'candidate',
+            'candidate correction submitted'
+        );
+        if (empty($reconcile['ok'])) {
+            throw new Exception((string)($reconcile['message'] ?? 'Correction lifecycle reconcile failed'));
+        }
+        $pdo->commit();
+        ccs_timeline($pdo, $application_id, 0, 'candidate', 'candidate_correction', 'Candidate submitted requested corrections: ' . implode(', ', $components));
+        unset(
+            $_SESSION['candidate_correction_mode'],
+            $_SESSION['candidate_correction_session_id'],
+            $_SESSION['candidate_correction_token'],
+            $_SESSION['candidate_correction_allowed_components'],
+            $_SESSION['candidate_correction_allowed_pages']
+        );
+        $response['success'] = true;
+        $response['message'] = 'Correction submitted successfully.';
+        $response['correction'] = [
+            'components' => $components,
+            'workflow_rows_changed' => $changed
+        ];
+        echo json_encode($response);
+        exit;
+    }
 
     // Ensure candidate application lifecycle row exists; submit action must be idempotent.
     $caseMetaStmt = $pdo->prepare(
@@ -104,6 +210,7 @@ try {
         . (string)($caseMeta['candidate_last_name'] ?? '')
     );
 
+    $submittedStatus = wf_assert_valid_application_status('submitted', 'candidate.submit.final_submit');
     $upsert = $pdo->prepare(
         "INSERT INTO Vati_Payfiller_Candidate_Applications
             (application_id, candidate_name, status, submitted_at, created_at, updated_at)
@@ -128,8 +235,16 @@ try {
             $ensure->execute([$clientId]);
             while ($ensure->nextRowset()) {
             }
-            $pdo->prepare('UPDATE Vati_Payfiller_Validator_Queue SET status = IF(completed_at IS NULL AND assigned_user_id IS NULL, "pending", status) WHERE case_id = ?')
-                ->execute([$caseId]);
+            $qchk = $pdo->prepare('SELECT 1 FROM Vati_Payfiller_Validator_Queue WHERE case_id = ? LIMIT 1');
+            $qchk->execute([$caseId]);
+            $queueCreated = (bool)$qchk->fetchColumn();
+            validator_activation_debug_log(
+                'source=submit'
+                . ' application_id=' . $application_id
+                . ' case_id=' . $caseId
+                . ' final_submit_completed=1 authorization_completed=1 queue_created=' . ($queueCreated ? '1' : '0')
+                . ' queue_seed_reason=final_submit'
+            );
 
             $pdo->prepare(
                 "UPDATE Vati_Payfiller_Cases
@@ -140,10 +255,10 @@ try {
 
             $pdo->prepare(
                 "UPDATE Vati_Payfiller_Candidate_Applications
-                 SET status = 'PENDING_VALIDATOR'
+                 SET status = ?
                  WHERE application_id = ?
-                   AND UPPER(TRIM(COALESCE(status,''))) NOT IN ('REJECTED','STOP_BGV','APPROVED','COMPLETED','CLEAR')"
-            )->execute([$application_id]);
+                   AND LOWER(TRIM(COALESCE(status,''))) NOT IN ('rejected','verified')"
+            )->execute([$submittedStatus, $application_id]);
 
             // Seed candidate-stage workflow as approved for all required components.
             try {
@@ -165,6 +280,12 @@ try {
 
         }
     } catch (Throwable $e) {
+        validator_activation_debug_log(
+            'source=submit'
+            . ' application_id=' . $application_id
+            . ' final_submit_completed=1 authorization_completed=1 queue_created=0 queue_seed_reason=queue_seed_exception'
+            . ' error=' . $e->getMessage()
+        );
         // ignore
     }
 
@@ -272,6 +393,9 @@ try {
     }
 
 } catch (Throwable $e) {
+    if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
 
     http_response_code(400);
     $response['success'] = false;

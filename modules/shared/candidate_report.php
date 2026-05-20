@@ -262,6 +262,40 @@ if ($role === 'company_recruiter') {
 $backToListHref = '';
 if ($role === 'verifier') {
     $backToListHref = '../verifier/candidates_list.php';
+    $incomingView = strtolower(trim((string)($_GET['list_view'] ?? $_GET['view'] ?? '')));
+    $allowedViews = ['mine', 'available', 'followup', 'participated', 'history', 'completed'];
+    if ($incomingView === '' && isset($_SESSION['verifier_last_list_view'])) {
+        $incomingView = strtolower(trim((string)$_SESSION['verifier_last_list_view']));
+    }
+    if (!in_array($incomingView, $allowedViews, true)) {
+        $incomingView = 'mine';
+    }
+    if ($incomingView === 'history' || $incomingView === 'completed') {
+        $incomingView = 'participated';
+    }
+    $incomingFilter = strtolower(trim((string)($_GET['list_filter'] ?? $_GET['filter'] ?? '')));
+    $allowedFilters = ['all', 'active_work', 'awaiting_evaluation', 'waiting_candidate', 'evaluated', 'reopened', 'downstream_processing', 'review_complete'];
+    if ($incomingFilter === '' && isset($_SESSION['verifier_last_list_filter'])) {
+        $incomingFilter = strtolower(trim((string)$_SESSION['verifier_last_list_filter']));
+    }
+    if (!in_array($incomingFilter, $allowedFilters, true)) {
+        $incomingFilter = '';
+    }
+    $_SESSION['verifier_last_list_view'] = $incomingView;
+    if ($incomingFilter !== '') {
+        $_SESSION['verifier_last_list_filter'] = $incomingFilter;
+    }
+    $backParams = [];
+    if ($group !== '') {
+        $backParams['group'] = $group;
+    }
+    $backParams['view'] = $incomingView;
+    if ($incomingFilter !== '') {
+        $backParams['filter'] = $incomingFilter;
+    }
+    if (!empty($backParams)) {
+        $backToListHref .= '?' . http_build_query($backParams);
+    }
 } elseif ($role === 'validator') {
     $backToListHref = '../validator/candidates_list.php';
 } elseif ($role === 'qa' || $role === 'team_lead') {
@@ -283,8 +317,10 @@ ob_start();
     .cr-hero{border:1px solid rgba(59,130,246,0.16); background:radial-gradient(900px 420px at 10% 0%, rgba(59,130,246,0.12), transparent 55%), radial-gradient(720px 380px at 90% 0%, rgba(34,197,94,0.10), transparent 55%), linear-gradient(180deg,#ffffff,#f8fafc); border-radius:16px; padding:14px; box-shadow:0 14px 28px rgba(15,23,42,0.08);}
     .cr-hero-top{display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;}
     .cr-hero-head{display:flex; align-items:flex-start; gap:12px;}
-    .cr-avatar{width:44px; height:44px; border-radius:14px; display:grid; place-items:center; background:linear-gradient(180deg,#111827,#0b1220); box-shadow:0 10px 18px rgba(15,23,42,0.18); border:1px solid rgba(148,163,184,0.20);}
+    .cr-avatar{width:44px; height:44px; border-radius:14px; display:grid; place-items:center; background:linear-gradient(180deg,#111827,#0b1220); box-shadow:0 10px 18px rgba(15,23,42,0.18); border:1px solid rgba(148,163,184,0.20); overflow:hidden;}
     .cr-avatar svg{width:22px; height:22px; color:#e5e7eb;}
+    .cr-avatar img{width:100%; height:100%; object-fit:cover; display:block;}
+    .cr-avatar-fallback{font-size:13px; font-weight:900; letter-spacing:.04em; color:#e5e7eb;}
     .cr-actions{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
     .cr-action-btn{border-radius:12px; padding:8px 12px; font-size:12px; font-weight:800; border:1px solid rgba(148,163,184,0.38); background:#ffffff; color:#0f172a;}
     .cr-action-btn:hover{filter:brightness(0.98);}
@@ -316,13 +352,16 @@ ob_start();
     .cr-docbar-open{font-size:11px; font-weight:900; color:#2563eb; white-space:nowrap;}
     .cr-sidebar-title{font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.10em; color:#64748b; margin-bottom:10px;}
     .cr-nav{display:flex; flex-direction:column; gap:6px;}
-    .cr-nav .list-group-item{border:1px solid transparent; border-radius:12px; background:transparent; padding:10px 10px; cursor:pointer; transition:background .2s ease, border-color .2s ease, transform .15s ease; display:flex; align-items:center; justify-content:space-between;}
+    .cr-nav .list-group-item{border:1px solid transparent; border-radius:12px; background:transparent; padding:10px 10px; cursor:pointer; transition:background .2s ease, border-color .2s ease, transform .15s ease;}
+    .cr-nav .section-row{display:flex; justify-content:space-between; align-items:flex-start; gap:12px; min-height:58px;}
     .cr-nav .list-group-item:hover{background:rgba(59,130,246,0.08); border-color:rgba(59,130,246,0.20); transform:translateX(2px);}
     .cr-nav .list-group-item.active{background:rgba(59,130,246,0.12); border-color:rgba(59,130,246,0.34);}
-    .cr-nav-label{display:flex; align-items:center; gap:8px;}
+    .cr-nav-label,.cr-nav .section-left{display:flex; align-items:flex-start; gap:10px; flex:1; min-width:0; padding-right:6px;}
+    .cr-nav .section-title{display:block; flex:1 1 auto; min-width:0; max-width:100%; line-height:1.2; white-space:normal; word-break:keep-all; overflow-wrap:normal; hyphens:none;}
     .cr-ico{width:18px; height:18px; color:#64748b; flex:0 0 18px;}
     .cr-nav .list-group-item.active .cr-ico{color:#2563eb;}
-    .cr-nav .badge{border-radius:999px; padding:4px 10px; font-size:11px; font-weight:800; letter-spacing:.02em;}
+    .cr-nav .section-right,.cr-nav .cv-badge-wrap{display:flex; align-items:flex-start; gap:6px; flex:0 0 auto;}
+    .cr-nav .badge{border-radius:999px; padding:4px 10px; font-size:11px; font-weight:800; letter-spacing:.02em; white-space:nowrap; flex:0 0 auto; align-self:flex-start; margin-top:2px;}
     .cr-nav .badge.bg-success{background:rgba(34,197,94,0.14) !important; color:#166534 !important; border:1px solid rgba(34,197,94,0.22);}
     .cr-nav .badge.bg-warning{background:rgba(251,191,36,0.16) !important; color:#92400e !important; border:1px solid rgba(251,191,36,0.26);}
     .cr-nav .badge.bg-secondary{background:rgba(100,116,139,0.14) !important; color:#334155 !important; border:1px solid rgba(100,116,139,0.22);}
@@ -345,6 +384,8 @@ ob_start();
     .cr-report-root.cr-role-db_verifier .cr-sidebar,
     .cr-report-root.cr-role-qa .cr-sidebar,
     .cr-report-root.cr-role-team_lead .cr-sidebar{display:block;}
+    .cr-report-root.cr-role-qa .cr-nav .section-left,
+    .cr-report-root.cr-role-team_lead .cr-nav .section-left{min-width:96px;}
 
     .cr-report-root.cr-role-verifier .cr-shell,
     .cr-report-root.cr-role-validator .cr-shell,
@@ -363,6 +404,64 @@ ob_start();
     .cr-report-root.cr-role-db_verifier .cr-hero,
     .cr-report-root.cr-role-qa .cr-hero,
     .cr-report-root.cr-role-team_lead .cr-hero{background:#fff; box-shadow:none; border-radius:10px; border-color:rgba(148,163,184,0.22); padding:12px;}
+
+    .cr-report-root.cr-validator-workspace .cr-hero{
+        padding:16px 20px;
+        border-radius:14px;
+        border:1px solid rgba(203,213,225,0.95);
+        background:#ffffff;
+        box-shadow:none;
+        padding-bottom:14px;
+        margin-bottom:12px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-hero-layout{
+        display:flex;
+        flex-direction:column;
+        gap:12px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-hero-row{
+        width:100%;
+    }
+    .cr-report-root.cr-validator-workspace .cr-hero-row-copy{
+        margin-bottom:10px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-hero-row-kpis{
+        margin-bottom:10px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-hero-row-actions{
+        padding-top:0;
+        padding-bottom:0;
+        border-top:0;
+    }
+    .cr-report-root.cr-validator-workspace .cr-hero-row-actions .cr-hero-toolbar{
+        display:flex;
+        align-items:flex-start;
+        justify-content:space-between;
+        gap:12px;
+        flex-wrap:wrap;
+    }
+    .cr-report-root.cr-validator-workspace .cr-hero-row-actions .cr-actions{
+        margin:0;
+        gap:10px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-hero-row-actions .cr-actions-primary,
+    .cr-report-root.cr-validator-workspace .cr-hero-row-actions .cr-actions-secondary{
+        display:flex;
+        align-items:center;
+        gap:10px;
+        flex-wrap:wrap;
+    }
+    .cr-report-root.cr-validator-workspace .cr-hero-row-actions .cr-resend-helper{
+        display:none;
+    }
+    .cr-report-root.cr-validator-workspace #cvResendMetaBadge{
+        border:0 !important;
+        border-radius:0 !important;
+        padding:0 !important;
+        background:transparent !important;
+        color:#64748b !important;
+        font-size:12px !important;
+    }
 
     .cr-report-root.cr-role-verifier .cr-avatar,
     .cr-report-root.cr-role-validator .cr-avatar,
@@ -582,21 +681,23 @@ ob_start();
     .cr-report-root.cr-validator-workspace{
         background:#f8fafc;
         border:1px solid rgba(203,213,225,0.9);
-        border-top:4px solid #1d4ed8;
+        border-top:1px solid rgba(203,213,225,0.9);
         padding:14px;
     }
     .cr-report-root.cr-validator-workspace .cr-hero{
         margin-top:0 !important;
-        padding:12px 14px;
+        padding:16px 20px;
         border:1px solid rgba(203,213,225,0.9);
         border-radius:16px;
         background:#ffffff;
-        box-shadow:0 10px 24px rgba(15,23,42,0.04);
+        box-shadow:none;
+        padding-bottom:14px;
+        margin-bottom:12px;
     }
     .cr-report-root.cr-validator-workspace .cr-hero-top{
-        align-items:center;
-        gap:12px;
-        flex-wrap:nowrap;
+        align-items:flex-start;
+        gap:20px;
+        flex-wrap:wrap;
     }
     .cr-validator-case-main{
         display:flex;
@@ -611,16 +712,8 @@ ob_start();
         gap:0;
     }
     .cr-report-root.cr-validator-workspace .cr-hero-head{
-        align-items:center;
-        gap:12px;
-    }
-    .cr-report-root.cr-validator-workspace .cr-avatar{
-        width:42px;
-        height:42px;
-        border-radius:12px;
-        background:#0f172a;
-        box-shadow:none;
-        flex:0 0 42px;
+        align-items:flex-start;
+        gap:0;
     }
     .cr-report-root.cr-validator-workspace .cr-hero-title{
         font-size:17px;
@@ -640,16 +733,18 @@ ob_start();
     }
     .cr-validator-case-grid{
         display:grid;
-        grid-template-columns:repeat(6, minmax(0, 1fr));
-        gap:8px;
-        margin-top:0;
+        grid-template-columns:repeat(5, minmax(0, 1fr));
+        gap:12px;
+        margin-top:12px;
+        margin-bottom:10px;
     }
     .cr-report-root.cr-validator-workspace .cr-stat{
         display:flex;
         flex-direction:column;
         align-items:flex-start;
         gap:3px;
-        padding:10px 12px;
+        padding:12px 14px;
+        min-height:68px;
         border-radius:12px;
         border:1px solid rgba(226,232,240,0.95);
         background:#f8fafc;
@@ -671,8 +766,16 @@ ob_start();
         width:100%;
     }
     .cr-report-root.cr-validator-workspace .cr-actions{
-        align-self:flex-start;
-        gap:8px;
+        align-self:auto;
+        gap:12px;
+        align-items:center;
+    }
+    .cr-report-root.cr-validator-workspace .cr-actions .cr-action-btn{
+        padding:8px 14px;
+        min-height:36px;
+        font-size:14px;
+        line-height:1.2;
+        border-radius:10px;
     }
     .cr-report-root.cr-validator-workspace .cr-shell.cr-layout{
         display:grid;
@@ -700,7 +803,7 @@ ob_start();
     .cr-report-root.cr-validator-workspace .cr-nav .list-group-item{
         display:flex;
         flex-direction:row;
-        align-items:center;
+        align-items:flex-start;
         justify-content:space-between;
         gap:10px;
         padding:10px 14px;
@@ -723,8 +826,14 @@ ob_start();
     .cr-report-root.cr-validator-workspace .cr-nav-label{
         min-width:0;
         flex:1;
-        align-items:center;
+        align-items:flex-start;
         gap:10px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-nav .section-right{
+        display:flex;
+        align-items:flex-start;
+        gap:6px;
+        flex:0 0 auto;
     }
     .cr-report-root.cr-validator-workspace .cr-nav-label span:last-child{
         line-height:1.2;
@@ -732,16 +841,13 @@ ob_start();
         color:#0f172a;
     }
     .cr-report-root.cr-validator-workspace .cr-nav .badge{
-        align-self:center;
-        margin-left:10px;
-        margin-top:0;
-        max-width:142px;
+        align-self:flex-start;
+        margin-left:0;
+        margin-top:2px;
         padding:3px 9px;
         font-size:10px;
         flex:0 0 auto;
         white-space:nowrap;
-        overflow:hidden;
-        text-overflow:ellipsis;
     }
     .cr-report-root.cr-validator-workspace .cr-main{
         min-width:0;
@@ -1258,7 +1364,7 @@ ob_start();
     .cr-kv2-cell:after{content:''; position:absolute; left:8px; right:8px; bottom:0; height:1px; background:rgba(148,163,184,0.20);}
     .cr-kv2-cell:nth-last-child(-n+2):after{display:none;}
     .cr-kv2-k{font-size:11px; font-weight:900; color:#475569; margin-bottom:1px;}
-    .cr-kv2-v{font-size:13px; color:#0f172a; min-width:0; overflow-wrap:anywhere; word-break:break-word;}
+    .cr-kv2-v{font-size:13px; color:#0f172a; min-width:0; overflow-wrap:break-word; word-break:normal; white-space:normal;}
     .cr-record-tabs{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;}
     .cr-record-tab{
         border:1px solid rgba(148,163,184,0.28);
@@ -2520,6 +2626,21 @@ ob_start();
     border-color:#15803d;
     color:#fff;
 }
+.cr-report-root.cr-validator-workspace .cr-secbar-actions .cr-sec-action.reopen{
+    background:#eef2ff;
+    border-color:#6366f1;
+    color:#3730a3;
+}
+.cr-report-root.cr-validator-workspace .cr-lock-state-hint{
+    margin-top:4px;
+    display:block;
+    font-size:11px;
+    line-height:1.3;
+    font-weight:700;
+}
+.cr-report-root.cr-validator-workspace .cr-lock-state-hint.is-locked{color:#b45309;}
+.cr-report-root.cr-validator-workspace .cr-lock-state-hint.is-reopened{color:#4338ca;}
+.cr-report-root.cr-validator-workspace .cr-lock-state-hint.is-relocked{color:#0f766e;}
 @media (max-width: 1180px){
     .cr-report-root.cr-validator-workspace .cr-secbar-actions{
         max-width:100%;
@@ -2932,12 +3053,52 @@ ob_start();
 .cr-report-root.cr-validator-workspace .cr-content #section-contact .form-control:has(#cv_contact_permanent_address),
 .cr-report-root.cr-validator-workspace .cr-content #section-socialmedia .form-control:has(#cv_social_content),
 .cr-report-root.cr-validator-workspace .cr-content #section-ecourt .form-control:has(#cv_ecourt_comments),
-.cr-report-root.cr-validator-workspace .cr-content #section-ecourt .form-control:has(#cv_ecourt_current_address),
-.cr-report-root.cr-validator-workspace .cr-content #section-ecourt .form-control:has(#cv_ecourt_permanent_address),
-.cr-report-root.cr-validator-workspace .cr-content #section-reports .form-control:has(#cv_auth_signature),
 .cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-remarks,
 .cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-comp-tools{
     grid-column:1 / -1 !important;
+}
+
+/* Stabilize dense single-record sections in shared report (validator/verifier/qa). */
+#section-socialmedia .form-grid,
+#section-ecourt .form-grid,
+#section-reports .form-grid{
+    grid-template-columns:repeat(2, minmax(0, 1fr)) !important;
+    gap:0 !important;
+}
+#section-socialmedia .form-control,
+#section-ecourt .form-control,
+#section-reports .form-control{
+    min-width:0;
+}
+#section-socialmedia .form-control input,
+#section-ecourt .form-control input,
+#section-reports .form-control input,
+#section-socialmedia .form-control textarea,
+#section-ecourt .form-control textarea,
+#section-reports .form-control textarea{
+    white-space:normal;
+    word-break:normal;
+    overflow-wrap:break-word;
+}
+/* Social media URLs are long/unbroken, allow aggressive wrapping only there. */
+#section-socialmedia .cr-kv2-v,
+#section-socialmedia .cr-kv2-v span{
+    min-width:0;
+    white-space:normal !important;
+    overflow-wrap:anywhere !important;
+    word-break:break-word !important;
+}
+#section-socialmedia .form-control:has(#cv_social_content),
+#section-ecourt .form-control:has(#cv_ecourt_comments),
+#section-reports .form-control:has(#cvRemarksReports){
+    grid-column:1 / -1 !important;
+}
+@media (max-width: 860px){
+    #section-socialmedia .form-grid,
+    #section-ecourt .form-grid,
+    #section-reports .form-grid{
+        grid-template-columns:1fr !important;
+    }
 }
 
 /* Keep labels above values consistently */
@@ -3149,85 +3310,191 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
 
     <div id="cvTopMessage" style="display:none; margin-top:10px;"></div>
 
-<?php if ($role === 'verifier' && !$isPrint && !$isEmbed): ?>
+<?php if (in_array($role, ['verifier', 'validator', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
     <div class="modal fade" id="cvMailModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Send Mail</h5>
+                    <h5 class="modal-title">Workflow Communication</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
                     <div id="cvMailMessage" style="display:none; margin-bottom:10px;"></div>
-                    <div class="form-grid" style="margin-top:0;">
-                        <div class="form-control" style="grid-column:1/-1;">
-                            <label>Template *</label>
-                            <select id="cvMailTemplateSelect"></select>
+                    <div style="display:grid; grid-template-columns:320px 1fr; gap:12px;">
+                        <div style="border:1px solid rgba(148,163,184,.28); border-radius:12px; padding:10px;">
+                            <div style="font-size:12px; font-weight:900; color:#334155; margin-bottom:8px;">Actions</div>
+                            <div id="cvCommActionCards" style="display:flex; flex-direction:column; gap:8px;"></div>
+                            <hr style="margin:10px 0;">
+                            <div style="font-size:12px; font-weight:900; color:#334155; margin-bottom:8px;">Insufficiency Checklist</div>
+                            <div id="cvCommChecklist" style="max-height:220px; overflow:auto; border:1px solid rgba(148,163,184,.24); border-radius:10px; padding:8px; background:#f8fafc;"></div>
+                            <div style="margin-top:8px;">
+                                <label style="font-size:12px; font-weight:700;">Candidate Deadline</label>
+                                <select id="cvCommDeadline" class="form-control">
+                                    <option value="24h">Within 24 hours</option>
+                                    <option value="48h">Within 48 hours</option>
+                                    <option value="72h">Within 72 hours</option>
+                                    <option value="5d">Within 5 days</option>
+                                </select>
+                            </div>
                         </div>
-                        <div class="form-control" style="grid-column:1/-1;">
-                            <label>To Email *</label>
-                            <input type="text" id="cvMailToEmail" placeholder="recipient@example.com">
-                        </div>
-                        <div class="form-control" style="grid-column:1/-1;">
-                            <label>Subject</label>
-                            <input type="text" id="cvMailSubject" placeholder="(auto from template)">
-                        </div>
-                        <div class="form-control" style="grid-column:1/-1;">
-                            <label>Preview</label>
-                            <div id="cvMailPreview" style="border:1px solid rgba(148,163,184,0.35); border-radius:12px; padding:10px; background:#fff; min-height:160px; max-height:320px; overflow:auto;"></div>
+                        <div style="display:grid; grid-template-rows:auto auto 1fr auto; gap:10px;">
+                            <div class="form-grid" style="margin-top:0;">
+                                <div class="form-control" style="grid-column:1/-1;">
+                                    <label>To Email *</label>
+                                    <input type="text" id="cvMailToEmail" placeholder="recipient@example.com">
+                                </div>
+                                <div class="form-control" style="grid-column:1/-1;">
+                                    <label>Subject</label>
+                                    <input type="text" id="cvMailSubject" placeholder="(auto from workflow action)">
+                                </div>
+                            </div>
+                            <div class="form-control" style="grid-column:1/-1;">
+                                <label>Additional Notes</label>
+                                <textarea id="cvCommNotes" rows="3" placeholder="Add operational notes, mismatch context, or instructions."></textarea>
+                            </div>
+                            <div class="form-control" style="grid-column:1/-1;">
+                                <label>Preview</label>
+                                <div id="cvMailPreview" style="position:sticky; top:0; border:1px solid rgba(148,163,184,0.35); border-radius:12px; padding:10px; background:#fff; min-height:180px; max-height:320px; overflow:auto;"></div>
+                            </div>
+                            <div class="form-control" style="grid-column:1/-1;">
+                                <label>Recent Communications</label>
+                                <div id="cvCommHistory" style="border:1px solid rgba(148,163,184,0.26); border-radius:10px; padding:8px; max-height:160px; overflow:auto; background:#f8fafc;"></div>
+                            </div>
                         </div>
                     </div>
+                    <select id="cvMailTemplateSelect" style="display:none;"></select>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-outline-secondary" id="cvCommSaveDraftBtn">Save Draft</button>
+                    <button type="button" class="btn btn-outline-primary" id="cvCommReuseLastBtn">Reuse Last</button>
+                    <button type="button" class="btn btn-outline-primary" id="cvCommResendLastBtn">Resend Last</button>
                     <button type="button" class="btn" id="cvMailSendBtn">Send</button>
                 </div>
             </div>
         </div>
 
     </div>
+
+    <?php if (in_array($role, ['validator', 'verifier', 'qa'], true)): ?>
+    <div class="modal fade" id="cvVerificationMailModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="cvVerificationMailTitle">Send Verification Mail</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="cvVerificationMailMessage" style="display:none; margin-bottom:10px;"></div>
+                    <div class="form-grid" style="margin-top:0;">
+                        <div class="form-control" style="grid-column:1/-1;">
+                            <label>Recipient Email *</label>
+                            <input type="text" id="cvVerificationMailTo" placeholder="recipient@example.com">
+                        </div>
+                        <div class="form-control" style="grid-column:1/-1;">
+                            <label>Subject</label>
+                            <input type="text" id="cvVerificationMailSubject" placeholder="Verification request">
+                        </div>
+                        <div class="form-control" style="grid-column:1/-1;">
+                            <label>Message</label>
+                            <textarea id="cvVerificationMailBody" rows="7" placeholder="Verification request message..."></textarea>
+                        </div>
+                        <div class="form-control" style="grid-column:1/-1;">
+                            <label>Remarks (Optional)</label>
+                            <textarea id="cvVerificationMailRemarks" rows="2" placeholder="Add optional remarks for audit trail."></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" id="cvVerificationMailSendBtn">Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <div class="modal fade" id="cvCorrectionModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Request Candidate Correction</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="cvCorrectionMessage" style="display:none; margin-bottom:10px;"></div>
+                    <div style="font-size:12px; color:#64748b; margin-bottom:8px;">Select components</div>
+                    <div id="cvCorrectionComponents" style="display:grid; gap:8px; margin-bottom:10px;"></div>
+                    <div class="mb-2">
+                        <label for="cvCorrectionReason" style="font-size:12px; color:#475569;">Reason</label>
+                        <textarea id="cvCorrectionReason" class="form-control" rows="3" placeholder="Enter correction reason"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" id="cvCorrectionSendBtn">Send Correction Request</button>
+                </div>
+            </div>
+        </div>
+    </div>
 <?php endif; ?>
 
     <div class="cr-hero cr-validator-case-strip" style="margin-top:10px;">
-        <div class="cr-hero-top">
-            <div class="cr-validator-case-main" style="min-width:260px;">
+        <div class="cr-hero-layout">
+            <!-- <div class="cr-hero-row cr-hero-row-copy">
                 <div class="cr-hero-head">
-                    <div class="cr-avatar" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M20 21v-2a4 4 0 0 1-4-4H8a4 4 0 0 1-4 4v2" />
-                            <circle cx="12" cy="7" r="4" />
-                        </svg>
-                    </div>
                     <div class="cr-validator-case-copy">
-                        <h2 class="cr-hero-title">Candidate Review Workspace <span class="cr-hero-sub">Review submitted details, evidence, and section-level decisions.</span></h2>
+                        <h2 class="cr-hero-title">Candidate Review Workspace</h2>
+                        <div class="cr-hero-sub">Review submitted details, evidence, and section-level decisions.</div>
+                        <span id="cvHeaderClient" style="display:none;">-</span>
                     </div>
                 </div>
+            </div> -->
+
+            <div class="cr-hero-row cr-hero-row-kpis">
                 <div class="cr-stat-row cr-validator-case-grid">
+                    <div class="cr-stat">
+                        <div class="cr-avatar" id="cvHeaderAvatar" aria-label="Candidate photo">
+                            <span class="cr-avatar-fallback" id="cvHeaderAvatarFallback">NA</span>
+                        </div>
+                    </div>
                     <div class="cr-stat"><b>Candidate</b><span id="cvHeaderCandidate"></span></div>
                     <div class="cr-stat"><b>Application</b><span id="cvHeaderAppId"></span></div>
-                    <div class="cr-stat"><b>Client</b><span id="cvHeaderClient">-</span></div>
                     <div class="cr-stat"><b>Status</b><span id="cvHeaderStatus"></span></div>
                     <div class="cr-stat"><b>TAT</b><span id="cvHeaderTat">-</span></div>
                     <div class="cr-stat"><b>Reviewed</b><span id="cvHeaderReviewed">0 / 0 sections</span></div>
                 </div>
             </div>
-            <div class="cr-actions">
-                <?php if ($backToListHref !== '' && !$isPrint && !$isEmbed): ?>
-                    <a href="<?= htmlspecialchars($backToListHref) ?>" class="cr-action-btn">Back To List</a>
-                <?php endif; ?>
-                <?php if ($role !== 'validator' && $role !== 'client_admin'): ?>
-                    <!-- <button type="button" class="cr-action-btn" id="cvOpenUploadModal">Upload Docs</button> -->
-                <?php endif; ?>
-                <?php if ($role === 'verifier' && !$isPrint && !$isEmbed): ?>
-                    <button type="button" class="cr-action-btn" id="cvOpenMailModal">Mail</button>
-                    <button type="button" class="cr-action-btn" id="cvPrintLetterBtn">Print Letter</button>
-                <?php endif; ?>
-                <!-- <button type="button" class="cr-action-btn cr-icon" id="cvOpenTimelineModal" title="Timeline" aria-label="Timeline">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <path d="M3 12a9 9 0 1 0 9-9" />
-                        <path d="M12 7v5l3 2" />
-                    </svg>
-                </button> -->
+
+            <div class="cr-hero-row cr-hero-row-actions">
+                <div class="cr-hero-toolbar">
+                    <div class="cr-actions cr-actions-primary">
+                        <?php if (in_array($role, ['verifier', 'validator', 'qa', 'gss_admin', 'client_admin', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
+                            <button type="button" class="cr-action-btn" id="cvOpenCorrectionModal">Request Candidate Correction</button>
+                        <?php endif; ?>
+                    </div>
+                    <div class="cr-actions cr-actions-secondary">
+                        <?php if (in_array($role, ['verifier', 'validator', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
+                            <button type="button" class="cr-action-btn" id="cvOpenMailModal">Mail</button>
+                        <?php endif; ?>
+                        <?php if (in_array($role, ['verifier', 'validator', 'qa', 'gss_admin', 'client_admin', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
+                            <button type="button" class="cr-action-btn" id="cvResendCandidateAccessBtn" style="display:none;">Resend Candidate Access</button>
+                        <?php endif; ?>
+                        <?php if ($backToListHref !== '' && !$isPrint && !$isEmbed): ?>
+                            <a href="<?= htmlspecialchars($backToListHref) ?>" class="cr-action-btn">Back To List</a>
+                        <?php endif; ?>
+                        <?php if ($role === 'verifier' && !$isPrint && !$isEmbed): ?>
+                            <button type="button" class="cr-action-btn" id="cvPrintLetterBtn">Print Letter</button>
+                        <?php endif; ?>
+                        <?php if ($role === 'client_admin' && !$isPrint && !$isEmbed): ?>
+                            <button type="button" class="cr-action-btn cr-dark" id="cvEscalateTlBtn">Escalate To Team Lead</button>
+                            <button type="button" class="cr-action-btn cr-danger" id="cvEscalateGssBtn">Escalate To GSS Admin</button>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <div class="cr-resend-helper">
+                    <span id="cvResendMetaBadge" style="display:none;">Resend info</span>
+                </div>
             </div>
         </div>
     </div>
@@ -3248,104 +3515,104 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
         <aside class="cr-sidebar cr-validator-nav cr-sections">
             <div class="cr-sidebar-title">Sections</div>
             <div class="cr-nav" style="font-size:13px;">
-                <button type="button" class="list-group-item active" data-section="basic" style="text-align:left;">
-                    <span class="cr-nav-label">
+                <button type="button" class="list-group-item section-row active" data-section="basic" style="text-align:left;">
+                    <span class="cr-nav-label section-left">
                         <svg class="cr-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <path d="M20 21v-2a4 4 0 0 1-4-4H8a4 4 0 0 1-4 4v2" />
                             <circle cx="12" cy="7" r="4" />
                         </svg>
-                        <span>Basic Details</span>
+                        <span class="section-title">Basic Details</span>
                     </span>
-                    <span class="badge bg-secondary" id="cvNavBadgeBasic">-</span>
+                    <span class="section-right"><span class="badge status-badge bg-secondary" id="cvNavBadgeBasic">-</span></span>
                 </button>
-                <button type="button" class="list-group-item" data-section="id" style="text-align:left;">
-                    <span class="cr-nav-label">
+                <button type="button" class="list-group-item section-row" data-section="id" style="text-align:left;">
+                    <span class="cr-nav-label section-left">
                         <svg class="cr-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7z" />
                             <path d="M8 9h4" />
                              <path d="M8 17h6" />
                         </svg>
-                        <span>Identification</span>
+                        <span class="section-title">Identification</span>
                     </span>
-                    <span class="badge bg-secondary" id="cvNavBadgeId">-</span>
+                    <span class="section-right"><span class="badge status-badge bg-secondary" id="cvNavBadgeId">-</span></span>
                 </button>
-                <button type="button" class="list-group-item" data-section="contact" style="text-align:left;">
-                    <span class="cr-nav-label">
+                <button type="button" class="list-group-item section-row" data-section="contact" style="text-align:left;">
+                    <span class="cr-nav-label section-left">
                         <svg class="cr-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <path d="M22 16.92V21a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 1 4.18 2 2 0 0 1 3 2h4.09a2 2 0 0 1 2 1.72c.12.86.3 1.7.54 2.5a2 2 0 0 1-.45 2.11L8 9.91a16 16 0 0 0 6 6l1.58-1.18a2 2 0 0 1 2.11-.45c.8.24 1.64.42 2.5.54A2 2 0 0 1 22 16.92z" />
                         </svg>
-                        <span>Contact Information</span>
+                        <span class="section-title">Contact Information</span>
                     </span>
-                    <span class="badge bg-secondary" id="cvNavBadgeContact">-</span>
+                    <span class="section-right"><span class="badge status-badge bg-secondary" id="cvNavBadgeContact">-</span></span>
                 </button>
-                <button type="button" class="list-group-item" data-section="education" style="text-align:left;">
-                    <span class="cr-nav-label">
+                <button type="button" class="list-group-item section-row" data-section="education" style="text-align:left;">
+                    <span class="cr-nav-label section-left">
                         <svg class="cr-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <path d="M22 10L12 5 2 10l10 5 10-5z" />
                             <path d="M6 12v5c0 1.1 2.7 2 6 2s6-.9 6-2v-5" />
                         </svg>
-                        <span>Education Details</span>
+                        <span class="section-title">Education Details</span>
                     </span>
-                    <span class="badge bg-secondary" id="cvNavBadgeEducation">-</span>
+                    <span class="section-right"><span class="badge status-badge bg-secondary" id="cvNavBadgeEducation">-</span></span>
                 </button>
-                <button type="button" class="list-group-item" data-section="employment" style="text-align:left;">
-                    <span class="cr-nav-label">
+                <button type="button" class="list-group-item section-row" data-section="employment" style="text-align:left;">
+                    <span class="cr-nav-label section-left">
                         <svg class="cr-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <path d="M8 7V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v1" />
                             <path d="M3 7h18v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
                             <path d="M16 11a4 4 0 0 1-8 0" />
                         </svg>
-                        <span>Employment Details</span>
+                        <span class="section-title">Employment Details</span>
                     </span>
-                    <span class="badge bg-secondary" id="cvNavBadgeEmployment">-</span>
+                    <span class="section-right"><span class="badge status-badge bg-secondary" id="cvNavBadgeEmployment">-</span></span>
                 </button>
 
 
                 
 
-                <button type="button" class="list-group-item" data-section="reference" style="text-align:left;">
-                    <span class="cr-nav-label">
+                <button type="button" class="list-group-item section-row" data-section="reference" style="text-align:left;">
+                    <span class="cr-nav-label section-left">
                         <svg class="cr-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <path d="M21 15a4 4 0 0 1-4 4H7l-4 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v8z" />
                             <path d="M7 8h10" />
                             <path d="M7 12h8" />
                         </svg>
-                        <span>Reference</span>
+                        <span class="section-title">Reference</span>
                     </span>
-                    <span class="badge bg-secondary" id="cvNavBadgeReference">-</span>
+                    <span class="section-right"><span class="badge status-badge bg-secondary" id="cvNavBadgeReference">-</span></span>
                 </button>
-                <button type="button" class="list-group-item" data-section="socialmedia" style="text-align:left;">
-                    <span class="cr-nav-label">
+                <button type="button" class="list-group-item section-row" data-section="socialmedia" style="text-align:left;">
+                    <span class="cr-nav-label section-left">
                         <svg class="cr-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <circle cx="12" cy="12" r="9" />
                             <path d="M8 12h8" />
                             <path d="M12 8v8" />
                         </svg>
-                        <span>Social Media</span>
+                        <span class="section-title">Social Media</span>
                     </span>
-                    <span class="badge bg-secondary" id="cvNavBadgeSocialmedia">-</span>
+                    <span class="section-right"><span class="badge status-badge bg-secondary" id="cvNavBadgeSocialmedia">-</span></span>
                 </button>
-                <button type="button" class="list-group-item" data-section="ecourt" style="text-align:left;">
-                    <span class="cr-nav-label">
+                <button type="button" class="list-group-item section-row" data-section="ecourt" style="text-align:left;">
+                    <span class="cr-nav-label section-left">
                         <svg class="cr-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7l8-4z" />
                             <path d="M9 12h6" />
                         </svg>
-                        <span>E-Court</span>
+                        <span class="section-title">E-Court</span>
                     </span>
-                    <span class="badge bg-secondary" id="cvNavBadgeEcourt">-</span>
+                    <span class="section-right"><span class="badge status-badge bg-secondary" id="cvNavBadgeEcourt">-</span></span>
                 </button>
-                <button type="button" class="list-group-item" data-section="reports" style="text-align:left;">
-                    <span class="cr-nav-label">
+                <button type="button" class="list-group-item section-row" data-section="reports" style="text-align:left;">
+                    <span class="cr-nav-label section-left">
                         <svg class="cr-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <path d="M9 17v-6" />
                             <path d="M12 17V7" />
                             <path d="M15 17v-4" />
                             <path d="M4 21h16" />
                         </svg>
-                        <span>Reports</span>
+                        <span class="section-title">Reports</span>
                     </span>
-                    <span class="badge bg-secondary" id="cvNavBadgeReports">-</span>
+                    <span class="section-right"><span class="badge status-badge bg-secondary" id="cvNavBadgeReports">-</span></span>
                 </button>
             </div>
         </aside>
@@ -3548,6 +3815,9 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
                         <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
                         <div class="cr-secbar-actions" aria-label="Section Actions">
                             <button type="button" class="cr-sec-action need-docs" data-proxy-action="insufficient_documents">Need Docs</button>
+                            <?php if (in_array($role, ['validator', 'verifier', 'qa'], true)): ?>
+                            <button type="button" class="cr-sec-action" data-mail-component="education" data-mail-label-send="Send Mail" data-mail-label-resend="Resend Mail">Send Mail</button>
+                            <?php endif; ?>
                             <button type="button" class="cr-sec-action hold" data-proxy-action="hold">Hold</button>
                             <button type="button" class="cr-sec-action reject" data-proxy-action="reject">Reject</button>
                             <button type="button" class="cr-sec-action approve" data-proxy-action="approve">Approve</button>
@@ -3579,6 +3849,9 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
                         <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
                         <div class="cr-secbar-actions" aria-label="Section Actions">
                             <button type="button" class="cr-sec-action need-docs" data-proxy-action="insufficient_documents">Need Docs</button>
+                            <?php if (in_array($role, ['validator', 'verifier', 'qa'], true)): ?>
+                            <button type="button" class="cr-sec-action" data-mail-component="employment" data-mail-label-send="Send Mail" data-mail-label-resend="Resend Mail">Send Mail</button>
+                            <?php endif; ?>
                             <button type="button" class="cr-sec-action hold" data-proxy-action="hold">Hold</button>
                             <button type="button" class="cr-sec-action reject" data-proxy-action="reject">Reject</button>
                             <button type="button" class="cr-sec-action approve" data-proxy-action="approve">Approve</button>
@@ -3679,35 +3952,15 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
                         </div>
                         <?php endif; ?>
                     </div>
-                    <div class="form-grid" style="margin-top:10px;">
-                        <div class="form-control">
-                            <label>LinkedIn</label>
-                            <input type="text" id="cv_social_linkedin_url" value="" disabled>
-                        </div>
-                        <div class="form-control">
-                            <label>Facebook</label>
-                            <input type="text" id="cv_social_facebook_url" value="" disabled>
-                        </div>
-                        <div class="form-control">
-                            <label>Instagram</label>
-                            <input type="text" id="cv_social_instagram_url" value="" disabled>
-                        </div>
-                        <div class="form-control">
-                            <label>Twitter</label>
-                            <input type="text" id="cv_social_twitter_url" value="" disabled>
-                        </div>
-                        <div class="form-control">
-                            <label>Other URL</label>
-                            <input type="text" id="cv_social_other_url" value="" disabled>
-                        </div>
-                        <div class="form-control">
-                            <label>Consent</label>
-                            <input type="text" id="cv_social_consent_bgv" value="" disabled>
-                        </div>
-                        <div class="form-control">
-                            <label>Content</label>
-                            <input type="text" id="cv_social_content" value="" disabled>
-                        </div>
+                    <div id="cv_socialmedia_table" style="margin-top:10px;"></div>
+                    <div style="display:none;">
+                        <input type="text" id="cv_social_linkedin_url" value="" disabled>
+                        <input type="text" id="cv_social_facebook_url" value="" disabled>
+                        <input type="text" id="cv_social_instagram_url" value="" disabled>
+                        <input type="text" id="cv_social_twitter_url" value="" disabled>
+                        <input type="text" id="cv_social_other_url" value="" disabled>
+                        <input type="text" id="cv_social_consent_bgv" value="" disabled>
+                        <input type="text" id="cv_social_content" value="" disabled>
                     </div>
                 </div>
 
@@ -3730,39 +3983,16 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
                         </div>
                         <?php endif; ?>
                     </div>
-                    <div class="form-grid" style="margin-top:10px;">
-                        <div class="form-control">
-                            <label>Current Address</label>
-                            <input type="text" id="cv_ecourt_current_address" value="" disabled>
-                        </div>
-                        <div class="form-control">
-                            <label>Permanent Address</label>
-                            <input type="text" id="cv_ecourt_permanent_address" value="" disabled>
-                        </div>
-                        <div class="form-control">
-                            <label>Evidence Document</label>
-                            <input type="text" id="cv_ecourt_evidence_document" value="" disabled>
-                        </div>
-                        <div class="form-control">
-                            <label>Period From</label>
-                            <input type="text" id="cv_ecourt_period_from_date" value="" disabled>
-                        </div>
-                        <div class="form-control">
-                            <label>Period To</label>
-                            <input type="text" id="cv_ecourt_period_to_date" value="" disabled>
-                        </div>
-                        <div class="form-control">
-                            <label>Duration (Years)</label>
-                            <input type="text" id="cv_ecourt_period_duration_years" value="" disabled>
-                        </div>
-                        <div class="form-control">
-                            <label>Date Of Birth</label>
-                            <input type="text" id="cv_ecourt_dob" value="" disabled>
-                        </div>
-                        <div class="form-control">
-                            <label>Comments</label>
-                            <input type="text" id="cv_ecourt_comments" value="" disabled>
-                        </div>
+                    <div id="cv_ecourt_table" style="margin-top:10px;"></div>
+                    <div style="display:none;">
+                        <input type="text" id="cv_ecourt_current_address" value="" disabled>
+                        <input type="text" id="cv_ecourt_permanent_address" value="" disabled>
+                        <input type="text" id="cv_ecourt_evidence_document" value="" disabled>
+                        <input type="text" id="cv_ecourt_period_from_date" value="" disabled>
+                        <input type="text" id="cv_ecourt_period_to_date" value="" disabled>
+                        <input type="text" id="cv_ecourt_period_duration_years" value="" disabled>
+                        <input type="text" id="cv_ecourt_dob" value="" disabled>
+                        <input type="text" id="cv_ecourt_comments" value="" disabled>
                     </div>
                 </div>
 
@@ -3785,36 +4015,24 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
                         </div>
                         <?php endif; ?>
                     </div>
-                    <div class="form-grid" style="margin-top:10px;">
-                        <div class="form-control">
-                            <label>Application Submitted At</label>
-                            <input type="text" id="cv_app_submitted_at" value="" disabled>
-                        </div>
-                        <div class="form-control">
-                            <label>Authorization Signature</label>
-                            <input type="text" id="cv_auth_signature" value="" disabled>
-                        </div>
-                        <div class="form-control">
-                            <label>Authorization File Name</label>
-                            <input type="text" id="cv_auth_file_name" value="" disabled>
-                        </div>
-                        <div class="form-control">
-                            <label>Authorization Uploaded At</label>
-                            <input type="text" id="cv_auth_uploaded_at" value="" disabled>
-                        </div>
-
-                        <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
-                            <div class="form-control" style="grid-column:1/-1;">
-                                <div class="cr-remarks">
-                                    <label>Comments / Remarks</label>
-                                    <textarea id="cvRemarksReports" rows="2" placeholder="Enter comments..." style="width:100%; resize:vertical;"></textarea>
-                                    <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:8px;">
-                                        <button type="button" class="btn btn-sm" id="cvSaveRemarksReports">Save</button>
-                                    </div>
+                    <div id="cv_reports_table" style="margin-top:10px;"></div>
+                    <div style="display:none;">
+                        <input type="text" id="cv_app_submitted_at" value="" disabled>
+                        <input type="text" id="cv_auth_signature" value="" disabled>
+                        <input type="text" id="cv_auth_file_name" value="" disabled>
+                        <input type="text" id="cv_auth_uploaded_at" value="" disabled>
+                    </div>
+                    <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
+                        <div class="form-control" style="grid-column:1/-1; margin-top:10px;">
+                            <div class="cr-remarks">
+                                <label>Comments / Remarks</label>
+                                <textarea id="cvRemarksReports" rows="2" placeholder="Enter comments..." style="width:100%; resize:vertical;"></textarea>
+                                <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:8px;">
+                                    <button type="button" class="btn btn-sm" id="cvSaveRemarksReports">Save</button>
                                 </div>
                             </div>
-                        <?php endif; ?>
-                    </div>
+                        </div>
+                    <?php endif; ?>
                 </div>
 
             </div>
@@ -3849,6 +4067,17 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
                             </div>
                         </div>
                         <div class="tab-pane fade" id="crUtilReplies" role="tabpanel">
+                            <div style="display:flex; justify-content:flex-end; margin-bottom:10px;">
+                                <button
+                                    type="button"
+                                    id="cvRepliesSyncBtn"
+                                    title="Refresh replies"
+                                    aria-label="Refresh replies"
+                                    style="width:34px; height:34px; border-radius:999px; border:1px solid #cbd5e1; background:#fff; color:#2563eb; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 4px 14px rgba(37,99,235,0.08); cursor:pointer;"
+                                >
+                                    <span aria-hidden="true" style="font-size:16px; line-height:1; font-weight:700;">↻</span>
+                                </button>
+                            </div>
                             <div id="emailReplies" class="cr-util-scroll">
                                 <p style="color:#888; margin:0;">No replies yet</p>
                             </div>
@@ -3858,6 +4087,10 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
                         </div>
                         <div class="tab-pane fade" id="crUtilTimeline" role="tabpanel">
                             <div id="cvValidatorTimeline" class="cr-validator-timeline">No activity yet.</div>
+                            <div style="margin-top:10px;">
+                                <div style="font-weight:700; color:#0f172a; margin-bottom:6px;">Correction History</div>
+                                <div id="cvCorrectionHistory" class="cr-util-scroll" style="max-height:220px;">No correction history yet.</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -4354,26 +4587,13 @@ render_layout('Candidate Report', $roleLabel, $menu, $content);
             // Always prefer the core action handler so reason/confirm dialog logic stays intact.
             if (typeof window.__CR_RUN_ACTION === 'function') {
                 try {
-                    await window.__CR_RUN_ACTION(action, actionToLabel[action] || action);
+                    await window.__CR_RUN_ACTION(action, actionToLabel[action] || action, {
+                        targetStage: String(btn.getAttribute('data-target-stage') || '').toLowerCase().trim()
+                    });
                 } catch (_e) {}
 
-                // After Need Docs, open existing mail flow (when available) to notify candidate.
-                if (action === 'insufficient_documents') {
-                    window.__CR_MAIL_PREFILL_NEED_DOCS = true;
-                    var mailBtn = document.getElementById('cvOpenMailModal');
-                    if (mailBtn) {
-                        setTimeout(function () { mailBtn.click(); }, 120);
-                    } else {
-                        var mailModal = document.getElementById('cvMailModal');
-                        if (mailModal && window.bootstrap && window.bootstrap.Modal) {
-                            setTimeout(function () {
-                                try {
-                                    window.bootstrap.Modal.getOrCreateInstance(mailModal).show();
-                                } catch (_e2) {}
-                            }, 120);
-                        }
-                    }
-                }
+                // Do not auto-open mail modal after section actions.
+                // Users can open Communication manually from the Mail button.
                 return;
             }
 
@@ -4432,68 +4652,8 @@ render_layout('Candidate Report', $roleLabel, $menu, $content);
 })();
 </script>
 
-<script>
-(function () {
-    function wireNeedDocsTemplateAutoselect() {
-        var modal = document.getElementById('cvMailModal');
-        var tplSel = document.getElementById('cvMailTemplateSelect');
-        if (!modal || !tplSel || modal.dataset.needDocsTemplateBound === '1') return;
-        modal.dataset.needDocsTemplateBound = '1';
-
-        function pickNeedDocsTemplate() {
-            if (!window.__CR_MAIL_PREFILL_NEED_DOCS) return;
-            var options = Array.prototype.slice.call(tplSel.options || []);
-            if (!options.length) return;
-
-            var best = null;
-            var bestScore = -1;
-            options.forEach(function (opt) {
-                var v = String(opt.value || '').trim();
-                if (!v) return;
-                var txt = String(opt.textContent || '').toLowerCase();
-                var score = 0;
-                if (txt.indexOf('insufficient') !== -1) score += 7;
-                if (txt.indexOf('need docs') !== -1) score += 6;
-                if (txt.indexOf('need documents') !== -1) score += 6;
-                if (txt.indexOf('missing') !== -1) score += 4;
-                if (txt.indexOf('document') !== -1) score += 3;
-                if (txt.indexOf('candidate') !== -1) score += 1;
-                if (score > bestScore) {
-                    best = opt;
-                    bestScore = score;
-                }
-            });
-
-            if (best && bestScore > 0) {
-                tplSel.value = String(best.value || '');
-                try {
-                    tplSel.dispatchEvent(new Event('change', { bubbles: true }));
-                } catch (_e) {
-                    var ev = document.createEvent('Event');
-                    ev.initEvent('change', true, true);
-                    tplSel.dispatchEvent(ev);
-                }
-            }
-            window.__CR_MAIL_PREFILL_NEED_DOCS = false;
-        }
-
-        modal.addEventListener('shown.bs.modal', function () {
-            setTimeout(pickNeedDocsTemplate, 60);
-            setTimeout(pickNeedDocsTemplate, 240);
-        });
-    }
-
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', wireNeedDocsTemplateAutoselect);
-    } else {
-        wireNeedDocsTemplateAutoselect();
-    }
-})();
-</script>
-
 <?php if (in_array($role, ['validator', 'verifier'], true) && !$isPrint && !$isEmbed && $fullscreen): ?>
 <script>
     try { document.body.classList.add('cr-fullscreen-validator'); } catch (e) {}
 </script>
 <?php endif; ?>
-

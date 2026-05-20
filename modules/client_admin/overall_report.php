@@ -1,7 +1,9 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/../../includes/layout.php';
-
 require_once __DIR__ . '/../../includes/menus.php';
+require_once __DIR__ . '/../../includes/auth.php';
+
+auth_require_login('client_admin');
 
 $menu = client_admin_menu();
 
@@ -9,79 +11,41 @@ ob_start();
 ?>
 <div class="card">
     <h3>Overall Candidate Report</h3>
-    <p class="card-subtitle">Candidate-wise verification status across all components (sample layout).</p>
+    <p class="card-subtitle">Live candidate case report with status and SLA visibility.</p>
 </div>
 
 <div class="card">
-    <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom:10px;">
-        <div>
-            <label style="font-size:13px; margin-right:6px;">Location</label>
-            <select style="font-size:13px; padding:4px 6px;">
-                <option>All Location</option>
-                <option>Bangalore</option>
-            </select>
+    <div id="overallReportMessage" style="display:none; margin-bottom: 10px;"></div>
+
+    <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom:10px; gap:10px; flex-wrap:wrap;">
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            <input id="overallReportSearch" type="text" placeholder="Search name / email / app id / status" style="font-size:13px; padding:6px 8px; border-radius:10px; border:1px solid #cbd5e1;">
+            <button type="button" class="btn" id="overallReportRefreshBtn">Refresh</button>
         </div>
-        <div>
-            <input type="text" placeholder="search" style="font-size:13px; padding:4px 6px;">
-            <button type="button" class="btn-secondary btn" style="margin-left:6px;">Search</button>
-        </div>
+        <div style="font-size:12px; color:#64748b;">SLA rule: <b>20 days</b> from case creation.</div>
     </div>
 
-    <table class="table">
-        <thead>
-        <tr>
-            <th>Control No</th>
-            <th>Name</th>
-            <th>Reference ID</th>
-            <th>Requisition ID</th>
-            <th>Recruiter Name</th>
-            <th>Job Role</th>
-            <th>Candidate Sent Date</th>
-            <th>Agency Received Date</th>
-            <th>Rejected Date</th>
-            <th>Case Status</th>
-            <th>IP</th>
-            <th>CA</th>
-            <th>PA</th>
-            <th>HQ</th>
-            <th>EXP1</th>
-            <th>EXP2-1</th>
-            <th>EXP2-2</th>
-            <th>REF1</th>
-            <th>REF2</th>
-            <th>WC</th>
-            <th>MC</th>
-            <th>JC</th>
-        </tr>
-        </thead>
-        <tbody>
-        <tr>
-            <td><a href="candidate_view.php" style="text-decoration:none; color:#2563eb;">GSS1124142</a></td>
-            <td>Jaidev Singh</td>
-            <td>NA</td>
-            <td>NA</td>
-            <td>Magdalene Getsy</td>
-            <td>Background Check</td>
-            <td>01-Oct-2025</td>
-            <td>03-Oct-2025</td>
-            <td>-</td>
-            <td>OPEN</td>
-            <td>✔</td>
-            <td>✔</td>
-            <td>✔</td>
-            <td>✔</td>
-            <td>✔</td>
-            <td>✔</td>
-            <td>✔</td>
-            <td>✔</td>
-            <td>✔</td>
-            <td>✔</td>
-            <td>✔</td>
-            <td>✔</td>
-        </tr>
-        </tbody>
-    </table>
+    <div class="table-scroll">
+        <table class="table" id="overallReportTable">
+            <thead>
+            <tr>
+                <th>Application ID</th>
+                <th>Candidate</th>
+                <th>Email</th>
+                <th>Mobile</th>
+                <th>Current Stage</th>
+                <th>Case Status</th>
+                <th>SLA</th>
+                <th>Invited</th>
+                <th>Created</th>
+                <th>Open</th>
+            </tr>
+            </thead>
+            <tbody id="overallReportBody"></tbody>
+        </table>
+    </div>
 </div>
+<script src="<?php echo htmlspecialchars(app_url('/js/modules/client_admin/overall_report.js')); ?>"></script>
 <?php
 $content = ob_get_clean();
 render_layout('Overall Report', 'Client Admin', $menu, $content);

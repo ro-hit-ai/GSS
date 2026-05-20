@@ -303,7 +303,7 @@ class EducationManager extends TabManager {
     }
 
     setupStateController() {
-        document.addEventListener('change', (e) => {
+        this.addEventListener(document, 'change', (e) => {
             if (
                 e.target.matches('select[name="qualification[]"]') ||
                 e.target.matches('input[name="insufficient_education_docs[]"]') ||
@@ -532,7 +532,7 @@ class EducationManager extends TabManager {
 setupFileHandlers() {
     console.log('🔧 Setting up education file handlers');
 
-    document.addEventListener('click', (e) => {
+    this.addEventListener(document, 'click', (e) => {
         const trigger = e.target.closest('[data-file-choose]');
         if (!trigger) return;
         e.preventDefault();
@@ -542,7 +542,7 @@ setupFileHandlers() {
         if (input) input.click();
     });
 
-    document.addEventListener('change', (e) => {
+    this.addEventListener(document, 'change', (e) => {
         if (
             e.target.matches('input[name="marksheet_file[]"]') ||
             e.target.matches('input[name="degree_file[]"]')
@@ -687,7 +687,7 @@ setupFileHandlers() {
         }
 
         // Handle Save Draft button
-        document.addEventListener('click', (e) => {
+        this.addEventListener(document, 'click', (e) => {
             const draftBtn = e.target.closest('.save-draft-btn[data-page="education"]');
             if (draftBtn) {
                 e.preventDefault();

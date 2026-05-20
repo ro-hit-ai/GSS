@@ -4,8 +4,10 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/mail.php';
+require_once __DIR__ . '/template_governance.php';
+require_once __DIR__ . '/workflow_semantics.php';
 
-auth_require_login();
+auth_require_login(null);
 
 auth_session_start();
 
@@ -36,11 +38,15 @@ function format_template_html(string $body): string {
 }
 
 function render_placeholders(string $tpl, array $map): string {
-    foreach ($map as $k => $v) {
-        $key = '{' . $k . '}';
-        $tpl = str_replace($key, (string)$v, $tpl);
+    $meta = [];
+    $out = tmpl_render_text($tpl, $map, $meta);
+    if (!empty($meta['missing'])) {
+        tmpl_log_warning('legacy_render_unresolved_placeholders', [
+            'endpoint' => 'mail_template_send',
+            'missing' => $meta['missing'],
+        ]);
     }
-    return $tpl;
+    return $out;
 }
 
 try {
@@ -94,7 +100,7 @@ try {
             echo json_encode(['status' => 0, 'message' => 'Unauthorized']);
             exit;
         }
-        if (!in_array($groupKey, ['BASIC', 'EDUCATION'], true)) {
+        if (!wf_is_valid_verifier_group($groupKey)) {
             http_response_code(400);
             echo json_encode(['status' => 0, 'message' => 'Valid group is required']);
             exit;

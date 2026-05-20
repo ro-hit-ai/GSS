@@ -8,6 +8,10 @@
         var kQaUsers = document.getElementById('qaKpiQaUsers');
         var kVrOpen = document.getElementById('qaKpiVrOpen');
         var kDbvOpen = document.getElementById('qaKpiDbvOpen');
+        var kSupervisoryReopens = document.getElementById('qaKpiSupervisoryReopens');
+        var kInvalidatedVerifier = document.getElementById('qaKpiInvalidatedVerifier');
+        var kInvalidatedQa = document.getElementById('qaKpiInvalidatedQa');
+        var kReopenedWorkflows = document.getElementById('qaKpiReopenedWorkflows');
         var vrHost = document.getElementById('qaWorkloadVrBody');
         var dbvHost = document.getElementById('qaWorkloadDbvBody');
         var asgHost = document.getElementById('qaAssignmentsBody');
@@ -58,7 +62,7 @@
                 return '<tr>' +
                     '<td><div style="font-weight:800; color:#0f172a;">' + esc(fmtName(r)) + '</div><div style="font-size:11px; color:#64748b;">' + esc(String(r.username || '')) + ' • ' + esc(String(r.role || '')) + '</div></td>' +
                     '<td style="white-space:nowrap;"><span class="badge" style="background:#0ea5e9; color:#fff;">' + esc(String(r.open_items || '0')) + '</span></td>' +
-                    '<td style="font-size:12px; color:#64748b;">Active</td>' +
+                    '<td style="font-size:12px; color:#64748b;">' + esc(String((r && (r.stage_status_label || r.operational_status_label)) ? (r.stage_status_label || r.operational_status_label) : ((window.WF_UI && typeof window.WF_UI.labelByRole === 'function') ? window.WF_UI.labelByRole('pending', 'qa') : 'QA PENDING'))) + '</td>' +
                 '</tr>';
             }).join('');
         }
@@ -74,14 +78,20 @@
                 var who = fmtName(r);
                 var q = String(r.queue_type || '');
                 var group = r.group_key ? String(r.group_key) : '-';
-                var st = r.queue_status ? String(r.queue_status) : '-';
+                var st = String((r && (r.stage_status_label || r.operational_status_label)) ? (r.stage_status_label || r.operational_status_label) : '');
+                if (!st) {
+                    var raw = r.queue_status ? String(r.queue_status) : '';
+                    st = (window.WF_UI && typeof window.WF_UI.labelByRole === 'function')
+                        ? String(window.WF_UI.labelByRole(raw || 'pending', 'qa'))
+                        : (raw || '-');
+                }
                 return '<tr>' +
                     '<td style="font-weight:800;">' + esc(q) + '</td>' +
                     '<td>' + esc(String(r.application_id || '')) + '<div style="font-size:11px; color:#64748b;">Case #' + esc(String(r.case_id || '')) + '</div></td>' +
                     '<td>' + esc(group) + '</td>' +
                     '<td><span class="badge" style="background:#f1f5f9; color:#0f172a; border:1px solid rgba(148,163,184,0.28);">' + esc(st) + '</span></td>' +
                     '<td><div style="font-weight:800; color:#0f172a;">' + esc(who) + '</div><div style="font-size:11px; color:#64748b;">' + esc(String(r.role || '')) + '</div></td>' +
-                    '<td style="font-size:12px; color:#64748b;">' + esc(String(r.case_status || '')) + '</td>' +
+                    '<td style="font-size:12px; color:#64748b;">' + esc(String(r.stage_status_label || r.operational_status_label || r.case_status || '')) + '</td>' +
                 '</tr>';
             }).join('');
         }
@@ -106,6 +116,10 @@
                     setKpi(kQaUsers, roleCount(kpis.users_by_role, 'qa'));
                     setKpi(kVrOpen, n(kpis.verifier_queue_open_total));
                     setKpi(kDbvOpen, n(kpis.dbv_open_total));
+                    setKpi(kSupervisoryReopens, n(kpis.supervisory_reopens_today));
+                    setKpi(kInvalidatedVerifier, n(kpis.invalidated_verifier_total));
+                    setKpi(kInvalidatedQa, n(kpis.invalidated_qa_total));
+                    setKpi(kReopenedWorkflows, n(kpis.reopened_workflows_total));
 
                     renderWorkload(vrHost, d.workload && d.workload.vr ? d.workload.vr : []);
                     renderWorkload(dbvHost, d.workload && d.workload.dbv ? d.workload.dbv : []);

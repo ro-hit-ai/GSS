@@ -18,12 +18,43 @@
         var clientId = parseInt(root.getAttribute('data-client-id') || '0', 10) || 0;
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
 
+        function normalizeComponentKey(v) {
+            var k = String(v || '').toLowerCase().trim();
+            if (k === 'identification') return 'id';
+            if (k === 'address' || k === 'contact_information' || k === 'contact information') return 'contact';
+            if (k === 'education_details' || k === 'education details') return 'education';
+            if (k === 'employment_details' || k === 'employment details') return 'employment';
+            if (k === 'socialmedia' || k === 'social_media' || k === 'social media' || k === 'social-media') return 'social';
+            if (k === 'e-court' || k === 'e_court' || k === 'e court') return 'ecourt';
+            if (!k) return 'general';
+            return k;
+        }
+
+        function prepareRenderedExport(statusText) {
+            setButtonsDisabled(true);
+            setMessage(statusText || 'Preparing report...', 'info');
+            return Promise.resolve()
+                .then(function () { return thumbsReadyPromise; })
+                .then(function () { return waitForImageAssets(); });
+        }
+
+        function finalizeRenderedExport() {
+            setButtonsDisabled(false);
+            setMessage('', '');
+        }
+
         if (printBtn) {
             printBtn.addEventListener('click', function () {
-                setButtonsDisabled(true);
-                var href = base + '/api/gssadmin/candidate_report_tcpdf_download.php?inline=1&application_id=' + encodeURIComponent(applicationId || '');
-                if (clientId > 0) href += '&client_id=' + encodeURIComponent(String(clientId));
-                window.location.href = href + '&_ts=' + Date.now();
+                prepareRenderedExport('Preparing printable report...')
+                    .then(function () {
+                        window.print();
+                    })
+                    .catch(function (e) {
+                        setMessage(e && e.message ? e.message : 'Failed to prepare printable report', 'danger');
+                    })
+                    .finally(function () {
+                        finalizeRenderedExport();
+                    });
             });
         }
 
@@ -38,11 +69,18 @@
 
         if (downloadPdfBtn) {
             downloadPdfBtn.addEventListener('click', function () {
-                setButtonsDisabled(true);
-                setMessage('Preparing downloadable PDF...', 'info');
-                var href = base + '/api/gssadmin/candidate_report_tcpdf_download.php?application_id=' + encodeURIComponent(applicationId || '');
-                if (clientId > 0) href += '&client_id=' + encodeURIComponent(String(clientId));
-                window.location.href = href + '&_ts=' + Date.now();
+                prepareRenderedExport('Preparing downloadable PDF...')
+                    .then(function () {
+                        var href = base + '/api/gssadmin/candidate_report_tcpdf_download.php?application_id=' + encodeURIComponent(applicationId || '');
+                        if (clientId > 0) href += '&client_id=' + encodeURIComponent(String(clientId));
+                        window.location.href = href + '&_ts=' + Date.now();
+                    })
+                    .catch(function (e) {
+                        setMessage(e && e.message ? e.message : 'Failed to generate PDF', 'danger');
+                    })
+                    .finally(function () {
+                        finalizeRenderedExport();
+                    });
             });
         }
 
@@ -93,14 +131,6 @@
             return 'wait';
         }
 
-        function normalizeComponentKey(v) {
-            var k = String(v || '').toLowerCase().trim();
-            if (k === 'identification') return 'id';
-            if (k === 'address') return 'contact';
-            if (!k) return 'general';
-            return k;
-        }
-
         function hasAnyToken(value, list) {
             var s = String(value || '').toLowerCase();
             return list.some(function (t) { return s.indexOf(t) !== -1; });
@@ -119,7 +149,7 @@
 
         function isExplicitComponentTypeValid(type) {
             var t = normalizeComponentKey(type);
-            return ['basic', 'id', 'contact', 'education', 'employment', 'reference', 'ecourt', 'database', 'reports', 'driving_licence'].indexOf(t) !== -1;
+            return ['basic', 'id', 'contact', 'education', 'employment', 'reference', 'social', 'ecourt', 'database', 'reports', 'driving_licence'].indexOf(t) !== -1;
         }
 
         function resolvedDocComponent(doc) {
@@ -141,6 +171,7 @@
             var key = normalizeComponentKey(componentKey);
             if (key === 'id') return ['id', 'identification'];
             if (key === 'contact') return ['contact', 'address'];
+            if (key === 'social') return ['social', 'socialmedia', 'social_media'];
             return [key];
         }
 

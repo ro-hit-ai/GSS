@@ -23,7 +23,7 @@ ob_start();
 <div class="vr-page">
 <div class="card vr-card">
     <h3>Candidate List</h3>
-    <p class="card-subtitle">Verifier queue in the same portal style as validator, with group-based task filters.</p>
+    <p class="card-subtitle">Verifier review workspace with group-based active and evaluated visibility.</p>
 </div>
 
 <div class="card vr-card">
@@ -39,10 +39,21 @@ ob_start();
 
                 <label style="font-size:13px; margin-right:6px;">View</label>
                 <select id="vrCasesViewSelect" class="vr-input" style="min-width:180px;">
-                    <option value="available">Available</option>
-                    <option value="mine" selected>My Tasks</option>
+                    <option value="available">Active Work</option>
+                    <option value="mine" selected>My Visibility</option>
                     <option value="followup">Follow-up</option>
-                    <option value="completed">Completed</option>
+                    <option value="participated">Participated</option>
+                    <option value="history">Reviewed (Legacy)</option>
+                </select>
+                <select id="vrCasesStateFilter" class="vr-input" style="min-width:210px;">
+                    <option value="all">All Statuses</option>
+                    <option value="active_work">Active Work</option>
+                    <option value="awaiting_evaluation">Awaiting Review</option>
+                    <option value="waiting_candidate">Waiting Candidate</option>
+                    <option value="evaluated">Reviewed</option>
+                    <option value="reopened">Decision Updated</option>
+                    <option value="downstream_processing">Downstream Processing</option>
+                    <option value="review_complete">Reviewed Complete</option>
                 </select>
                 <input id="vrCasesListSearch" class="vr-input vr-input-search" type="text" placeholder="Search name / email / app id / status">
                 <button class="btn btn-sm" id="vrCasesListRefreshBtn" type="button" style="border-radius:10px;">Refresh</button>
@@ -76,3 +87,4 @@ ob_start();
 <?php
 $content = ob_get_clean();
 render_layout('Candidate List', 'Component Verifier', $menu, $content);
+echo '<script src="' . htmlspecialchars(app_url('/js/modules/verifier/candidates_list.js')) . '"></script>';

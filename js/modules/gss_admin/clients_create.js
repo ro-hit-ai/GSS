@@ -1,4 +1,61 @@
 document.addEventListener('DOMContentLoaded', function () {
+    function resolveAppBaseUrl() {
+        var raw = String(window.APP_BASE_URL || '').trim().replace(/\/$/, '');
+        var path = String((window.location && window.location.pathname) ? window.location.pathname : '');
+        var m = path.match(/^\/([^\/]+)/);
+        var guess = m ? ('/' + m[1]) : '';
+
+        if (!raw) return guess;
+
+        if (/^https?:\/\//i.test(raw)) {
+            try {
+                var u = new URL(raw, window.location.origin);
+                if (u.origin !== window.location.origin) return guess || '';
+                raw = String(u.pathname || '').replace(/\/$/, '');
+            } catch (e) {
+                return guess || '';
+            }
+        }
+
+        // If configured base does not match current app root, prefer current root.
+        if (guess && raw && path.indexOf(guess + '/') === 0 && path.indexOf(raw + '/') !== 0 && raw !== guess) {
+            return guess;
+        }
+        return raw;
+    }
+
+    function appBase() {
+        if (!window.__APP_BASE_RESOLVED__) {
+            window.__APP_BASE_RESOLVED__ = resolveAppBaseUrl();
+            window.APP_BASE_URL = window.__APP_BASE_RESOLVED__;
+        }
+        return String(window.__APP_BASE_RESOLVED__ || '').replace(/\/$/, '');
+    }
+
+    function fetchJson(url, options) {
+        var opts = options || {};
+        if (!opts.credentials) opts.credentials = 'same-origin';
+        return fetch(url, opts).then(function (res) {
+            return parseJsonResponse(res);
+        });
+    }
+
+    function parseJsonResponse(res) {
+        return res.text().then(function (txt) {
+            var ct = String(res.headers.get('content-type') || '').toLowerCase();
+            var looksJson = ct.indexOf('application/json') !== -1;
+            if (!looksJson) {
+                var preview = String(txt || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+                throw new Error('API returned non-JSON response. Check APP_BASE_URL/session. Response starts with: ' + preview);
+            }
+            try {
+                return JSON.parse(txt);
+            } catch (e) {
+                var preview2 = String(txt || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+                throw new Error('Invalid JSON response. Response starts with: ' + preview2);
+            }
+        });
+    }
     var form = document.getElementById('clientCreateForm');
     var finalSubmitBtn = document.getElementById('clientCreateFinalSubmitBtn');
     var messageEl = document.getElementById('clientCreateMessage');
@@ -280,7 +337,7 @@ document.addEventListener('DOMContentLoaded', function () {
             + '&level_key=' + encodeURIComponent(lk)
             + '&job_role_id=' + encodeURIComponent(String(jrId));
         return fetch(url, { credentials: 'same-origin' })
-            .then(function (res) { return res.json(); })
+            .then(function (res) { return parseJsonResponse(res); })
             .then(function (data) {
                 if (!data || data.status !== 1 || !Array.isArray(data.data)) {
                     throw new Error((data && data.message) ? data.message : 'Failed to load TAT & Cost');
@@ -405,7 +462,7 @@ document.addEventListener('DOMContentLoaded', function () {
             credentials: 'same-origin',
             body: JSON.stringify({ client_id: cid, level_key: lk, job_role_id: jrId, items: items || [] })
         })
-            .then(function (res) { return res.json(); })
+            .then(function (res) { return parseJsonResponse(res); })
             .then(function (data) {
                 if (!data || data.status !== 1) {
                     throw new Error((data && data.message) ? data.message : 'Failed to save TAT & Cost');
@@ -847,7 +904,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         return fetch(url,
             { credentials: 'same-origin' })
-            .then(function (res) { return res.json(); })
+            .then(function (res) { return parseJsonResponse(res); })
             .then(function (data) {
                 if (!data || data.status !== 1 || !Array.isArray(data.data)) return;
                 if (sk) {
@@ -939,7 +996,7 @@ document.addEventListener('DOMContentLoaded', function () {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ job_role_id: jrId, stage_key: sk, level_key: lk, types: types }),
             credentials: 'same-origin'
-        }).then(function (r) { return r.json(); })
+        }).then(function (r) { return parseJsonResponse(r); })
             .then(function (d) {
                 if (!d || d.status !== 1) return false;
                 var savedCount = (typeof d.saved_count !== 'undefined') ? (parseInt(d.saved_count || '0', 10) || 0) : types.length;
@@ -968,7 +1025,10 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!raw) return { stage: '', level: '' };
         var parts = raw.split('__');
         if (parts.length >= 2) {
-            return { stage: String(parts[0] || '').trim(), level: String(parts.slice(1).join('__') || '').trim() };
+            return {
+                stage: String(parts[0] || '').trim(),
+                level: String(parts.slice(1).join('__') || '').trim()
+            };
         }
         return { stage: raw, level: '' };
     }
@@ -1495,7 +1555,7 @@ document.addEventListener('DOMContentLoaded', function () {
         setVerificationMessage('Deleting...', 'info');
 
         deleteMappingRequest(url, jrId, sk)
-            .then(function (res) { return res.json(); })
+            .then(function (res) { return parseJsonResponse(res); })
             .then(function (data) {
                 if (!data || data.status !== 1) {
                     throw new Error((data && data.message) ? data.message : 'Failed to delete');
@@ -1547,7 +1607,7 @@ document.addEventListener('DOMContentLoaded', function () {
             ops.reduce(function (p, it) {
                 return p.then(function () {
                     return deleteMappingRequest(url, it.job_role_id, it.stage_key)
-                        .then(function (res) { return res.json(); })
+                        .then(function (res) { return parseJsonResponse(res); })
                         .then(function (data) {
                             if (!data || data.status !== 1) {
                                 throw new Error((data && data.message) ? data.message : 'Failed to delete');
@@ -1594,7 +1654,7 @@ document.addEventListener('DOMContentLoaded', function () {
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
         var url = base + '/api/gssadmin/client_verification_summary.php?client_id=' + encodeURIComponent(String(cid));
         return fetch(url, { credentials: 'same-origin' })
-            .then(function (res) { return res.json(); })
+            .then(function (res) { return parseJsonResponse(res); })
             .then(function (data) {
                 if (!data || data.status !== 1) {
                     throw new Error((data && data.message) ? data.message : 'Failed to load summary');
@@ -1624,10 +1684,9 @@ document.addEventListener('DOMContentLoaded', function () {
     function loadSystemTypes(clientId) {
         var cid = parseInt(clientId || '0', 10) || 0;
         if (cid <= 0) return Promise.resolve();
-        var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
+        var base = appBase();
         var url = base + '/api/gssadmin/verification_types_list.php?client_id=' + encodeURIComponent(String(cid));
-        return fetch(url, { credentials: 'same-origin' })
-            .then(function (res) { return res.json(); })
+        return fetchJson(url, { credentials: 'same-origin' })
             .then(function (data) {
                 if (!data || data.status !== 1 || !Array.isArray(data.data)) {
                     throw new Error((data && data.message) ? data.message : 'Failed to load verification types');
@@ -1645,10 +1704,9 @@ document.addEventListener('DOMContentLoaded', function () {
     function loadJobRoleTypes(jobRoleId) {
         var jrId = parseInt(jobRoleId || '0', 10) || 0;
         if (jrId <= 0) return Promise.resolve({});
-        var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
+        var base = appBase();
         var url = base + '/api/gssadmin/job_role_verification_types_get.php?job_role_id=' + encodeURIComponent(String(jrId));
-        return fetch(url, { credentials: 'same-origin' })
-            .then(function (res) { return res.json(); })
+        return fetchJson(url, { credentials: 'same-origin' })
             .then(function (data) {
                 if (!data || data.status !== 1 || !Array.isArray(data.data)) {
                     throw new Error((data && data.message) ? data.message : 'Failed to load job role types');
@@ -1741,10 +1799,9 @@ document.addEventListener('DOMContentLoaded', function () {
             if (n > 0) selectedSet[String(n)] = true;
         });
 
-        var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
+        var base = appBase();
         var url = base + '/api/gssadmin/job_roles_list.php?client_id=' + encodeURIComponent(String(cid));
-        return fetch(url, { credentials: 'same-origin' })
-            .then(function (res) { return res.json(); })
+        return fetchJson(url, { credentials: 'same-origin' })
             .then(function (data) {
                 if (!data || data.status !== 1 || !Array.isArray(data.data)) {
                     throw new Error((data && data.message) ? data.message : 'Failed to load job roles');
@@ -1803,6 +1860,16 @@ document.addEventListener('DOMContentLoaded', function () {
                 renderLevels(LEVELS);
                 onSelectionChanged();
                 loadVerificationSummary(cid);
+            })
+            .catch(function (e) {
+                if (jobRoleBoxEl) {
+                    jobRoleBoxEl.innerHTML = '<div style="color:#b91c1c; font-size:12px;">' + escapeHtml((e && e.message) ? e.message : 'Failed to load job roles') + '</div>';
+                }
+                // Avoid permanent "Loading..." in Levels even if roles API fails.
+                renderLevels(LEVELS);
+                if (summaryEl) {
+                    summaryEl.innerHTML = '<div style="color:#b91c1c; font-size:12px;">Failed to load verification mappings.</div>';
+                }
             });
     }
 
@@ -2015,7 +2082,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             body: JSON.stringify({ job_role_id: jrId, stage_key: fullStageKey, steps: steps }),
                             credentials: 'same-origin'
                         })
-                            .then(function (res) { return res.json(); })
+                            .then(function (res) { return parseJsonResponse(res); })
                             .then(function (data) {
                                 if (!data || data.status !== 1) {
                                     throw new Error((data && data.message) ? data.message : 'Failed to save');
@@ -2053,13 +2120,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 jrIds.forEach(function (jrId3) {
                     levels.forEach(function (lvl2) {
                         stageKeys.forEach(function (stageKey2) {
-                            var fullStageKey2 = String(stageKey2 || '').trim();
+                            var canonicalStageKey2 = String(stageKey2 || '').trim();
                             var levelKey2 = String(lvl2 || '').trim();
-                            var selectedTypesWithCounts = collectSelectedVerificationTypesWithCounts(fullStageKey2, levelKey2);
+                            var selectedTypesWithCounts = collectSelectedVerificationTypesWithCounts(canonicalStageKey2, levelKey2);
 
                             saveTypesChain = saveTypesChain.then(function (prevOk) {
                                 if (!prevOk) return false;
-                                return saveJobRoleVerificationTypes(jrId3, selectedTypesWithCounts, fullStageKey2, levelKey2);
+                                return saveJobRoleVerificationTypes(jrId3, selectedTypesWithCounts, canonicalStageKey2, levelKey2);
                             });
                         });
                     });
@@ -2343,7 +2410,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 body: JSON.stringify({ client_id: cid, role_name: name }),
                 credentials: 'same-origin'
             })
-                .then(function (res) { return res.json(); })
+                .then(function (res) { return parseJsonResponse(res); })
                 .then(function (data) {
                     if (!data || data.status !== 1 || !data.data) {
                         throw new Error((data && data.message) ? data.message : 'Failed to add role');
@@ -2531,7 +2598,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (urlClientId > 0) {
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
         fetch(base + '/api/gssadmin/get_client.php?client_id=' + encodeURIComponent(urlClientId), { credentials: 'same-origin' })
-            .then(function (res) { return res.json(); })
+            .then(function (res) { return parseJsonResponse(res); })
             .then(function (data) {
                 if (!data || data.status !== 1 || !data.data) {
                     throw new Error((data && data.message) ? data.message : 'Failed to load client.');
@@ -2643,7 +2710,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 credentials: 'same-origin'
             })
                 .then(function (res) {
-                    return res.json().catch(function () {
+                    return parseJsonResponse(res).catch(function () {
                         return { success: false, message: 'Invalid server response.' };
                     });
                 })

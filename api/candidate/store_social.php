@@ -5,6 +5,7 @@ session_start();
 require_once __DIR__ . "/../../config/env.php";
 require_once __DIR__ . "/../../config/db.php";
 require_once __DIR__ . "/../shared/case_component_binding.php";
+require_once __DIR__ . "/../shared/candidate_correction_service.php";
 
 /* ================= MAIN ================= */
 try {
@@ -92,6 +93,7 @@ try {
 
     // Ensure workflow rows always exist for socialmedia component.
     ensure_component_workflow_rows($pdo, (string)$application_id, 'socialmedia');
+    ccs_progress_component_after_candidate_save($pdo, (string)$application_id, 'socialmedia', (bool)$is_draft);
 
     /* ================= SUCCESS RESPONSE ================= */
     $response = [

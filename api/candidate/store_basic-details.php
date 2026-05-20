@@ -4,6 +4,7 @@ session_start();
 
 require_once __DIR__ . "/../../config/env.php";
 require_once __DIR__ . "/../../config/db.php";
+require_once __DIR__ . "/../shared/candidate_correction_service.php";
 
 error_reporting(E_ALL);
 ini_set('display_errors', '0');
@@ -297,6 +298,7 @@ try {
     if ($save_draft === '0') {
         markSectionAsCompleted($application_id, 'basic_details');
     }
+    ccs_progress_component_after_candidate_save($pdo, (string)$application_id, 'basic', $save_draft !== '0');
 
     sendSuccess($save_draft === '0' ? 'Basic details submitted successfully!' : 'Draft saved successfully!');
 

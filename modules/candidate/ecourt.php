@@ -19,6 +19,7 @@ $application_id = '';
 $pdo = null;
 $ecourt_row = [];
 $contact_row = [];
+$basic_row = [];
 
 try {
     if ($fatalError !== '') {
@@ -66,6 +67,25 @@ try {
         }
     }
 
+    // Get Basic details for DOB fallback
+    $basic_row = [];
+    try {
+        $stmt = $pdo->prepare("CALL SP_Vati_Payfiller_get_basic_details(?)");
+        $stmt->execute([$application_id]);
+        $basic_row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    } catch (Throwable $e) {
+        $basic_row = [];
+    } finally {
+        try {
+            if (isset($stmt) && $stmt) {
+                while ($stmt->nextRowset()) {
+                }
+                $stmt->closeCursor();
+            }
+        } catch (Throwable $_e) {
+        }
+    }
+
 } catch (Throwable $e) {
     $fatalError = $e->getMessage();
     if (session_status() !== PHP_SESSION_NONE && !empty($_SESSION['application_id'])) {
@@ -73,6 +93,7 @@ try {
     }
     $ecourt_row = [];
     $contact_row = [];
+    $basic_row = [];
 }
 
 // Format addresses from contact details
@@ -122,6 +143,12 @@ $permanent_address = !empty($ecourt_row['permanent_address'])
     ? $ecourt_row['permanent_address'] 
     : $permanent_address_from_contact;
 
+$ecourtDob = trim((string)($ecourt_row['dob'] ?? ''));
+if ($ecourtDob === '') {
+    $ecourt_row['dob'] = trim((string)($basic_row['dob'] ?? ''));
+}
+$basicDobPrefillUsed = ($ecourtDob === '' && trim((string)($ecourt_row['dob'] ?? '')) !== '');
+
 $adultDobMax = date('Y-m-d', strtotime('-18 years'));
 ?>
 
@@ -141,6 +168,11 @@ $adultDobMax = date('Y-m-d', strtotime('-18 years'));
     <p class="text-muted mb-3">
         Verify court records and provide evidence documents. Addresses are pre-filled from your contact information.
     </p>
+    <?php if ($basicDobPrefillUsed): ?>
+        <p class="compact-hint mb-3" style="color:#5b6b7b;">
+            Date of birth was pre-filled from your Basic Details. Please review it before continuing.
+        </p>
+    <?php endif; ?>
 
     <form id="ecourtForm" enctype="multipart/form-data">
 

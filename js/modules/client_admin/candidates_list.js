@@ -37,6 +37,18 @@
             return href;
         }
 
+        function slaBadge(createdAt, tatDays) {
+            var days = parseInt(tatDays || '20', 10);
+            if (!isFinite(days) || days <= 0) days = 20;
+            var dt = createdAt ? new Date(String(createdAt).replace(' ', 'T')) : null;
+            if (!(dt instanceof Date) || isNaN(dt.getTime())) return '<span class="badge bg-secondary">Unknown</span>';
+            var elapsed = Math.max(0, Math.floor((Date.now() - dt.getTime()) / 86400000));
+            var remain = days - elapsed;
+            if (remain < 0) return '<span class="badge bg-danger">Breached (' + escapeHtml(String(Math.abs(remain))) + 'd)</span>';
+            if (remain <= 3) return '<span class="badge bg-warning text-dark">At Risk (' + escapeHtml(String(remain)) + 'd)</span>';
+            return '<span class="badge bg-success">On Track (' + escapeHtml(String(remain)) + 'd)</span>';
+        }
+
         function loadCss(href) {
             return new Promise(function (resolve, reject) {
                 var existing = document.querySelector('link[href="' + href + '"]');
@@ -145,6 +157,10 @@
                     { data: 'candidate_mobile' },
                     { data: 'current_stage' },
                     { data: 'case_status' },
+                    {
+                        data: 'created_at',
+                        render: function (d) { return slaBadge(d, 20); }
+                    },
                     {
                         data: null,
                         orderable: false,

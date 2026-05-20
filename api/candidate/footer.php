@@ -5,7 +5,7 @@
             <div class="col-md-6">
                 <div class="d-flex align-items-center">
                     <i class="fas fa-shield-alt text-danger me-2"></i>
-                    <span class="text-white-50">ATTEST360 &copy; 2024 - Confidential Verification System</span>
+                    <span class="text-white-50">VATI GSS &copy; 2026 - Confidential Verification System</span>
                 </div>
             </div>
             <div class="col-md-6 text-md-end">

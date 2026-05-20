@@ -89,6 +89,56 @@
         box.innerHTML = html;
     }
 
+    function stageLabel(stageKey) {
+        var sk = String(stageKey || '').trim().toLowerCase();
+        if (sk === 'pre_interview' || sk === 'p1') return 'P1 - Pre Interview';
+        if (sk === 'post_interview' || sk === 'p2') return 'P2 - Post Interview';
+        if (sk === 'employee_pool' || sk === 'p3') return 'P3 - Current Employee Pool';
+        return String(stageKey || '').replace(/_/g, ' ');
+    }
+
+    function setLevelOptions(levels) {
+        var levelSelect = el('selected_level');
+        if (!levelSelect) return;
+        var arr = Array.isArray(levels) ? levels.filter(function (x) { return !!x; }) : [];
+        levelSelect.innerHTML = '';
+        if (!arr.length) {
+            levelSelect.innerHTML = '<option value="">-- No job level configured --</option>';
+            return;
+        }
+        levelSelect.innerHTML = '<option value="">-- Select Job Level --</option>';
+        arr.forEach(function (lk) {
+            var val = String(lk || '').trim();
+            if (!val) return;
+            var opt = document.createElement('option');
+            opt.value = val;
+            opt.textContent = val.toUpperCase();
+            levelSelect.appendChild(opt);
+        });
+        if (arr.length === 1) levelSelect.value = String(arr[0]);
+    }
+
+    function setStageOptions(stages) {
+        var stageSelect = el('stage_key');
+        if (!stageSelect) return;
+        var arr = Array.isArray(stages) ? stages.filter(function (x) { return !!x; }) : [];
+        stageSelect.innerHTML = '';
+        if (!arr.length) {
+            stageSelect.innerHTML = '<option value="">-- No stage configured --</option>';
+            return;
+        }
+        stageSelect.innerHTML = '<option value="">-- Select Stage --</option>';
+        arr.forEach(function (sk) {
+            var val = String(sk || '').trim();
+            if (!val) return;
+            var opt = document.createElement('option');
+            opt.value = val;
+            opt.textContent = stageLabel(val);
+            stageSelect.appendChild(opt);
+        });
+        if (arr.length === 1) stageSelect.value = String(arr[0]);
+    }
+
     async function refreshMappingPreview() {
         var roleSelect = el('job_role');
         var clientSelect = el('client_id');
@@ -98,8 +148,15 @@
         var jobRoleId = opt && opt.dataset ? (opt.dataset.jobRoleId || '') : '';
         var cid = clientSelect ? (clientSelect.value || '') : '';
 
+        var levelSelect = el('selected_level');
+        var stageSelect = el('stage_key');
+        var selectedLevel = levelSelect ? String(levelSelect.value || '').trim().toLowerCase() : '';
+        var selectedStage = stageSelect ? String(stageSelect.value || '').trim().toLowerCase() : '';
+
         if (!cid || !jobRoleId) {
-            setMappingPreviewHtml('<div class="text-muted" style="font-size:12px;">Select a job role to view mapped verification checks.</div>');
+            setLevelOptions([]);
+            setStageOptions([]);
+            setMappingPreviewHtml('<div class="text-muted" style="font-size:12px;">Select a job role, job level and stage to view mapped verification checks.</div>');
             return;
         }
 
@@ -108,7 +165,10 @@
         try {
             var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
             var url = base + '/api/shared/job_role_verification_preview.php?client_id=' + encodeURIComponent(String(cid))
-                + '&job_role_id=' + encodeURIComponent(jobRoleId) + '&t=' + Date.now();
+                + '&job_role_id=' + encodeURIComponent(jobRoleId);
+            if (selectedLevel) url += '&level_key=' + encodeURIComponent(selectedLevel);
+            if (selectedStage) url += '&stage_key=' + encodeURIComponent(selectedStage);
+            url += '&t=' + Date.now();
             var res = await fetch(url, { credentials: 'same-origin' });
             var data = await res.json().catch(function () { return null; });
 
@@ -116,10 +176,15 @@
                 throw new Error((data && data.message) ? data.message : 'Failed to load mapping');
             }
 
+            var availableLevels = Array.isArray(data.data.available_levels) ? data.data.available_levels : [];
+            var availableStages = Array.isArray(data.data.available_stages) ? data.data.available_stages : [];
+            setLevelOptions(availableLevels);
+            setStageOptions(availableStages);
+
             var stages = data.data.stages || {};
             var stageKeys = Object.keys(stages);
             if (!stageKeys.length) {
-                setMappingPreviewHtml('<div class="text-muted" style="font-size:12px;">No mapping found for this job role.</div>');
+                setMappingPreviewHtml('<div class="text-muted" style="font-size:12px;">No mapping found for selected role/job level/stage.</div>');
                 return;
             }
 
@@ -128,7 +193,7 @@
                 var arr = stages[sk] || [];
                 if (!Array.isArray(arr) || !arr.length) return;
                 html += '<div style="margin-bottom:10px;">';
-                html += '<div style="font-weight:700; font-size:12px; color:#0f172a; text-transform:capitalize;">' + String(sk).replace(/_/g, ' ') + '</div>';
+                html += '<div style="font-weight:700; font-size:12px; color:#0f172a;">' + stageLabel(sk) + '</div>';
                 html += '<div style="margin-top:6px; display:flex; flex-wrap:wrap; gap:6px;">';
                 arr.forEach(function (s) {
                     var name = s && s.type_name ? String(s.type_name) : '';
@@ -139,7 +204,7 @@
                 html += '</div>';
             });
 
-            setMappingPreviewHtml(html || '<div class="text-muted" style="font-size:12px;">No mapping found for this job role.</div>');
+            setMappingPreviewHtml(html || '<div class="text-muted" style="font-size:12px;">No mapping found for selected role/job level/stage.</div>');
         } catch (e) {
             setMappingPreviewHtml('<div class="text-muted" style="font-size:12px;">Unable to load mapping.</div>');
         }
@@ -252,6 +317,8 @@
                 return loadJobRolesForClient(0);
             }).then(refreshMappingPreview);
         });
+        setLevelOptions([]);
+        setStageOptions([]);
 
         var clientSelect = el('client_id');
         if (clientSelect) {
@@ -265,6 +332,14 @@
         var roleSelect = el('job_role');
         if (roleSelect) {
             roleSelect.addEventListener('change', refreshMappingPreview);
+        }
+        var levelSelect = el('selected_level');
+        if (levelSelect) {
+            levelSelect.addEventListener('change', refreshMappingPreview);
+        }
+        var stageSelect = el('stage_key');
+        if (stageSelect) {
+            stageSelect.addEventListener('change', refreshMappingPreview);
         }
 
         var btn = el('btnCandidateSave');

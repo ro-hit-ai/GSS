@@ -4,6 +4,7 @@ session_start();
 
 require_once __DIR__ . "/../../config/env.php";
 require_once __DIR__ . "/../../config/db.php";
+require_once __DIR__ . "/../shared/candidate_correction_service.php";
 
 class ValidationException extends Exception {}
 
@@ -295,6 +296,8 @@ $stmt->execute([
         }
     }
 
+    $isDraft = ($_POST['draft'] ?? '0') === '1';
+    ccs_progress_component_after_candidate_save($pdo, (string)$application_id, 'education', $isDraft);
     $pdo->commit();
 
     echo json_encode([

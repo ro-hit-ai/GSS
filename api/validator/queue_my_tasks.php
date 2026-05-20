@@ -3,6 +3,7 @@ header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../shared/operational_status_governance.php';
 
 auth_require_login('validator');
 auth_session_start();
@@ -69,22 +70,27 @@ try {
     $pdo = getDB();
     // Queue completion is projection-owned (WorkflowProjectionService). Do not auto-close here.
 
+    // Include both:
+    // - tasks already assigned to current validator
+    // - actionable unassigned tasks (to keep dashboard in sync with candidate list)
     $stmt = $pdo->prepare(
         "SELECT q.case_id, q.application_id, q.client_id, q.status, q.assigned_user_id, q.claimed_at, q.completed_at,\n" .
         "       c.candidate_first_name, c.candidate_last_name, c.candidate_email, c.candidate_mobile, c.case_status, c.created_at\n" .
         "  FROM Vati_Payfiller_Validator_Queue q\n" .
         "  JOIN Vati_Payfiller_Cases c ON c.case_id = q.case_id\n" .
-        " WHERE q.assigned_user_id = ? AND q.completed_at IS NULL\n" .
-        " ORDER BY q.claimed_at DESC, c.created_at ASC\n" .
+        " WHERE q.completed_at IS NULL\n" .
+        "   AND (COALESCE(q.assigned_user_id,0) = 0 OR q.assigned_user_id = ?)\n" .
+        " ORDER BY CASE WHEN q.assigned_user_id = ? THEN 0 ELSE 1 END, q.claimed_at DESC, c.created_at ASC\n" .
         " LIMIT 10"
     );
-    $stmt->execute([$userId]);
+    $stmt->execute([$userId, $userId]);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     $rows = enrich_rows_with_application_status($pdo, $rows);
     $rows = array_values(array_filter($rows, function ($r) {
         $it = (array)$r;
         return !is_stop_bgv_case($it) && !is_candidate_pending_case($it);
     }));
+    $rows = os_enrich_rows($pdo, $rows, 'validator');
 
     echo json_encode(['status' => 1, 'message' => 'ok', 'data' => $rows]);
 

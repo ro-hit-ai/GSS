@@ -1,13 +1,28 @@
 <?php
 
+require_once __DIR__ . '/../workflow_status_semantics.php';
+require_once __DIR__ . '/../workflow_stage_config.php';
+
 final class WorkflowGuardService
 {
+    public function isEvaluatedStatus(string $status): bool
+    {
+        return wf_is_evaluated_status($status);
+    }
+
+    public function isOperationallyActiveStatus(string $status): bool
+    {
+        return wf_is_operationally_active_status($status);
+    }
+
+    public function isResolvedStatus(string $status): bool
+    {
+        return wf_is_resolved_status($status);
+    }
+
     public function roleToStage(string $role): string
     {
-        $role = strtolower(trim($role));
-        if ($role === 'db_verifier') return 'verifier';
-        if ($role === 'team_lead') return 'qa';
-        return $role;
+        return wf_role_to_stage_key($role);
     }
 
     public function actionToStatus(string $action): string
@@ -18,6 +33,7 @@ final class WorkflowGuardService
             'reject' => 'rejected',
             'hold' => 'hold',
             'insufficient_documents' => 'insufficient_documents',
+            'reopen' => 'reopened',
         ];
         if (!isset($map[$action])) {
             throw new RuntimeException('WF_INVALID_ACTION');
@@ -35,7 +51,7 @@ final class WorkflowGuardService
     public function assertRoleAllowed(string $role): void
     {
         $role = strtolower(trim($role));
-        if (!in_array($role, ['validator', 'verifier', 'db_verifier', 'qa', 'team_lead'], true)) {
+        if (!in_array($role, wf_stage_assigned_roles(), true)) {
             throw new RuntimeException('WF_FORBIDDEN_ROLE');
         }
     }
@@ -65,10 +81,18 @@ final class WorkflowGuardService
         $action = strtolower(trim($action));
         $allowed = [
             'pending' => ['hold', 'insufficient_documents', 'reject', 'approve'],
+            'reopened' => ['hold', 'insufficient_documents', 'reject', 'approve'],
+            'waiting_candidate' => ['hold', 'insufficient_documents', 'reject', 'approve'],
+            'blocked' => ['hold', 'insufficient_documents', 'reject', 'approve'],
             'hold' => ['approve', 'reject', 'insufficient_documents'],
-            'insufficient_documents' => ['approve', 'hold', 'reject'],
+            'insufficient_documents' => ['approve', 'hold', 'reject', 'insufficient_documents'],
             'approved' => ['hold', 'insufficient_documents', 'reject'],
             'rejected' => ['hold', 'insufficient_documents', 'approve'],
+            'completed' => ['hold', 'insufficient_documents', 'reject', 'approve'],
+            'clear' => ['hold', 'insufficient_documents', 'reject', 'approve'],
+            'verified' => ['hold', 'insufficient_documents', 'reject', 'approve'],
+            'invalidated_by_validator_reopen' => ['hold', 'insufficient_documents', 'reject', 'approve'],
+            'invalidated_by_verifier_reopen' => ['hold', 'insufficient_documents', 'reject', 'approve'],
         ];
         $set = $allowed[$fromStatus] ?? $allowed['pending'];
         if (!in_array($action, $set, true)) {
@@ -79,14 +103,11 @@ final class WorkflowGuardService
     public function assertStageGate(string $stage, array $componentStageStatuses): void
     {
         $stage = strtolower(trim($stage));
-        $prev = '';
-        if ($stage === 'validator') $prev = 'candidate';
-        if ($stage === 'verifier') $prev = 'validator';
-        if ($stage === 'qa') $prev = 'verifier';
+        $prev = wf_previous_stage($stage);
         if ($prev === '') return;
 
         $prevStatus = strtolower(trim((string)($componentStageStatuses[$prev] ?? 'pending')));
-        if (!in_array($prevStatus, ['approved', 'completed', 'clear', 'verified'], true)) {
+        if (!$this->isEvaluatedStatus($prevStatus)) {
             throw new RuntimeException('WF_PREVIOUS_STAGE_PENDING');
         }
     }

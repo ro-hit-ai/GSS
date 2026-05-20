@@ -116,7 +116,7 @@ try {
 
     $joiningLocation = post_str('joining_location');
     $jobRole = post_str('job_role');
-    $selectedLevel = strtolower(post_str('selected_level', post_str('level_key', '')));
+    $selectedLevel = post_str('selected_level', post_str('level_key', ''));
 
     $recruiterName = post_str('recruiter_name');
     $recruiterEmail = integration_normalize_email(post_str('recruiter_email'));

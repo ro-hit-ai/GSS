@@ -224,6 +224,7 @@ function render_layout(string $title, string $roleLabel, array $menu, string $co
     <script src="<?php echo htmlspecialchars(app_url('/js/includes/date_utils.js')); ?>"></script>
     <script src="<?php echo htmlspecialchars(app_url('/js/includes/dialog.js')); ?>"></script>
     <script src="<?php echo htmlspecialchars(app_url('/js/includes/layout.js')); ?>"></script>
+    <script src="<?php echo htmlspecialchars(app_url('/js/shared/workflow_ui_semantics.js')); ?>"></script>
     <script>
         (function () {
             var host = null;

@@ -16,7 +16,7 @@ ob_start();
 ?>
 <div class="card">
     <h3 style="margin-bottom:4px;">QA Review List</h3>
-    <p class="card-subtitle" style="margin-bottom:0; color:#64748b;">Queue of cases ready for QA review, with filters for client, validator, verifier, and VR group.</p>
+    <p class="card-subtitle" style="margin-bottom:0; color:#64748b;">QA review workspace with active/evaluated visibility and reviewer filters.</p>
 </div>
 
 <div class="card qa-review-shell">
@@ -28,10 +28,23 @@ ob_start();
                 <div class="qa-review-filter-field">
                     <label for="qaCasesViewSelect">View</label>
                     <select id="qaCasesViewSelect" class="qa-review-select">
-                        <option value="ready">Ready for QA</option>
+                        <option value="ready">Awaiting QA</option>
                         <option value="all">All Cases</option>
-                        <option value="pending">Pending</option>
-                        <option value="completed">Completed</option>
+                        <option value="pending">Active Work</option>
+                        <option value="completed">QA Reviewed</option>
+                    </select>
+                </div>
+                <div class="qa-review-filter-field">
+                    <label for="qaCasesStateFilter">State Filter</label>
+                    <select id="qaCasesStateFilter" class="qa-review-select">
+                        <option value="all">All Statuses</option>
+                        <option value="active_work">Active Work</option>
+                        <option value="awaiting_evaluation">Awaiting QA</option>
+                        <option value="waiting_candidate">Waiting Candidate</option>
+                        <option value="evaluated">Evaluated / Reviewed</option>
+                        <option value="reopened">Decision Updated</option>
+                        <option value="downstream_processing">Downstream Processing</option>
+                        <option value="review_complete">Review Complete</option>
                     </select>
                 </div>
 

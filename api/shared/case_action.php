@@ -4,6 +4,7 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/integration.php';
+require_once __DIR__ . '/workflow_semantics.php';
 
 auth_require_login(null);
 
@@ -39,7 +40,7 @@ function enforce_qa_workflow_gate(PDO $pdo, string $applicationId): void {
         exit;
     }
 
-    // Verifier groups must be completed (BASIC + EDUCATION rows)
+    // Verifier groups must be completed for all canonical verifier groups seeded on the case.
     $q = $pdo->prepare(
         "SELECT\n" .
         "  SUM(CASE WHEN completed_at IS NULL THEN 1 ELSE 0 END) AS open_items,\n" .
@@ -228,24 +229,8 @@ try {
         try {
             $resolvedCaseId = $caseId > 0 ? $caseId : resolve_case_id_by_application($pdo, $applicationId);
             if ($resolvedCaseId > 0) {
-                // Stop BGV is final for current operational queues.
-                $vq = $pdo->prepare(
-                    "UPDATE Vati_Payfiller_Validator_Queue
-                     SET status = 'completed',
-                         completed_at = COALESCE(completed_at, NOW())
-                     WHERE case_id = ?
-                       AND completed_at IS NULL"
-                );
-                $vq->execute([$resolvedCaseId]);
-
-                $vrq = $pdo->prepare(
-                    "UPDATE Vati_Payfiller_Verifier_Group_Queue
-                     SET status = 'completed',
-                         completed_at = COALESCE(completed_at, NOW())
-                     WHERE case_id = ?
-                       AND completed_at IS NULL"
-                );
-                $vrq->execute([$resolvedCaseId]);
+                // Queue lifecycle ownership is projection/service-owned.
+                // Keep case_action focused on case/application terminal state only.
             }
         } catch (Throwable $e) {
             // ignore
@@ -257,7 +242,7 @@ try {
     // Note: completion is handled by /api/verifier/queue_complete.php
     try {
         $roleNorm = session_role_norm();
-        if ($roleNorm === 'verifier' && $caseId > 0 && in_array($groupKey, ['BASIC', 'EDUCATION'], true)) {
+        if ($roleNorm === 'verifier' && $caseId > 0 && wf_is_valid_verifier_group($groupKey)) {
             $queueStatus = null;
             if ($action === 'hold') {
                 $queueStatus = 'followup';

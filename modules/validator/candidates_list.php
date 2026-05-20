@@ -17,7 +17,7 @@ ob_start();
 <div class="vr-page">
 <div class="card vr-card">
     <h3>Candidate List</h3>
-    <p class="card-subtitle">Validator FIFO queue. Open a case to validate it.</p>
+    <p class="card-subtitle">Validator evaluation workspace with active and evaluated visibility.</p>
 </div>
 
 <div class="card vr-card">
@@ -28,9 +28,20 @@ ob_start();
             <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
                 <label style="font-size:13px; margin-right:6px;">View</label>
                 <select id="valCasesViewSelect" style="font-size:13px; padding:6px 8px; min-width:180px; border-radius:10px; border:1px solid #cbd5e1;">
-                    <option value="available">Available</option>
-                    <option value="mine">My Tasks</option>
-                    <option value="completed">Completed</option>
+                    <option value="all_cases">All Cases</option>
+                    <option value="available">Active Work</option>
+                    <option value="mine">My Visibility</option>
+                    <option value="history">Evaluated</option>
+                </select>
+                <select id="valCasesStateFilter" style="font-size:13px; padding:6px 8px; min-width:210px; border-radius:10px; border:1px solid #cbd5e1;">
+                    <option value="all">All Statuses</option>
+                    <option value="active_work">Active Work</option>
+                    <option value="awaiting_evaluation">Awaiting Evaluation</option>
+                    <option value="waiting_candidate">Waiting Candidate</option>
+                    <option value="evaluated">Evaluated</option>
+                    <option value="reopened">Decision Updated</option>
+                    <option value="downstream_processing">Downstream Processing</option>
+                    <option value="review_complete">Review Complete</option>
                 </select>
                 <input id="valCasesListSearch" type="text" placeholder="Search name / email / app id / status" style="font-size:13px; padding:6px 8px; border-radius:10px; border:1px solid #cbd5e1;">
                 <button class="btn btn-sm" id="valCasesListRefreshBtn" type="button" style="border-radius:10px;">Refresh</button>

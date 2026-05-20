@@ -166,7 +166,7 @@ class Review {
         const raw = String(url || '').trim();
         if (!raw) {
             container.innerHTML = '<p>No file available</p>';
-            modal.style.display = 'block';
+            modal.style.display = 'flex';
             return;
         }
 
@@ -179,7 +179,7 @@ class Review {
         } else {
             container.innerHTML = `<img src="${safeUrl}" style="width:100%;max-height:500px;object-fit:contain;" alt="Document Preview" onerror="this.outerHTML='<p>Failed to load file</p>'" />`;
         }
-        modal.style.display = 'block';
+        modal.style.display = 'flex';
     }
 
     static closePreview() {

@@ -4,6 +4,7 @@ header("Content-Type: application/json");
 
 require_once __DIR__ . '/../../config/env.php';
 require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../shared/candidate_correction_service.php';
 
 class ValidationException extends Exception {}
 
@@ -215,6 +216,7 @@ try {
     $savedData = $fetchStmt->fetch(PDO::FETCH_ASSOC) ?: [];
     $fetchStmt->closeCursor();
 
+    ccs_progress_component_after_candidate_save($pdo, (string)$application_id, 'reference', $isDraft);
     $pdo->commit();
 
 
