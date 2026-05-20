@@ -71,3 +71,5 @@
 [2026-05-20 08:01:07] source=store_authorization application_id=APP-20260520075926356 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none
 [2026-05-20 08:03:54] source=submit application_id=APP-20260520075926356 case_id=204 final_submit_completed=1 authorization_completed=1 queue_created=1 queue_seed_reason=final_submit
 [2026-05-20 11:27:42] source=store_authorization application_id=APP-20260520112618373 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none
+[2026-05-20 13:34:54] source=submit application_id=APP-20260520112618373 case_id=205 final_submit_completed=1 authorization_completed=1 queue_created=1 queue_seed_reason=final_submit
+[2026-05-20 13:35:57] source=store_authorization application_id=APP-20260520133405872 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none

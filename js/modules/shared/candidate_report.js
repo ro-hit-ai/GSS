@@ -2735,9 +2735,27 @@ if (uploadInput) {
         return '<div class="cr-flow">' + html + '</div>';
     }
 
-    function emailRepliesHtml(items) {
+    function emailRepliesEmptyHtml(opts) {
+        opts = opts || {};
+        var role = String(opts.role || getRole() || '').toLowerCase().trim();
+        var componentKey = normSection(String(opts.componentKey || currentRepliesScopeComponent() || ''));
+        var hasOtherThread = !!opts.hasOtherThread;
+
+        var roleLabel = 'this role';
+        if (role === 'validator') roleLabel = 'validator';
+        else if (role === 'verifier' || role === 'db_verifier') roleLabel = 'verifier';
+        else if (role === 'qa' || role === 'team_lead') roleLabel = 'QA';
+
+        var componentLabel = componentKey ? sectionTitle(componentKey) : 'this component';
+        if (hasOtherThread && role !== 'qa' && role !== 'team_lead') {
+            return '<div style="color:#6b7280; font-size:13px;">Replies exist for ' + esc(componentLabel) + ', but no ' + esc(roleLabel) + ' mail thread is linked to this component yet.</div>';
+        }
+        return '<div style="color:#6b7280; font-size:13px;">No ' + esc(roleLabel) + ' replies yet for ' + esc(componentLabel) + '.</div>';
+    }
+
+    function emailRepliesHtml(items, opts) {
         if (!Array.isArray(items) || items.length === 0) {
-            return '<div style="color:#6b7280; font-size:13px;">No email replies yet.</div>';
+            return emailRepliesEmptyHtml(opts);
         }
 
         function communicationBadge(item) {
@@ -2963,8 +2981,8 @@ if (uploadInput) {
         }
 
         if (!shouldSync && EMAIL_REPLIES_LAST_RENDER_KEY === requestKey && (EMAIL_REPLIES_CACHE.length || EMAIL_REPLIES_SIDEBAR_CACHE.length)) {
-            renderTarget(hostModal, emailRepliesHtml(EMAIL_REPLIES_CACHE));
-            renderTarget(hostSidebar, emailRepliesHtml(EMAIL_REPLIES_SIDEBAR_CACHE.slice(0, 8)));
+            renderTarget(hostModal, emailRepliesHtml(EMAIL_REPLIES_CACHE, { role: roleNow, componentKey: componentKey }));
+            renderTarget(hostSidebar, emailRepliesHtml(EMAIL_REPLIES_SIDEBAR_CACHE.slice(0, 8), { role: roleNow, componentKey: componentKey }));
             if (countEl) countEl.textContent = String(EMAIL_REPLIES_SIDEBAR_CACHE.length);
             return;
         }
@@ -3018,8 +3036,13 @@ if (uploadInput) {
                     EMAIL_REPLIES_LAST_SYNC_AT = Date.now();
                     EMAIL_REPLIES_LAST_SYNC_APP_ID = String(applicationId || '');
                 }
-                renderTarget(hostModal, emailRepliesHtml(EMAIL_REPLIES_CACHE));
-                renderTarget(hostSidebar, emailRepliesHtml(EMAIL_REPLIES_SIDEBAR_CACHE.slice(0, 8)));
+                var hasOtherThread = Array.isArray(caseRows) && caseRows.length > 0 && (!Array.isArray(sidebarRows) || sidebarRows.length === 0);
+                renderTarget(hostModal, emailRepliesHtml(EMAIL_REPLIES_CACHE, { role: roleNow, componentKey: componentKey }));
+                renderTarget(hostSidebar, emailRepliesHtml(EMAIL_REPLIES_SIDEBAR_CACHE.slice(0, 8), {
+                    role: roleNow,
+                    componentKey: componentKey,
+                    hasOtherThread: hasOtherThread
+                }));
                 if (countEl) countEl.textContent = String(EMAIL_REPLIES_SIDEBAR_CACHE.length);
             } catch (_e) {
                 renderTarget(hostModal, '<div style="color:#b91c1c; font-size:13px;">Network error loading email replies.</div>');

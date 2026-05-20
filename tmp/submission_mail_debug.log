@@ -457,3 +457,10 @@
 [2026-05-20 08:03:55] submit notify: candidate_email=256testingtest123@gmail.com client_id=3 job_role=SDE
 [2026-05-20 08:03:58] submit notify: candidate_confirmation_sent=yes
 [2026-05-20 08:04:02] submit notify: internal_recipient_count=1 internal_sent_count=1
+[2026-05-20 13:34:54] candidate workflow transition: rows updated=9; application_id=APP-20260520112618373
+[2026-05-20 13:34:54] validator workflow ready: rows updated=9; application_id=APP-20260520112618373
+[2026-05-20 13:34:54] submit notify: start application_id=APP-20260520112618373
+[2026-05-20 13:34:54] submit notify: row_found=yes
+[2026-05-20 13:34:54] submit notify: candidate_email=256testingtest123@gmail.com client_id=3 job_role=SDE
+[2026-05-20 13:34:58] submit notify: candidate_confirmation_sent=yes
+[2026-05-20 13:35:01] submit notify: internal_recipient_count=1 internal_sent_count=1

@@ -219,6 +219,13 @@ function row_belongs_to_viewer_role(array $row, string $viewerRole, array $allow
     return false;
 }
 
+function row_is_outgoing_for_viewer(array $row, string $viewerRole): bool
+{
+    $direction = strtolower(trim((string)($row['direction'] ?? '')));
+    $actorRole = normalize_role_key((string)($row['actor_role'] ?? ''));
+    return $direction === 'outgoing' && $viewerRole !== '' && $actorRole === $viewerRole;
+}
+
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
         http_response_code(405);
@@ -321,15 +328,15 @@ try {
         }));
     }
 
+    $scopedData = $data;
     $allowedThreadIds = [];
     $allowedMessageIds = [];
-    foreach ($data as $row) {
-        if (strtolower(trim((string)($row['direction'] ?? ''))) !== 'outgoing') {
+    $viewerOutgoingCount = 0;
+    foreach ($scopedData as $row) {
+        if (!row_is_outgoing_for_viewer($row, $viewerRole)) {
             continue;
         }
-        if (normalize_role_key((string)($row['actor_role'] ?? '')) !== $viewerRole) {
-            continue;
-        }
+        $viewerOutgoingCount++;
         $threadId = strtolower(trim((string)($row['thread_id'] ?? '')));
         if ($threadId !== '') {
             $allowedThreadIds[$threadId] = true;
@@ -339,9 +346,38 @@ try {
             $allowedMessageIds[$messageId] = true;
         }
     }
-    $data = array_values(array_filter($data, static function (array $row) use ($viewerRole, $allowedThreadIds, $allowedMessageIds): bool {
+    $strictData = array_values(array_filter($scopedData, static function (array $row) use ($viewerRole, $allowedThreadIds, $allowedMessageIds): bool {
         return row_belongs_to_viewer_role($row, $viewerRole, $allowedThreadIds, $allowedMessageIds);
     }));
+    $data = $strictData;
+
+    // Older validator/verifier communications may lack stable thread/message metadata.
+    // When the current role has definitely sent mail on this same component scope,
+    // allow those incoming rows back into the scoped view instead of rendering empty.
+    if ($scope === 'component' && $componentKey !== '' && $viewerOutgoingCount > 0) {
+        $strictIncomingCount = 0;
+        foreach ($strictData as $row) {
+            if (strtolower(trim((string)($row['direction'] ?? ''))) === 'incoming') {
+                $strictIncomingCount++;
+                break;
+            }
+        }
+        if ($strictIncomingCount === 0) {
+            $data = array_values(array_filter($scopedData, static function (array $row) use ($viewerRole): bool {
+                $direction = strtolower(trim((string)($row['direction'] ?? '')));
+                if ($direction === 'incoming') return true;
+                return row_is_outgoing_for_viewer($row, $viewerRole);
+            }));
+        }
+    }
+
+    // Final safety net for validator/verifier surfaces:
+    // older mail rows can be too weakly threaded to preserve perfect role lanes.
+    // If the role-specific filter still leaves the component reply pane empty,
+    // prefer showing the component conversation over a broken blank state.
+    if (($viewerRole === 'validator' || $viewerRole === 'verifier') && $scope === 'component' && $componentKey !== '' && count($data) === 0 && count($scopedData) > 0) {
+        $data = $scopedData;
+    }
 
     // Fallback: if canonical has no incoming rows, surface legacy mailbox replies directly.
     $hasIncoming = false;
