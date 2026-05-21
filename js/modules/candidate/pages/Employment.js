@@ -16,6 +16,8 @@ class EmploymentManager extends TabManager {
         this.requiredCount = 0;
         this.configuredRequiredCount = 0;
         this.lastNonFresherCount = 1;
+        this.fullEmploymentCount = 0;
+        this.visibleEmploymentCount = 0;
         this.docTypeOptions = {
             yes: [
                 { value: 'payslip', label: 'Payslip' },
@@ -73,8 +75,12 @@ class EmploymentManager extends TabManager {
         this.setupFormHandlers();
         this.setupFileHandlers();
         this.setupRelievingDateHandlers();
-        this.setupInsufficientDocsHandlers();
+        this.setupNoFurtherEmploymentController();
         this.loadFromLocalStorage();
+        this.fullEmploymentCount = this.cards.filter(Boolean).length;
+        this.visibleEmploymentCount = this.fullEmploymentCount;
+        this.restoreVisibleEmploymentCount();
+        this.refreshEmploymentState();
         this.lastNonFresherCount = Math.max(this.cards.length, this.configuredRequiredCount || 0, 1);
         this.setupRadioHandlers();
         this.applyFresherUI(this.isFresher);
@@ -91,6 +97,20 @@ class EmploymentManager extends TabManager {
 
     getTabLabel(index) {
         return `Employer ${index + 1}`;
+    }
+
+    handleCountChange() {
+        super.handleCountChange();
+        this.fullEmploymentCount = this.cards.filter(Boolean).length;
+        this.visibleEmploymentCount = this.fullEmploymentCount;
+        this.persistVisibleEmploymentCount();
+        this.refreshEmploymentState();
+    }
+
+    showTab(index) {
+        const maxVisibleIndex = Math.max(0, (this.visibleEmploymentCount || 1) - 1);
+        const safeIndex = Math.min(index, maxVisibleIndex);
+        super.showTab(safeIndex);
     }
 
     loadPageData() {
@@ -210,26 +230,6 @@ class EmploymentManager extends TabManager {
         }
 
         // Handle insufficient documents checkbox
-        const insufficientCheckbox = card.querySelector('.insufficient-emp-checkbox');
-        const insufficientHidden = card.querySelector('.insufficient-emp-hidden');
-        if (insufficientHidden) {
-            insufficientHidden.name = `insufficient_employment_docs[${index}]`;
-            insufficientHidden.value = '0';
-        }
-        if (insufficientCheckbox) {
-            insufficientCheckbox.name = `insufficient_employment_docs[${index}]`;
-            const isInsufficient = employmentDoc === 'INSUFFICIENT_DOCUMENTS' ||
-                                 data.insufficient_documents == 1 || 
-                                 data.insufficient_documents === true;
-            
-            insufficientCheckbox.checked = isInsufficient;
-            if (insufficientHidden) {
-                insufficientHidden.value = isInsufficient ? '1' : '0';
-            }
-            this.toggleEmploymentFileInput(card, isInsufficient);
-            console.log(`   Set insufficient_employment_docs for card ${index}: ${isInsufficient}`);
-        }
-
         // Handle radio buttons for first card only
         const radioBlock = card.querySelector('.first-employer-fields');
         if (radioBlock) {
@@ -267,19 +267,6 @@ class EmploymentManager extends TabManager {
         console.log(`✅ Card ${index} populated successfully`);
     }
 
-    toggleEmploymentFileInput(card, isInsufficient) {
-        const employmentFile = card.querySelector('input[name="employment_doc[]"]');
-        
-        if (employmentFile) {
-            employmentFile.disabled = isInsufficient;
-            employmentFile.required = !isInsufficient;
-            if (isInsufficient) {
-                employmentFile.value = '';
-                this.clearUploadBox(this.getUploadBoxFromInput(employmentFile));
-            }
-        }
-    }
-
     setRadio(card, name, value) {
         console.log(`🎯 setRadio: ${name} = "${value}"`);
         
@@ -307,24 +294,35 @@ class EmploymentManager extends TabManager {
         }, 50);
     }
 
-    setupInsufficientDocsHandlers() {
-        console.log('🔧 Setting up insufficient documents handlers');
-        
+    setupNoFurtherEmploymentController() {
         this.addEventListener(document, 'change', (e) => {
-            if (e.target.matches('.insufficient-emp-checkbox')) {
-                const checkbox = e.target;
-                const card = checkbox.closest('.employment-card');
-                if (card) {
-                    const cardIndex = card.dataset.cardIndex || 'unknown';
-                    console.log(`🔘 Insufficient employment docs checkbox changed in card ${cardIndex}: ${checkbox.checked}`);
-                    const hidden = card.querySelector('.insufficient-emp-hidden');
-                    if (hidden) {
-                        hidden.value = checkbox.checked ? '1' : '0';
-                    }
-                    this.toggleEmploymentFileInput(card, checkbox.checked);
-                }
-            }
+            if (!e.target.matches('.no-further-employment-checkbox')) return;
+            const card = e.target.closest('.employment-card');
+            if (!card) return;
+            this.handleNoFurtherEmploymentChange(card, e.target);
         });
+    }
+
+    handleNoFurtherEmploymentChange(card, trigger) {
+        const index = parseInt(card.dataset.cardIndex || '-1', 10);
+        if (index < 0) return;
+
+        const canCutoff = index < this.fullEmploymentCount - 1;
+        if (!canCutoff) {
+            trigger.checked = false;
+        }
+
+        if (trigger.checked) {
+            this.cards.forEach((otherCard, otherIndex) => {
+                if (!otherCard || otherIndex === index) return;
+                const otherCheckbox = otherCard.querySelector('.no-further-employment-checkbox');
+                if (otherCheckbox) otherCheckbox.checked = false;
+            });
+        }
+
+        this.visibleEmploymentCount = trigger.checked ? (index + 1) : this.fullEmploymentCount;
+        this.persistVisibleEmploymentCount();
+        this.refreshEmploymentState();
     }
 
     setupFormHandlers() {
@@ -437,13 +435,6 @@ class EmploymentManager extends TabManager {
 
                 if (card && input.files.length > 0) {
                     console.log(`📄 Employment file selected in card:`, input.files[0].name);
-                    const insufficientCheckbox =
-                        card.querySelector('.insufficient-emp-checkbox');
-                    if (insufficientCheckbox) {
-                        insufficientCheckbox.checked = false;
-                        this.toggleEmploymentFileInput(card, false);
-                    }
-
                     const oldEmploymentDoc =
                         card.querySelector('[name^="old_employment_doc"]');
                     if (oldEmploymentDoc && oldEmploymentDoc.value === 'INSUFFICIENT_DOCUMENTS') {
@@ -527,6 +518,107 @@ class EmploymentManager extends TabManager {
         const match = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
         if (!match) return raw;
         return `${match[3]}-${match[2]}-${match[1]}`;
+    }
+
+    getDesiredVisibleEmploymentCount() {
+        let visibleCount = Math.max(
+            1,
+            Math.min(this.visibleEmploymentCount || this.fullEmploymentCount || 1, this.fullEmploymentCount || 1)
+        );
+
+        this.cards.forEach((card, index) => {
+            if (!card || index >= visibleCount) return;
+            const checkbox = card.querySelector('.no-further-employment-checkbox');
+            if (checkbox && checkbox.checked) {
+                visibleCount = index + 1;
+            }
+        });
+
+        return Math.max(1, Math.min(visibleCount || 1, this.fullEmploymentCount || 1));
+    }
+
+    refreshEmploymentState() {
+        this.fullEmploymentCount = this.cards.filter(Boolean).length;
+        this.visibleEmploymentCount = this.getDesiredVisibleEmploymentCount();
+        this.persistVisibleEmploymentCount();
+        this.applyVisibleEmploymentCount();
+        this.updateNoFurtherEmploymentVisibility();
+    }
+
+    getNoFurtherEmploymentStorageKey() {
+        return 'employment_visible_count';
+    }
+
+    persistVisibleEmploymentCount() {
+        try {
+            const visibleCount = Math.max(
+                1,
+                Math.min(this.visibleEmploymentCount || this.fullEmploymentCount || 1, this.fullEmploymentCount || 1)
+            );
+            localStorage.setItem(this.getNoFurtherEmploymentStorageKey(), String(visibleCount));
+        } catch (_e) {
+        }
+    }
+
+    restoreVisibleEmploymentCount() {
+        try {
+            const raw = localStorage.getItem(this.getNoFurtherEmploymentStorageKey());
+            if (!raw) return;
+            const parsed = parseInt(raw, 10);
+            if (!parsed || parsed < 1) return;
+            this.visibleEmploymentCount = Math.min(parsed, this.fullEmploymentCount || parsed);
+        } catch (_e) {
+        }
+    }
+
+    applyVisibleEmploymentCount() {
+        const visibleCount = Math.max(1, this.visibleEmploymentCount || this.cards.filter(Boolean).length || 1);
+        const tabs = document.querySelectorAll('.employment-tab');
+
+        this.cards.forEach((card, index) => {
+            if (!card) return;
+            const isVisible = index < visibleCount;
+            card.dataset.suppressed = isVisible ? '0' : '1';
+            card.style.display = isVisible && index === this.currentTab ? 'block' : 'none';
+
+            card.querySelectorAll('input, select, textarea, button').forEach((el) => {
+                if (el.classList.contains('no-further-employment-checkbox')) {
+                    el.disabled = !isVisible;
+                    return;
+                }
+                if (el.type === 'hidden') {
+                    el.disabled = !isVisible;
+                    return;
+                }
+                el.disabled = !isVisible;
+            });
+        });
+
+        tabs.forEach((tab, index) => {
+            tab.style.display = index < visibleCount ? '' : 'none';
+        });
+
+        if (this.currentTab >= visibleCount) {
+            this.currentTab = visibleCount - 1;
+        }
+
+        super.showTab(this.currentTab);
+    }
+
+    updateNoFurtherEmploymentVisibility() {
+        const total = Math.max(1, this.visibleEmploymentCount || this.cards.filter(Boolean).length);
+        this.cards.forEach((card, index) => {
+            if (!card) return;
+            const row = card.querySelector('.no-further-employment-row');
+            const checkbox = card.querySelector('.no-further-employment-checkbox');
+            if (!row || !checkbox) return;
+
+            const isVisible = index < total;
+            const canCutoff = !this.isFresher && isVisible && index < this.fullEmploymentCount - 1;
+            row.style.display = canCutoff ? '' : 'none';
+            checkbox.disabled = !canCutoff;
+            checkbox.checked = canCutoff && total < this.fullEmploymentCount && total === (index + 1);
+        });
     }
 
     updateContactEmployer(card, preserveExistingDate = false) {
@@ -662,9 +754,14 @@ class EmploymentManager extends TabManager {
                     body.style.display = isFresher ? "none" : "";
                 }
             } else {
-                card.style.display = isFresher ? "none" : (index === this.currentTab ? "block" : "none");
+                const isWithinVisibleRange = index < (this.visibleEmploymentCount || this.cards.length || 1);
+                card.style.display = isFresher
+                    ? "none"
+                    : (isWithinVisibleRange && index === this.currentTab ? "block" : "none");
             }
         });
+
+        this.updateNoFurtherEmploymentVisibility();
 
         if (isFresher) {
             this.showTab(0);
@@ -698,9 +795,7 @@ class EmploymentManager extends TabManager {
         };
         
         const requiredEmploymentCount = Math.max(
-            this.cards.length,
-            this.configuredRequiredCount || 0,
-            this.requiredCount || 0,
+            Math.min(this.visibleEmploymentCount || this.cards.length || 1, this.cards.length || 1),
             1
         );
 
@@ -747,53 +842,41 @@ class EmploymentManager extends TabManager {
                     }
                 });
 
-// Validate documents for final submission
-if (isFinalSubmit) {
+                if (isFinalSubmit) {
+                    const employmentDocType =
+                        card.querySelector('[name="employment_doc_type[]"]');
+                    if (!employmentDocType || !employmentDocType.value.trim()) {
+                        addError(employmentDocType || card, `Employer ${i + 1}: Employment document type is required`);
+                    }
 
-    const insufficientCheckbox =
-        card.querySelector('.insufficient-emp-checkbox');
+                    const employmentFile =
+                        card.querySelector('[name="employment_doc[]"]');
 
-        const employmentDocType =
-            card.querySelector('[name="employment_doc_type[]"]');
-        if (!employmentDocType || !employmentDocType.value.trim()) {
-            addError(employmentDocType || card, `Employer ${i + 1}: Employment document type is required`);
-        }
+                    const oldEmploymentDoc =
+                        card.querySelector('[name^="old_employment_doc"]');
 
-    const isInsufficient =
-        !!(insufficientCheckbox && insufficientCheckbox.checked);
+                    const dbRow = this.savedRows?.[i] || {};
 
-    if (!isInsufficient) {
+                    const hasNewFile =
+                        employmentFile &&
+                        employmentFile.files &&
+                        employmentFile.files.length > 0;
 
-        const employmentFile =
-            card.querySelector('[name="employment_doc[]"]');
+                    const hasOldFile =
+                        oldEmploymentDoc &&
+                        oldEmploymentDoc.value &&
+                        oldEmploymentDoc.value !== 'INSUFFICIENT_DOCUMENTS';
 
-        const oldEmploymentDoc =
-            card.querySelector('[name^="old_employment_doc"]');
+                    const hasDbFile =
+                        dbRow.employment_doc &&
+                        dbRow.employment_doc !== 'INSUFFICIENT_DOCUMENTS';
 
-        const dbRow = this.savedRows?.[i] || {};
-
-        const hasNewFile =
-            employmentFile &&
-            employmentFile.files &&
-            employmentFile.files.length > 0;
-
-        const hasOldFile =
-            oldEmploymentDoc &&
-            oldEmploymentDoc.value &&
-            oldEmploymentDoc.value !== 'INSUFFICIENT_DOCUMENTS';
-
-        const hasDbFile =
-            dbRow.employment_doc &&
-            dbRow.employment_doc !== 'INSUFFICIENT_DOCUMENTS';
-
-        if (!hasNewFile && !hasOldFile && !hasDbFile) {
-            const fileBox =
-                card.querySelector('[name="employment_doc[]"]')?.closest('.form-control')?.querySelector('[data-file-upload]');
-            addError(fileBox || card.querySelector('[name="employment_doc[]"]') || card, `Employer ${i + 1}: Employment proof is required`);
-        }
-    }
-}
-
+                    if (!hasNewFile && !hasOldFile && !hasDbFile) {
+                        const fileBox =
+                            card.querySelector('[name="employment_doc[]"]')?.closest('.form-control')?.querySelector('[data-file-upload]');
+                        addError(fileBox || card.querySelector('[name="employment_doc[]"]') || card, `Employer ${i + 1}: Employment proof is required`);
+                    }
+                }
 
                 // Validate dates
                 const joiningInput = card.querySelector('[name="joining_date[]"]');
@@ -920,8 +1003,7 @@ if (isFinalSubmit) {
                         relieving_date: data['relieving_date[]']?.[i],
                         is_fresher: data['is_fresher[0]']?.[0],
                         currently_employed: data['currently_employed[0]']?.[0],
-                        contact_employer: data['contact_employer[0]']?.[0],
-                        insufficient_documents: data['insufficient_employment_docs[]']?.[i] || false
+                        contact_employer: data['contact_employer[0]']?.[0]
                     };
 
                     this.populateCard(card, localStorageData, i);
@@ -977,8 +1059,7 @@ if (isFinalSubmit) {
 
             const formData = new FormData(form);
             this.cards.forEach((card, index) => {
-                const checkbox = card.querySelector('.insufficient-emp-checkbox');
-                formData.set(`insufficient_employment_docs[${index}]`, checkbox && checkbox.checked ? '1' : '0');
+                formData.set(`insufficient_employment_docs[${index}]`, '0');
             });
             formData.set('draft', isDraft ? '1' : '0');
 
@@ -1122,4 +1203,5 @@ if (typeof window !== 'undefined') {
 }
 
 console.log('✅ Employment.js module loaded');
+
 

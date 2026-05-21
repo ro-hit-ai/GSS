@@ -13,6 +13,22 @@ function wc_norm_role(string $role): string {
     return $r;
 }
 
+function wc_norm_thread_owner_role(string $role): string {
+    $r = wc_norm_role($role);
+    if ($r === 'team_lead') return 'qa';
+    return $r;
+}
+
+function wc_build_thread_id(string $applicationId, string $componentKey, string $ownerRole): string {
+    $app = strtolower(trim($applicationId));
+    $component = strtolower(trim($componentKey));
+    $owner = strtolower(trim(wc_norm_thread_owner_role($ownerRole)));
+    if ($app === '') $app = 'unknown-app';
+    if ($component === '') $component = 'timeline';
+    if ($owner === '') $owner = 'system';
+    return 'wf:' . $app . ':' . $component . ':' . $owner;
+}
+
 function wc_session_role(): string {
     auth_session_start();
     $role = wc_norm_role((string)($_SESSION['auth_moduleAccess'] ?? ''));
@@ -243,6 +259,9 @@ function wc_ensure_columns(PDO $pdo): void {
         'in_reply_to' => "ALTER TABLE workflow_communications ADD COLUMN in_reply_to VARCHAR(255) NULL AFTER message_id",
         'references_header' => "ALTER TABLE workflow_communications ADD COLUMN references_header TEXT NULL AFTER in_reply_to",
         'thread_id' => "ALTER TABLE workflow_communications ADD COLUMN thread_id VARCHAR(128) NULL AFTER references_header",
+        'thread_owner_role' => "ALTER TABLE workflow_communications ADD COLUMN thread_owner_role VARCHAR(32) NULL AFTER thread_id",
+        'thread_scope' => "ALTER TABLE workflow_communications ADD COLUMN thread_scope VARCHAR(32) NULL AFTER thread_owner_role",
+        'root_outgoing_communication_id' => "ALTER TABLE workflow_communications ADD COLUMN root_outgoing_communication_id BIGINT NULL AFTER thread_scope",
         'mailbox_uid' => "ALTER TABLE workflow_communications ADD COLUMN mailbox_uid VARCHAR(128) NULL AFTER thread_id",
     ];
     $st = $pdo->prepare('SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ? LIMIT 1');
@@ -259,6 +278,7 @@ function wc_ensure_columns(PDO $pdo): void {
     try { $pdo->exec('CREATE INDEX idx_wc_req ON workflow_communications(request_id)'); } catch (Throwable $e) {}
     try { $pdo->exec('CREATE INDEX idx_wc_mid ON workflow_communications(message_id)'); } catch (Throwable $e) {}
     try { $pdo->exec('CREATE INDEX idx_wc_tid ON workflow_communications(thread_id)'); } catch (Throwable $e) {}
+    try { $pdo->exec('CREATE INDEX idx_wc_tor ON workflow_communications(thread_owner_role)'); } catch (Throwable $e) {}
     try { $pdo->exec('CREATE INDEX idx_wc_uid ON workflow_communications(mailbox_uid)'); } catch (Throwable $e) {}
     try { $pdo->exec('CREATE UNIQUE INDEX uq_wc_src ON workflow_communications(application_id, direction, source_table, source_message_key)'); } catch (Throwable $e) {}
     try { $pdo->exec('CREATE UNIQUE INDEX uq_wc_msgid ON workflow_communications(message_id)'); } catch (Throwable $e) {}
@@ -344,15 +364,31 @@ function wc_extract_msg_ids(string $refs): array {
     return array_keys($ids);
 }
 
+function wc_first_non_empty_string(...$values): string {
+    foreach ($values as $value) {
+        $s = trim((string)$value);
+        if ($s !== '') return $s;
+    }
+    return '';
+}
+
+function wc_first_positive_int(...$values): int {
+    foreach ($values as $value) {
+        $n = (int)$value;
+        if ($n > 0) return $n;
+    }
+    return 0;
+}
+
 function wc_try_thread_by_headers(PDO $pdo, string $inReplyTo, string $references): array {
     $ids = [];
     if ($inReplyTo !== '') $ids[] = wc_norm_msg_id($inReplyTo);
     $ids = array_merge($ids, wc_extract_msg_ids($references));
     $ids = array_values(array_unique(array_filter($ids, static function ($x) { return $x !== ''; })));
-    if (!$ids) return ['application_id' => '', 'case_id' => 0, 'thread_id' => '', 'component_key' => ''];
+    if (!$ids) return ['application_id' => '', 'case_id' => 0, 'thread_id' => '', 'component_key' => '', 'thread_owner_role' => '', 'root_outgoing_communication_id' => 0];
 
     $ph = implode(',', array_fill(0, count($ids), '?'));
-    $sql = 'SELECT application_id, case_id, thread_id, component_key
+    $sql = 'SELECT application_id, case_id, thread_id, component_key, thread_owner_role, root_outgoing_communication_id
               FROM workflow_communications
              WHERE message_id IN (' . $ph . ')
              ORDER BY communication_id DESC
@@ -360,12 +396,14 @@ function wc_try_thread_by_headers(PDO $pdo, string $inReplyTo, string $reference
     $st = $pdo->prepare($sql);
     $st->execute($ids);
     $row = $st->fetch(PDO::FETCH_ASSOC) ?: null;
-    if (!$row) return ['application_id' => '', 'case_id' => 0, 'thread_id' => '', 'component_key' => ''];
+    if (!$row) return ['application_id' => '', 'case_id' => 0, 'thread_id' => '', 'component_key' => '', 'thread_owner_role' => '', 'root_outgoing_communication_id' => 0];
     return [
         'application_id' => trim((string)($row['application_id'] ?? '')),
         'case_id' => (int)($row['case_id'] ?? 0),
         'thread_id' => trim((string)($row['thread_id'] ?? '')),
         'component_key' => strtolower(trim((string)($row['component_key'] ?? ''))),
+        'thread_owner_role' => wc_norm_thread_owner_role((string)($row['thread_owner_role'] ?? '')),
+        'root_outgoing_communication_id' => (int)($row['root_outgoing_communication_id'] ?? 0),
     ];
 }
 
@@ -408,13 +446,13 @@ function wc_try_thread_by_subject(PDO $pdo, string $applicationId, string $subje
 {
     $applicationId = trim($applicationId);
     if ($applicationId === '') {
-        return ['application_id' => '', 'case_id' => 0, 'thread_id' => '', 'component_key' => ''];
+        return ['application_id' => '', 'case_id' => 0, 'thread_id' => '', 'component_key' => '', 'thread_owner_role' => '', 'root_outgoing_communication_id' => 0];
     }
 
     $normalizedSubject = strtolower(trim(preg_replace('/^\s*re\s*:\s*/i', '', $subject) ?? $subject));
     if ($normalizedSubject !== '') {
         $st = $pdo->prepare(
-            "SELECT application_id, case_id, thread_id, component_key
+            "SELECT application_id, case_id, thread_id, component_key, thread_owner_role, root_outgoing_communication_id
                FROM workflow_communications
               WHERE application_id = ?
                 AND direction = 'outgoing'
@@ -430,17 +468,19 @@ function wc_try_thread_by_subject(PDO $pdo, string $applicationId, string $subje
                 'case_id' => (int)($row['case_id'] ?? 0),
                 'thread_id' => trim((string)($row['thread_id'] ?? '')),
                 'component_key' => strtolower(trim((string)($row['component_key'] ?? ''))),
+                'thread_owner_role' => wc_norm_thread_owner_role((string)($row['thread_owner_role'] ?? '')),
+                'root_outgoing_communication_id' => (int)($row['root_outgoing_communication_id'] ?? 0),
             ];
         }
     }
 
     $componentKey = wc_reply_component_from_subject($subject, $message);
     if ($componentKey === '') {
-        return ['application_id' => $applicationId, 'case_id' => 0, 'thread_id' => '', 'component_key' => ''];
+        return ['application_id' => $applicationId, 'case_id' => 0, 'thread_id' => '', 'component_key' => '', 'thread_owner_role' => '', 'root_outgoing_communication_id' => 0];
     }
 
     $st = $pdo->prepare(
-        "SELECT application_id, case_id, thread_id, component_key
+        "SELECT application_id, case_id, thread_id, component_key, thread_owner_role, root_outgoing_communication_id
            FROM workflow_communications
           WHERE application_id = ?
             AND LOWER(TRIM(COALESCE(component_key, ''))) = ?
@@ -456,6 +496,8 @@ function wc_try_thread_by_subject(PDO $pdo, string $applicationId, string $subje
             'case_id' => (int)($row['case_id'] ?? 0),
             'thread_id' => trim((string)($row['thread_id'] ?? '')),
             'component_key' => strtolower(trim((string)($row['component_key'] ?? ''))),
+            'thread_owner_role' => wc_norm_thread_owner_role((string)($row['thread_owner_role'] ?? '')),
+            'root_outgoing_communication_id' => (int)($row['root_outgoing_communication_id'] ?? 0),
         ];
     }
 
@@ -464,13 +506,67 @@ function wc_try_thread_by_subject(PDO $pdo, string $applicationId, string $subje
         'case_id' => 0,
         'thread_id' => '',
         'component_key' => $componentKey,
+        'thread_owner_role' => '',
+        'root_outgoing_communication_id' => 0,
+    ];
+}
+
+function wc_try_thread_by_existing_thread(PDO $pdo, string $applicationId, string $componentKey, string $threadId): array
+{
+    $applicationId = trim($applicationId);
+    $componentKey = strtolower(trim($componentKey));
+    $threadId = trim($threadId);
+    if ($applicationId === '' || $componentKey === '' || $threadId === '') {
+        return ['application_id' => '', 'case_id' => 0, 'thread_id' => '', 'component_key' => '', 'thread_owner_role' => '', 'root_outgoing_communication_id' => 0];
+    }
+
+    $st = $pdo->prepare(
+        "SELECT case_id, thread_owner_role, root_outgoing_communication_id
+           FROM workflow_communications
+          WHERE application_id = ?
+            AND LOWER(TRIM(COALESCE(component_key, ''))) = ?
+            AND COALESCE(thread_id, '') = ?
+            AND direction = 'outgoing'
+            AND COALESCE(thread_owner_role, '') <> ''
+          ORDER BY communication_id DESC"
+    );
+    $st->execute([$applicationId, $componentKey, $threadId]);
+    $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    if (!$rows) {
+        return ['application_id' => '', 'case_id' => 0, 'thread_id' => '', 'component_key' => '', 'thread_owner_role' => '', 'root_outgoing_communication_id' => 0];
+    }
+
+    $owners = [];
+    foreach ($rows as $row) {
+        $owner = wc_norm_thread_owner_role((string)($row['thread_owner_role'] ?? ''));
+        if ($owner !== '') $owners[$owner] = true;
+    }
+    if (count($owners) !== 1) {
+        return [
+            'application_id' => $applicationId,
+            'case_id' => 0,
+            'thread_id' => $threadId,
+            'component_key' => $componentKey,
+            'thread_owner_role' => '',
+            'root_outgoing_communication_id' => 0,
+        ];
+    }
+
+    $latest = $rows[0];
+    return [
+        'application_id' => $applicationId,
+        'case_id' => (int)($latest['case_id'] ?? 0),
+        'thread_id' => $threadId,
+        'component_key' => $componentKey,
+        'thread_owner_role' => (string)array_key_first($owners),
+        'root_outgoing_communication_id' => (int)($latest['root_outgoing_communication_id'] ?? 0),
     ];
 }
 
 function wc_thread_upsert(PDO $pdo, string $applicationId, int $caseId, string $threadId, string $rootMessageId, string $latestMessageId): void {
     if ($applicationId === '') return;
     $threadId = trim($threadId);
-    if ($threadId === '') $threadId = 'app:' . strtolower($applicationId);
+    if ($threadId === '') $threadId = wc_build_thread_id($applicationId, 'timeline', 'system');
     $sql = 'INSERT INTO workflow_mail_threads (application_id, case_id, workflow_thread_id, root_message_id, latest_message_id, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, NOW(), NOW())
             ON DUPLICATE KEY UPDATE
@@ -549,6 +645,127 @@ function wc_log_ingest_event(
     }
 }
 
+function wc_backfill_thread_metadata(PDO $pdo, string $applicationId = ''): void
+{
+    try {
+        wc_ensure_tables($pdo);
+        $where = [];
+        $params = [];
+        if (trim($applicationId) !== '') {
+            $where[] = 'application_id = ?';
+            $params[] = trim($applicationId);
+        }
+        $where[] = "(
+            COALESCE(thread_owner_role, '') = ''
+            OR COALESCE(thread_id, '') = ''
+            OR (direction = 'outgoing' AND COALESCE(root_outgoing_communication_id, 0) = 0)
+            OR direction = 'incoming'
+        )";
+        $sql = 'SELECT communication_id, application_id, case_id, component_key, role_key, direction, actor_role, message_id, in_reply_to, references_header, thread_id, thread_owner_role, root_outgoing_communication_id, subject, body
+                  FROM workflow_communications';
+        if ($where) {
+            $sql .= ' WHERE ' . implode(' AND ', $where);
+        }
+        $sql .= ' ORDER BY communication_id ASC LIMIT 500';
+        $st = $pdo->prepare($sql);
+        $st->execute($params);
+        $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        if (!$rows) return;
+
+        $up = $pdo->prepare('UPDATE workflow_communications
+                                SET thread_id = ?, thread_owner_role = ?, thread_scope = ?, root_outgoing_communication_id = ?
+                              WHERE communication_id = ?');
+
+        foreach ($rows as $row) {
+            $communicationId = (int)($row['communication_id'] ?? 0);
+            if ($communicationId <= 0) continue;
+            $resolvedApp = trim((string)($row['application_id'] ?? ''));
+            if ($resolvedApp === '') continue;
+            $componentKey = strtolower(trim((string)($row['component_key'] ?? '')));
+            if ($componentKey === '') $componentKey = 'timeline';
+            $direction = strtolower(trim((string)($row['direction'] ?? 'outgoing')));
+            $threadId = trim((string)($row['thread_id'] ?? ''));
+            $threadOwnerRole = wc_norm_thread_owner_role((string)($row['thread_owner_role'] ?? ''));
+            $rootOutgoingCommunicationId = (int)($row['root_outgoing_communication_id'] ?? 0);
+
+            if ($direction === 'outgoing') {
+                if ($threadOwnerRole === '') {
+                    $threadOwnerRole = wc_norm_thread_owner_role((string)($row['actor_role'] ?? $row['role_key'] ?? ''));
+                }
+                if ($threadId === '') {
+                    $threadId = wc_build_thread_id($resolvedApp, $componentKey, $threadOwnerRole);
+                }
+                if ($rootOutgoingCommunicationId <= 0) {
+                    $rootOutgoingCommunicationId = $communicationId;
+                }
+            } else {
+                $hdrMatch = wc_try_thread_by_headers(
+                    $pdo,
+                    wc_norm_msg_id((string)($row['in_reply_to'] ?? '')),
+                    (string)($row['references_header'] ?? '')
+                );
+                $threadMatch = ['application_id' => '', 'case_id' => 0, 'thread_id' => '', 'component_key' => '', 'thread_owner_role' => '', 'root_outgoing_communication_id' => 0];
+                $subjectMatch = ['application_id' => '', 'case_id' => 0, 'thread_id' => '', 'component_key' => '', 'thread_owner_role' => '', 'root_outgoing_communication_id' => 0];
+                if ($threadId !== '' && $componentKey !== '') {
+                    $threadMatch = wc_try_thread_by_existing_thread($pdo, $resolvedApp, $componentKey, $threadId);
+                }
+                $ambiguousThread = ($threadId !== '' && !empty($threadMatch['thread_id']) && empty($threadMatch['thread_owner_role']));
+                if (!$ambiguousThread && ($threadOwnerRole === '' || $threadId === '' || $rootOutgoingCommunicationId <= 0)) {
+                    $subjectMatch = wc_try_thread_by_subject(
+                        $pdo,
+                        $resolvedApp,
+                        (string)($row['subject'] ?? ''),
+                        (string)($row['body'] ?? '')
+                    );
+                }
+                if ($threadOwnerRole === '') {
+                    $threadOwnerRole = wc_norm_thread_owner_role(
+                        wc_first_non_empty_string(
+                            $hdrMatch['thread_owner_role'] ?? '',
+                            $threadMatch['thread_owner_role'] ?? '',
+                            $subjectMatch['thread_owner_role'] ?? ''
+                        )
+                    );
+                }
+                if ($ambiguousThread) {
+                    $threadOwnerRole = '';
+                    $rootOutgoingCommunicationId = 0;
+                }
+                if ($threadId === '') {
+                    $threadId = wc_first_non_empty_string(
+                        $hdrMatch['thread_id'] ?? '',
+                        $threadMatch['thread_id'] ?? '',
+                        $subjectMatch['thread_id'] ?? ''
+                    );
+                }
+                if ($rootOutgoingCommunicationId <= 0) {
+                    $rootOutgoingCommunicationId = wc_first_positive_int(
+                        $hdrMatch['root_outgoing_communication_id'] ?? 0,
+                        $threadMatch['root_outgoing_communication_id'] ?? 0,
+                        $subjectMatch['root_outgoing_communication_id'] ?? 0
+                    );
+                }
+                if ($threadId === '' && $threadOwnerRole !== '') {
+                    $threadId = wc_build_thread_id($resolvedApp, $componentKey, $threadOwnerRole);
+                }
+            }
+
+            if ($threadId === '') {
+                $threadId = wc_build_thread_id($resolvedApp, $componentKey, $threadOwnerRole !== '' ? $threadOwnerRole : 'system');
+            }
+
+            $up->execute([
+                $threadId,
+                $threadOwnerRole !== '' ? $threadOwnerRole : null,
+                'component_role',
+                $rootOutgoingCommunicationId > 0 ? $rootOutgoingCommunicationId : null,
+                $communicationId,
+            ]);
+        }
+    } catch (Throwable $e) {
+    }
+}
+
 function wc_sync_verification_communications(PDO $pdo, string $applicationId): int
 {
     $applicationId = trim($applicationId);
@@ -589,8 +806,8 @@ function wc_sync_verification_communications(PDO $pdo, string $applicationId): i
             'INSERT IGNORE INTO workflow_communications
              (application_id, case_id, component_key, role_key, action_key, subject, body, sent_by_user_id, sent_by_name, sent_at,
               delivery_status, communication_type, direction, actor_role, actor_name, workflow_stage, source_table, source_message_key,
-              thread_id, message_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+              thread_id, thread_owner_role, thread_scope, root_outgoing_communication_id, message_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
 
         $inserted = 0;
@@ -606,8 +823,8 @@ function wc_sync_verification_communications(PDO $pdo, string $applicationId): i
             if ($senderName === '') {
                 $senderName = trim((string)($row['username'] ?? ''));
             }
-            $threadId = trim((string)($row['node_thread_id'] ?? ''));
-            if ($threadId === '') $threadId = 'verification:' . strtolower($applicationId) . ':' . $componentKey;
+            $threadOwnerRole = wc_norm_thread_owner_role($senderRole);
+            $threadId = wc_build_thread_id($applicationId, $componentKey, $threadOwnerRole);
             $messageId = 'verification.' . $applicationId . '.' . (int)($row['id'] ?? 0) . '@local';
             $sourceKey = 'verification_comm:' . (int)($row['id'] ?? 0);
             $ins->execute([
@@ -630,12 +847,23 @@ function wc_sync_verification_communications(PDO $pdo, string $applicationId): i
                 'verification_communications',
                 $sourceKey,
                 $threadId,
+                $threadOwnerRole,
+                'component_role',
+                null,
                 $messageId
             ]);
             $inc = (int)$ins->rowCount();
             if ($inc > 0) {
                 $inserted += $inc;
                 wc_thread_upsert($pdo, $applicationId, $caseId, $threadId, trim($messageId, '<> '), trim($messageId, '<> '));
+                $communicationId = (int)$pdo->lastInsertId();
+                if ($communicationId > 0) {
+                    $up = $pdo->prepare('UPDATE workflow_communications
+                                            SET root_outgoing_communication_id = ?
+                                          WHERE communication_id = ?
+                                            AND COALESCE(root_outgoing_communication_id, 0) = 0');
+                    $up->execute([$communicationId, $communicationId]);
+                }
             } else {
                 $duplicates++;
             }
@@ -726,8 +954,8 @@ function wc_ingest_incoming_replies(PDO $pdo, string $applicationId): int {
     }
 
     $ins = $pdo->prepare('INSERT IGNORE INTO workflow_communications
-        (application_id, case_id, component_key, role_key, action_key, subject, body, sent_by_name, sent_at, delivery_status, communication_type, direction, actor_role, actor_name, workflow_stage, source_table, source_message_key, message_id, in_reply_to, references_header, thread_id, mailbox_uid)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        (application_id, case_id, component_key, role_key, action_key, subject, body, sent_by_name, sent_at, delivery_status, communication_type, direction, actor_role, actor_name, workflow_stage, source_table, source_message_key, message_id, in_reply_to, references_header, thread_id, thread_owner_role, thread_scope, root_outgoing_communication_id, mailbox_uid)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
 
     $count = 0;
     $duplicates = 0;
@@ -750,7 +978,13 @@ function wc_ingest_incoming_replies(PDO $pdo, string $applicationId): int {
         $resolvedCaseId = (int)($hdrMatch['case_id'] ?? 0);
         if ($resolvedCaseId > 0) $lastCaseId = $resolvedCaseId;
         $resolvedComponentKey = strtolower(trim((string)($hdrMatch['component_key'] ?? '')));
-        $subjectMatch = ['application_id' => '', 'case_id' => 0, 'thread_id' => '', 'component_key' => ''];
+        $resolvedOwnerRole = wc_norm_thread_owner_role((string)($hdrMatch['thread_owner_role'] ?? ''));
+        $rootOutgoingCommunicationId = (int)($hdrMatch['root_outgoing_communication_id'] ?? 0);
+        $threadMatch = ['application_id' => '', 'case_id' => 0, 'thread_id' => '', 'component_key' => '', 'thread_owner_role' => '', 'root_outgoing_communication_id' => 0];
+        $subjectMatch = ['application_id' => '', 'case_id' => 0, 'thread_id' => '', 'component_key' => '', 'thread_owner_role' => '', 'root_outgoing_communication_id' => 0];
+        if ($threadId !== '' && $resolvedComponentKey !== '') {
+            $threadMatch = wc_try_thread_by_existing_thread($pdo, $resolvedApp !== '' ? $resolvedApp : $applicationId, $resolvedComponentKey, $threadId);
+        }
         if ($resolvedComponentKey === '' || $threadId === '') {
             $subjectMatch = wc_try_thread_by_subject($pdo, $resolvedApp !== '' ? $resolvedApp : $applicationId, $subject, $message);
             if ($resolvedCaseId <= 0) {
@@ -760,10 +994,33 @@ function wc_ingest_incoming_replies(PDO $pdo, string $applicationId): int {
             if ($resolvedComponentKey === '') {
                 $resolvedComponentKey = strtolower(trim((string)($subjectMatch['component_key'] ?? '')));
             }
+            if ($resolvedOwnerRole === '') {
+                $resolvedOwnerRole = wc_norm_thread_owner_role((string)($subjectMatch['thread_owner_role'] ?? ''));
+            }
+            if ($rootOutgoingCommunicationId <= 0) {
+                $rootOutgoingCommunicationId = (int)($subjectMatch['root_outgoing_communication_id'] ?? 0);
+            }
         }
         if ($threadId === '') $threadId = trim((string)($hdrMatch['thread_id'] ?? ''));
-        if ($threadId === '') $threadId = trim((string)($subjectMatch['thread_id'] ?? ''));
-        if ($threadId === '') $threadId = 'app:' . strtolower($resolvedApp);
+        if ($threadId === '') $threadId = wc_first_non_empty_string($threadMatch['thread_id'] ?? '', $subjectMatch['thread_id'] ?? '');
+        if ($resolvedOwnerRole === '') {
+            $resolvedOwnerRole = wc_norm_thread_owner_role(
+                wc_first_non_empty_string(
+                    $threadMatch['thread_owner_role'] ?? '',
+                    $subjectMatch['thread_owner_role'] ?? ''
+                )
+            );
+        }
+        if ($resolvedOwnerRole === '') {
+            $resolvedOwnerRole = 'candidate';
+        }
+        if ($rootOutgoingCommunicationId <= 0) {
+            $rootOutgoingCommunicationId = wc_first_positive_int(
+                $threadMatch['root_outgoing_communication_id'] ?? 0,
+                $subjectMatch['root_outgoing_communication_id'] ?? 0
+            );
+        }
+        if ($threadId === '') $threadId = wc_build_thread_id($resolvedApp, $resolvedComponentKey !== '' ? $resolvedComponentKey : 'timeline', $resolvedOwnerRole);
         if ($resolvedCaseId <= 0) $unmatched++;
         $srcKey = $messageId !== '' ? ('msgid:' . $messageId) : ($mailboxUid !== '' ? ('uid:' . $mailboxUid) : sha1($sender . '|' . $message . '|' . $createdAt));
         $ins->execute([
@@ -788,6 +1045,9 @@ function wc_ingest_incoming_replies(PDO $pdo, string $applicationId): int {
             $inReplyTo !== '' ? $inReplyTo : null,
             $referencesHeader !== '' ? $referencesHeader : null,
             $threadId !== '' ? $threadId : null,
+            $resolvedOwnerRole !== '' ? $resolvedOwnerRole : null,
+            'component_role',
+            $rootOutgoingCommunicationId > 0 ? $rootOutgoingCommunicationId : null,
             $mailboxUid !== '' ? $mailboxUid : null,
         ]);
         $inc = (int)$ins->rowCount();

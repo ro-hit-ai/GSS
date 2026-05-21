@@ -550,7 +550,12 @@ function send_component_action_email(PDO $pdo, string $applicationId, string $co
         'action' => $action
     ]);
     $caseId = isset($ctx['case_id']) ? (int)$ctx['case_id'] : 0;
-    $threadId = 'app:' . strtolower($applicationId);
+    $threadOwnerRole = function_exists('wc_norm_thread_owner_role')
+        ? wc_norm_thread_owner_role((string)$role)
+        : strtolower(trim((string)$role));
+    $threadId = function_exists('wc_build_thread_id')
+        ? wc_build_thread_id($applicationId, $componentKey, $threadOwnerRole)
+        : ('wf:' . strtolower($applicationId) . ':' . strtolower(trim((string)$componentKey)) . ':' . strtolower($threadOwnerRole));
     $messageId = 'wc.' . strtolower(preg_replace('/[^a-zA-Z0-9]+/', '', $applicationId)) . '.' . bin2hex(random_bytes(8)) . '@payfiller.com';
     $ok = send_app_mail($to, $subject, $body, 'VATI GSS', [
         'application_id' => $applicationId,
@@ -568,8 +573,8 @@ function send_component_action_email(PDO $pdo, string $applicationId, string $co
             $uname = trim((string)($_SESSION['auth_user_name'] ?? ''));
             $requestId = 'comp-mail-' . $applicationId . '-' . $componentKey . '-' . $action . '-' . md5($subject . '|' . $reason . '|' . $role);
             $ins = $pdo->prepare("INSERT IGNORE INTO workflow_communications
-                (application_id, case_id, component_key, role_key, action_key, subject, body, notes, sent_by_user_id, sent_by_name, sent_at, delivery_status, communication_type, direction, actor_role, actor_name, workflow_stage, request_id, message_id, thread_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'sent', ?, 'outgoing', ?, ?, ?, ?, ?, ?)");
+                (application_id, case_id, component_key, role_key, action_key, subject, body, notes, sent_by_user_id, sent_by_name, sent_at, delivery_status, communication_type, direction, actor_role, actor_name, workflow_stage, request_id, message_id, thread_id, thread_owner_role, thread_scope, root_outgoing_communication_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'sent', ?, 'outgoing', ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             $ins->execute([
                 $applicationId,
                 $caseId > 0 ? $caseId : null,
@@ -587,8 +592,19 @@ function send_component_action_email(PDO $pdo, string $applicationId, string $co
                 strtolower(trim($role)),
                 $requestId,
                 $messageId,
-                $threadId
+                $threadId,
+                $threadOwnerRole,
+                'component_role',
+                null
             ]);
+            $canonicalCommunicationId = (int)$pdo->lastInsertId();
+            if ($canonicalCommunicationId > 0) {
+                $up = $pdo->prepare('UPDATE workflow_communications
+                                        SET root_outgoing_communication_id = ?
+                                      WHERE communication_id = ?
+                                        AND COALESCE(root_outgoing_communication_id, 0) = 0');
+                $up->execute([$canonicalCommunicationId, $canonicalCommunicationId]);
+            }
             wc_thread_upsert($pdo, $applicationId, $caseId, $threadId, $messageId, $messageId);
         } catch (Throwable $e) {
         }

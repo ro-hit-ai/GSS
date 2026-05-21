@@ -415,15 +415,16 @@ try {
     try {
         wc_ensure_tables($pdo);
         $senderNameResolved = $senderName !== '' ? $senderName : null;
-        $threadId = $nodeThreadId !== '' ? $nodeThreadId : ('verification:' . strtolower($applicationId) . ':' . $componentKey);
+        $threadOwnerRole = wc_norm_thread_owner_role($senderRole);
+        $threadId = wc_build_thread_id($applicationId, $componentKey, $threadOwnerRole);
         $messageId = 'verification.' . $applicationId . '.' . $verificationCommId . '@local';
         $sourceKey = 'verification_comm:' . $verificationCommId;
         $wcIns = $pdo->prepare(
             'INSERT IGNORE INTO workflow_communications
              (application_id, case_id, component_key, role_key, action_key, subject, body, sent_by_user_id, sent_by_name, sent_at,
               delivery_status, communication_type, direction, actor_role, actor_name, workflow_stage, source_table, source_message_key,
-              thread_id, message_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+              thread_id, thread_owner_role, thread_scope, root_outgoing_communication_id, message_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
         $wcIns->execute([
             $applicationId,
@@ -444,8 +445,19 @@ try {
             'verification_communications',
             $sourceKey,
             $threadId,
+            $threadOwnerRole,
+            'component_role',
+            null,
             $messageId
         ]);
+        $canonicalCommunicationId = (int)$pdo->lastInsertId();
+        if ($canonicalCommunicationId > 0) {
+            $up = $pdo->prepare('UPDATE workflow_communications
+                                    SET root_outgoing_communication_id = ?
+                                  WHERE communication_id = ?
+                                    AND COALESCE(root_outgoing_communication_id, 0) = 0');
+            $up->execute([$canonicalCommunicationId, $canonicalCommunicationId]);
+        }
         wc_thread_upsert($pdo, $applicationId, $caseId, $threadId, trim($messageId, '<> '), trim($messageId, '<> '));
     } catch (Throwable $e) {
         wc_log_ingest_event($pdo, 'verification_sync', $applicationId, $caseId, 'error', 0, 0, 0, 0, 'send_verification_mail canonical mirror failed: ' . $e->getMessage());

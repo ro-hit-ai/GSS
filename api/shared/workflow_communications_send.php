@@ -64,8 +64,9 @@ try {
     }
     if ($subject === '') $subject = 'Workflow Communication';
     if ($body === '') $body = 'Please review the requested action.';
+    $threadOwnerRole = wc_norm_thread_owner_role($role);
     $threadId = trim((string)($in['thread_id'] ?? ''));
-    if ($threadId === '') $threadId = 'app:' . strtolower($applicationId);
+    if ($threadId === '') $threadId = wc_build_thread_id($applicationId, $component, $threadOwnerRole);
     $messageId = trim((string)($in['message_id'] ?? ''));
     if ($messageId === '') $messageId = wc_outgoing_message_id($applicationId);
     $referencesHeader = trim((string)($in['references_header'] ?? ''));
@@ -116,8 +117,8 @@ try {
     $insJson = !empty($checklist) ? json_encode(array_values($checklist), JSON_UNESCAPED_UNICODE) : null;
 
     $st = $pdo->prepare('INSERT INTO workflow_communications
-        (application_id, case_id, component_key, role_key, action_key, template_id, subject, body, checklist_json, notes, deadline_label, sent_by_user_id, sent_by_name, sent_at, delivery_status, workflow_version, communication_type, direction, actor_role, actor_name, workflow_stage, request_id, message_id, references_header, thread_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        (application_id, case_id, component_key, role_key, action_key, template_id, subject, body, checklist_json, notes, deadline_label, sent_by_user_id, sent_by_name, sent_at, delivery_status, workflow_version, communication_type, direction, actor_role, actor_name, workflow_stage, request_id, message_id, references_header, thread_id, thread_owner_role, thread_scope, root_outgoing_communication_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     $st->execute([
         $applicationId,
         $caseId > 0 ? $caseId : null,
@@ -143,9 +144,19 @@ try {
         ,
         trim($messageId, '<> '),
         $referencesHeader !== '' ? $referencesHeader : null,
-        $threadId
+        $threadId,
+        $threadOwnerRole,
+        'component_role',
+        null
     ]);
     $communicationId = (int)$pdo->lastInsertId();
+    if ($communicationId > 0) {
+        $up = $pdo->prepare('UPDATE workflow_communications
+                                SET root_outgoing_communication_id = ?
+                              WHERE communication_id = ?
+                                AND COALESCE(root_outgoing_communication_id, 0) = 0');
+        $up->execute([$communicationId, $communicationId]);
+    }
     wc_thread_upsert($pdo, $applicationId, $caseId, $threadId, trim($messageId, '<> '), trim($messageId, '<> '));
 
     $msg = strtoupper($role) . ' communication: ' . $action . ' | component: ' . $component;

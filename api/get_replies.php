@@ -88,6 +88,13 @@ function normalize_role_key(string $role): string
     return $role;
 }
 
+function normalize_thread_owner_role(string $role): string
+{
+    $role = normalize_role_key($role);
+    if ($role === 'team_lead') return 'qa';
+    return $role;
+}
+
 function session_client_id(): int
 {
     if (session_status() === PHP_SESSION_NONE) {
@@ -259,6 +266,7 @@ try {
         $verificationProjected = wc_sync_verification_communications($pdo, $applicationId);
         $canonicalIncomingInserted = wc_ingest_incoming_replies($pdo, $applicationId);
     }
+    wc_backfill_thread_metadata($pdo, $applicationId);
 
     $wcTable = 'workflow_communications';
     $hasDirection = table_has_column($pdo, $wcTable, 'direction');
@@ -270,6 +278,8 @@ try {
     $hasInReplyTo = table_has_column($pdo, $wcTable, 'in_reply_to');
     $hasReferences = table_has_column($pdo, $wcTable, 'references_header');
     $hasThreadId = table_has_column($pdo, $wcTable, 'thread_id');
+    $hasThreadOwnerRole = table_has_column($pdo, $wcTable, 'thread_owner_role');
+    $hasRootOutgoingCommunicationId = table_has_column($pdo, $wcTable, 'root_outgoing_communication_id');
 
     $sql = 'SELECT communication_id, component_key, role_key, sent_by_name, subject, body, notes, sent_at'
         . ($hasDirection ? ', direction' : ", 'outgoing' AS direction")
@@ -281,6 +291,8 @@ try {
         . ($hasInReplyTo ? ', in_reply_to' : ", '' AS in_reply_to")
         . ($hasReferences ? ', references_header' : ", '' AS references_header")
         . ($hasThreadId ? ', thread_id' : ", '' AS thread_id")
+        . ($hasThreadOwnerRole ? ', thread_owner_role' : ", '' AS thread_owner_role")
+        . ($hasRootOutgoingCommunicationId ? ', root_outgoing_communication_id' : ", 0 AS root_outgoing_communication_id")
         . ' FROM workflow_communications';
 
     $where = ['application_id = ?'];
@@ -319,6 +331,8 @@ try {
             'in_reply_to' => (string)($row['in_reply_to'] ?? ''),
             'references_header' => (string)($row['references_header'] ?? ''),
             'thread_id' => (string)($row['thread_id'] ?? ''),
+            'thread_owner_role' => normalize_thread_owner_role((string)($row['thread_owner_role'] ?? '')),
+            'root_outgoing_communication_id' => (int)($row['root_outgoing_communication_id'] ?? 0),
         ];
     }, $rows);
 
@@ -328,7 +342,16 @@ try {
         }));
     }
 
+    $viewerThreadRole = normalize_thread_owner_role($viewerRole);
     $scopedData = $data;
+    $explicitOwnershipSupported = $hasThreadOwnerRole;
+    $scopeHasExplicitOwnership = false;
+    foreach ($scopedData as $row) {
+        if (normalize_thread_owner_role((string)($row['thread_owner_role'] ?? '')) !== '') {
+            $scopeHasExplicitOwnership = true;
+            break;
+        }
+    }
     $allowedThreadIds = [];
     $allowedMessageIds = [];
     $viewerOutgoingCount = 0;
@@ -346,7 +369,11 @@ try {
             $allowedMessageIds[$messageId] = true;
         }
     }
-    $strictData = array_values(array_filter($scopedData, static function (array $row) use ($viewerRole, $allowedThreadIds, $allowedMessageIds): bool {
+    $strictData = array_values(array_filter($scopedData, static function (array $row) use ($viewerRole, $viewerThreadRole, $allowedThreadIds, $allowedMessageIds, $explicitOwnershipSupported): bool {
+        $ownerRole = normalize_thread_owner_role((string)($row['thread_owner_role'] ?? ''));
+        if ($explicitOwnershipSupported && $ownerRole !== '') {
+            return $viewerThreadRole !== '' && $ownerRole === $viewerThreadRole;
+        }
         return row_belongs_to_viewer_role($row, $viewerRole, $allowedThreadIds, $allowedMessageIds);
     }));
     $data = $strictData;
@@ -354,7 +381,7 @@ try {
     // Older validator/verifier communications may lack stable thread/message metadata.
     // When the current role has definitely sent mail on this same component scope,
     // allow those incoming rows back into the scoped view instead of rendering empty.
-    if ($scope === 'component' && $componentKey !== '' && $viewerOutgoingCount > 0) {
+    if (!$scopeHasExplicitOwnership && $scope === 'component' && $componentKey !== '' && $viewerOutgoingCount > 0) {
         $strictIncomingCount = 0;
         foreach ($strictData as $row) {
             if (strtolower(trim((string)($row['direction'] ?? ''))) === 'incoming') {
@@ -375,7 +402,14 @@ try {
     // older mail rows can be too weakly threaded to preserve perfect role lanes.
     // If the role-specific filter still leaves the component reply pane empty,
     // prefer showing the component conversation over a broken blank state.
-    if (($viewerRole === 'validator' || $viewerRole === 'verifier') && $scope === 'component' && $componentKey !== '' && count($data) === 0 && count($scopedData) > 0) {
+    if (
+        !$scopeHasExplicitOwnership
+        && ($viewerRole === 'validator' || $viewerRole === 'verifier')
+        && $scope === 'component'
+        && $componentKey !== ''
+        && count($data) === 0
+        && count($scopedData) > 0
+    ) {
         $data = $scopedData;
     }
 

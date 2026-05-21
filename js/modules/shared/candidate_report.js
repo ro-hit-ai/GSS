@@ -653,6 +653,13 @@ function closeBsModal(id) {
         return sec;
     }
 
+    function getReplyViewerRole() {
+        var role = String(getRole() || '').toLowerCase().trim();
+        if (role === 'db_verifier') return 'verifier';
+        if (role === 'team_lead') return 'qa';
+        return role;
+    }
+
     function isLikelyImageUrl(url) {
         var lower = String(url || '').toLowerCase();
         return lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png') || lower.endsWith('.gif') || lower.endsWith('.webp') || lower.endsWith('.bmp') || lower.endsWith('.svg');
@@ -2947,16 +2954,8 @@ if (uploadInput) {
         var countEl = document.getElementById('cvEmailRepliesCount');
         if (!hostModal && !hostSidebar) return;
         var componentKey = normSection(opts.componentKey || currentRepliesScopeComponent() || '');
-        var roleNow = String(getRole() || '').toLowerCase().trim();
+        var roleNow = getReplyViewerRole();
         var shouldSync = !!opts.sync;
-        if (!shouldSync && applicationId) {
-            var canAutoSync = (roleNow === 'validator' || roleNow === 'verifier' || roleNow === 'qa' || roleNow === 'team_lead')
-                && EMAIL_REPLIES_LAST_SYNC_APP_ID !== String(applicationId)
-                && EMAIL_REPLIES_LAST_SYNC_AT <= 0;
-            if (canAutoSync) {
-                shouldSync = true;
-            }
-        }
         var requestKey = emailRepliesRequestKey(applicationId, componentKey, shouldSync);
 
         function renderTarget(el, html) {
@@ -2998,6 +2997,8 @@ if (uploadInput) {
         var caseUrl = base + '/api/get_replies.php?application_id=' + encodeURIComponent(applicationId) + '&scope=case&sync=' + (shouldSync ? '1' : '0');
         var sidebarUrl = caseUrl;
         if (componentKey) {
+            caseUrl = base + '/api/get_replies.php?application_id=' + encodeURIComponent(applicationId)
+                + '&scope=component&component_key=' + encodeURIComponent(componentKey) + '&sync=' + (shouldSync ? '1' : '0');
             sidebarUrl = base + '/api/get_replies.php?application_id=' + encodeURIComponent(applicationId)
                 + '&scope=component&component_key=' + encodeURIComponent(componentKey) + '&sync=0';
         }
@@ -3045,8 +3046,8 @@ if (uploadInput) {
                 }));
                 if (countEl) countEl.textContent = String(EMAIL_REPLIES_SIDEBAR_CACHE.length);
             } catch (_e) {
-                renderTarget(hostModal, '<div style="color:#b91c1c; font-size:13px;">Network error loading email replies.</div>');
-                renderTarget(hostSidebar, '<div style="color:#b91c1c; font-size:13px;">Network error loading email replies.</div>');
+                renderTarget(hostModal, emailRepliesHtml([], { role: roleNow, componentKey: componentKey }));
+                renderTarget(hostSidebar, emailRepliesHtml([], { role: roleNow, componentKey: componentKey }));
                 if (countEl) countEl.textContent = '0';
             } finally {
                 setRepliesSyncButtonState(false);

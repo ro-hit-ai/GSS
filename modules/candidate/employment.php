@@ -314,23 +314,15 @@ $maxCount = 5;
                 </div>
             </div> -->
 
-            <div class="form-row-1 compact-row mb-2">
+            <div class="form-row-1 compact-row mb-2 no-further-employment-row">
                 <div class="form-field">
                     <div class="form-check normal-checkbox compact-checkbox">
-                        <input type="hidden"
-                               name="insufficient_employment_docs[0]"
-                               class="insufficient-emp-hidden"
-                               value="0">
-                        <input type="checkbox" 
-                               name="insufficient_employment_docs[0]" 
-                               class="form-check-input insufficient-emp-checkbox" 
+                        <input type="checkbox"
+                               class="form-check-input no-further-employment-checkbox"
                                value="1">
                         <label class="form-check-label compact-checkbox-label">
-                            Insufficient Employment Proof
+                            I don't have any further employments
                         </label>
-                        <small class="text-muted compact-hint">
-                            Check if document is unavailable
-                        </small>
                     </div>
                 </div>
                 <div class="form-field"></div>
