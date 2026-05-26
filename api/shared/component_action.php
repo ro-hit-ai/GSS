@@ -10,6 +10,8 @@ require_once __DIR__ . '/../../config/env.php';
 require_once __DIR__ . '/application_status_guard.php';
 require_once __DIR__ . '/workflow/WorkflowTransitionService.php';
 require_once __DIR__ . '/workflow_communication_service.php';
+require_once __DIR__ . '/workflow_mode.php';
+require_once __DIR__ . '/verifier_case_queue.php';
 
 function projection_debug_log(string $event, array $data = []): void {
     if ((string)getenv('WF_PERF_DEBUG_LOGS') !== '1') {
@@ -224,6 +226,19 @@ function bootstrap_prev_stage_if_completed(PDO $pdo, int $caseId, string $applic
         }
 
         if ($prevStage === 'verifier') {
+            if (verifier_case_queue_is_case_model($pdo, $caseId, $applicationId)) {
+                $caseQueue = verifier_case_queue_load_row($pdo, $caseId);
+                if (!$caseQueue || trim((string)($caseQueue['completed_at'] ?? '')) === '') return false;
+
+                $ins = $pdo->prepare(
+                    'INSERT INTO Vati_Payfiller_Case_Component_Workflow (case_id, application_id, component_key, stage, status, updated_by_user_id, updated_by_role, completed_at) '
+                    . 'VALUES (?, ?, ?, \'verifier\', \'approved\', NULL, \'verifier\', NOW()) '
+                    . 'ON DUPLICATE KEY UPDATE status = \'approved\', completed_at = COALESCE(completed_at, NOW()), updated_at = NOW()'
+                );
+                $ins->execute([$caseId, $applicationId, $componentKey]);
+                return true;
+            }
+
             $q = $pdo->prepare(
                 "SELECT\n"
                 . "  SUM(CASE WHEN completed_at IS NULL THEN 1 ELSE 0 END) AS open_items,\n"
@@ -292,6 +307,11 @@ function verifier_group_components(string $groupKey): array {
 }
 
 function sync_verifier_group_queue(PDO $pdo, int $caseId, int $userId, string $componentKey, array $allowedSet = []): void {
+    if (verifier_case_queue_is_case_model($pdo, $caseId, '')) {
+        verifier_case_queue_sync($pdo, $caseId, $userId);
+        return;
+    }
+
     $groupKey = verifier_group_for_component($componentKey);
     if ($caseId <= 0 || $userId <= 0 || $groupKey === '') return;
 

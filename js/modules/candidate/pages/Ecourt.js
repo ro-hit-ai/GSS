@@ -37,15 +37,17 @@ class Ecourt {
     static onPageLoad() {
         this.cleanupEventListeners();
 
-        if (!window.ECOURT_DATA) {
-            const dataEl = document.getElementById('ecourtData');
-            if (dataEl && dataEl.dataset && dataEl.dataset.ecourt) {
-                try {
-                    window.ECOURT_DATA = JSON.parse(dataEl.dataset.ecourt || '{}');
-                } catch (e) {
-                    window.ECOURT_DATA = null;
-                }
+        // Always re-read server-provided page data so router navigation
+        // does not keep stale in-memory values from a previous load.
+        const dataEl = document.getElementById('ecourtData');
+        if (dataEl && dataEl.dataset && dataEl.dataset.ecourt) {
+            try {
+                window.ECOURT_DATA = JSON.parse(dataEl.dataset.ecourt || '{}');
+            } catch (e) {
+                window.ECOURT_DATA = null;
             }
+        } else {
+            window.ECOURT_DATA = null;
         }
 
         this._savedData = window.ECOURT_DATA || null;
@@ -58,8 +60,8 @@ class Ecourt {
         this.initAutoCalculateDuration();
 
         const dobInput = document.querySelector('[name="dob"]');
-        const dataEl = document.getElementById('ecourtData');
-        const dobMax = dataEl && dataEl.dataset ? dataEl.dataset.dobMax : '';
+        const ecourtDataEl = document.getElementById('ecourtData');
+        const dobMax = ecourtDataEl && ecourtDataEl.dataset ? ecourtDataEl.dataset.dobMax : '';
         if (dobInput && dobMax) {
             try {
                 dobInput.max = dobInput.max || String(dobMax);

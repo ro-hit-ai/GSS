@@ -3,6 +3,7 @@ header('Content-Type: application/json');
 
 require_once __DIR__ . '/candidate_correction_service.php';
 require_once __DIR__ . '/workflow/WorkflowTransitionService.php';
+require_once __DIR__ . '/workflow_mode.php';
 
 function ccs_read_json_submit(): array {
     $raw = file_get_contents('php://input');
@@ -94,10 +95,10 @@ try {
     }
     $u2 = $pdo->prepare("UPDATE candidate_correction_sessions SET status = 'completed', completed_at = NOW(), updated_at = NOW() WHERE correction_session_id = ?");
     $u2->execute([(int)$row['correction_session_id']]);
-    $requestedRole = ccs_role_norm((string)($row['requested_role'] ?? 'validator'));
+    $requestedRole = ccs_role_norm((string)($row['requested_role'] ?? wf_mode_default_requested_role($pdo, $caseId, $applicationId)));
     $resumeStage = ccs_component_stage_for_role($requestedRole);
     if ($resumeStage === '') {
-        $resumeStage = wf_stage_keys()[0] ?? 'validator';
+        $resumeStage = wf_mode_first_human_stage($pdo, $caseId, $applicationId);
     }
     $svc = new WorkflowTransitionService($pdo);
     $reconcile = $svc->reconcileCorrectionLifecycle(

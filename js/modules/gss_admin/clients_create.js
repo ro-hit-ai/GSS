@@ -2711,6 +2711,7 @@ document.addEventListener('DOMContentLoaded', function () {
             })
                 .then(function (res) {
                     return parseJsonResponse(res).catch(function () {
+
                         return { success: false, message: 'Invalid server response.' };
                     });
                 })

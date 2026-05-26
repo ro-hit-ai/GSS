@@ -567,13 +567,27 @@ function send_app_mail(string $to, string $subject, string $htmlBody, ?string $f
 
         if ($transport === 'node') {
             app_mail_debug_log('mail.transport.chosen=node');
+            $componentKey = trim((string)($meta['component'] ?? ($meta['component_key'] ?? '')));
+            $senderRole = trim((string)($meta['role'] ?? ($meta['sender_role'] ?? '')));
             $metadata = [
                 'template_id' => $meta['template_id'] ?? null,
                 'application_id' => $applicationId !== '' ? $applicationId : ($meta['application_id'] ?? null),
+                'applicationId' => $applicationId !== '' ? $applicationId : ($meta['application_id'] ?? null),
+                'sourceCaseId' => $applicationId !== '' ? $applicationId : ($meta['application_id'] ?? null),
                 'case_id' => $meta['case_id'] ?? null,
+                'caseId' => $meta['case_id'] ?? null,
                 'role' => $meta['role'] ?? null,
+                'senderRole' => $senderRole !== '' ? $senderRole : null,
+                'component_key' => $componentKey !== '' ? $componentKey : null,
+                'componentKey' => $componentKey !== '' ? $componentKey : null,
                 'event_type' => $meta['event_type'] ?? ($options['event_type'] ?? null),
                 'queue_id' => $meta['queue_id'] ?? ($meta['queueId'] ?? ($meta['queue'] ?? null)),
+                'workflow' => [
+                    'applicationId' => $applicationId !== '' ? $applicationId : ($meta['application_id'] ?? null),
+                    'sourceCaseId' => $applicationId !== '' ? $applicationId : ($meta['application_id'] ?? null),
+                    'componentKey' => $componentKey !== '' ? $componentKey : null,
+                    'senderRole' => $senderRole !== '' ? $senderRole : null,
+                ],
             ];
 
             $result = send_via_node($to, $subject, $htmlBody, $fromName, [], $metadata, $headersMap);

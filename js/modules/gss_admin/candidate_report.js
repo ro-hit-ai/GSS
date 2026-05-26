@@ -8,6 +8,7 @@
         var tableEl = document.getElementById('gssFinalReportTable');
         var exportButtonsHostEl = document.getElementById('gssFinalReportExportButtons');
         var messageEl = document.getElementById('gssFinalReportMessage');
+        var compatNoteEl = document.getElementById('gssFinalReportCompatNote');
         var dataTable = null;
         var autoTimer = null;
         var COMPONENT_ORDER = ['basic', 'id', 'contact', 'education', 'employment', 'reference', 'socialmedia', 'ecourt', 'reports'];
@@ -283,6 +284,7 @@
                     byCase[key] = {
                         case_id: r.case_id,
                         application_id: r.application_id,
+                        workflow_mode: r.workflow_mode,
                         candidate_first_name: r.candidate_first_name,
                         candidate_last_name: r.candidate_last_name,
                         candidate_email: r.candidate_email,
@@ -323,6 +325,15 @@
             });
 
             return Object.keys(byCase).map(function (k) { return byCase[k]; });
+        }
+
+        function setCompatNoteVisibility(rows) {
+            if (!compatNoteEl) return;
+            var list = Array.isArray(rows) ? rows : [];
+            var hasVerifierFirst = list.some(function (row) {
+                return String(row && row.workflow_mode ? row.workflow_mode : '').toLowerCase().trim() === 'verifier_first';
+            });
+            compatNoteEl.style.display = hasVerifierFirst ? 'block' : 'none';
         }
 
         function ensureButtonsStyles() {
@@ -466,14 +477,18 @@
                         .then(function (data) {
                             if (!data || data.status !== 1) {
                                 setMessage((data && data.message) ? data.message : 'Failed to load final report.', 'danger');
+                                setCompatNoteVisibility([]);
                                 callback({ data: [] });
                                 return;
                             }
                             setLastUpdatedNow();
-                            callback({ data: pivotRows(data.data || []) });
+                            var rows = pivotRows(data.data || []);
+                            setCompatNoteVisibility(rows);
+                            callback({ data: rows });
                         })
                         .catch(function () {
                             setMessage('Network error. Please try again.', 'danger');
+                            setCompatNoteVisibility([]);
                             callback({ data: [] });
                         });
                 },

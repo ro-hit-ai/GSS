@@ -3,6 +3,7 @@ header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../shared/auth_client_snapshot.php';
 
 auth_require_login('company_recruiter');
 auth_session_start();
@@ -21,13 +22,8 @@ function get_str(string $key, string $default = ''): string {
 }
 
 function resolve_client_id(): int {
-    if (session_status() === PHP_SESSION_NONE) session_start();
-    $cid = isset($_SESSION['auth_client_id']) ? (int)$_SESSION['auth_client_id'] : 0;
-    if ($cid > 0) return $cid;
-
-    http_response_code(401);
-    echo json_encode(['status' => 0, 'message' => 'Unauthorized']);
-    exit;
+    $pdo = getDB();
+    return auth_client_snapshot_resolve_client_id_or_401($pdo);
 }
 
 function resolve_user_id(): int {
@@ -63,6 +59,7 @@ try {
                 c.candidate_email,
                 c.candidate_mobile,
                 c.case_status,
+                COALESCE(NULLIF(TRIM(c.workflow_mode), ''), 'validator_first') AS workflow_mode,
                 c.invite_sent_at,
                 c.created_at,
                 CASE
@@ -70,6 +67,7 @@ try {
                     WHEN (vq.completed_at IS NOT NULL AND COALESCE(vr.vr_pending, 0) = 0 AND COALESCE(vr.vr_total, 0) > 0) THEN 'QA Pending'
                     WHEN (COALESCE(vr.vr_total, 0) > 0 AND COALESCE(vr.vr_pending, 0) > 0 AND COALESCE(vr.vr_in_progress, 0) > 0) THEN 'Verifier In Progress'
                     WHEN (COALESCE(vr.vr_total, 0) > 0 AND COALESCE(vr.vr_pending, 0) > 0) THEN 'Verifier Pending'
+                    WHEN (COALESCE(NULLIF(TRIM(c.workflow_mode), ''), 'validator_first') = 'verifier_first' AND bd.application_id IS NOT NULL) THEN 'Verifier Pending'
                     WHEN (vq.assigned_user_id IS NOT NULL AND vq.completed_at IS NULL) THEN 'Validation In Progress'
                     WHEN (vq.case_id IS NOT NULL AND vq.completed_at IS NULL) THEN 'Validation Pending'
                     WHEN (bd.application_id IS NOT NULL) THEN 'Candidate Submitted'

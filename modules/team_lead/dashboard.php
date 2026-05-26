@@ -26,12 +26,6 @@ ob_start();
             </select>
         </div>
         <div class="form-control">
-            <label>Validator</label>
-            <select id="tlValidatorSelect">
-                <option value="0">All</option>
-            </select>
-        </div>
-        <div class="form-control">
             <label>Verifier / DBV</label>
             <select id="tlVerifierSelect">
                 <option value="0">All</option>
@@ -58,7 +52,7 @@ ob_start();
     <style>
         @media (min-width: 1100px) {
             .tl-filters {
-                grid-template-columns: repeat(5, minmax(0, 1fr));
+                grid-template-columns: repeat(4, minmax(0, 1fr));
                 gap: 12px;
             }
         }
@@ -66,10 +60,6 @@ ob_start();
 
     <div class="client-dashboard-kpis">
         <div style="display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap:10px;">
-            <div class="card client-kpi-tile client-kpi-tile-utv" style="border-radius:14px; padding:12px;">
-                <div class="client-kpi-label">UNASSIGNED VALIDATOR</div>
-                <div id="tlKpiValUnassigned" class="client-kpi-value" style="margin-top:4px;">-</div>
-            </div>
             <div class="card client-kpi-tile client-kpi-tile-utv" style="border-radius:14px; padding:12px;">
                 <div class="client-kpi-label">UNASSIGNED VR</div>
                 <div id="tlKpiVrUnassigned" class="client-kpi-value" style="margin-top:4px;">-</div>
@@ -85,16 +75,7 @@ ob_start();
         </div>
     </div>
 
-    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-top:14px;">
-        <div style="border:1px solid rgba(148,163,184,0.25); border-radius:14px; padding:12px; background:#fff;">
-            <div style="font-weight:900; color:#0f172a; margin-bottom:8px;">Unassigned Validator Queue</div>
-            <div class="table-scroll">
-                <table class="table">
-                    <thead><tr><th>Application</th><th>Client</th><th>Created</th><th>Assign</th></tr></thead>
-                    <tbody id="tlValUnassignedBody"></tbody>
-                </table>
-            </div>
-        </div>
+    <div style="display:grid; grid-template-columns: 1fr; gap:12px; margin-top:14px;">
         <div style="border:1px solid rgba(148,163,184,0.25); border-radius:14px; padding:12px; background:#fff;">
             <div style="font-weight:900; color:#0f172a; margin-bottom:8px;">Unassigned VR Group Queue</div>
             <div class="table-scroll">

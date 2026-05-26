@@ -66,6 +66,18 @@ ob_start();
                 <option value="">Loading...</option>
             </select>
         </div>
+        <div class="form-control">
+            <label>Job Level</label>
+            <select name="selected_level" id="selected_level">
+                <option value="">-- Select Job Level --</option>
+            </select>
+        </div>
+        <div class="form-control">
+            <label>Stage</label>
+            <select name="stage_key" id="stage_key">
+                <option value="">-- Select Stage --</option>
+            </select>
+        </div>
 
         <div class="form-control" style="grid-column: 1 / -1;">
             <label>Mapped Checks (Selected Job Role)</label>

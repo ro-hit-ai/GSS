@@ -38,6 +38,7 @@ ob_start();
     .vr-panel-h h3{margin:0; font-size:13px; font-weight:900; color:#0f172a;}
     .vr-panel-h .m{font-size:12px; color:#64748b;}
     .vr-panel-b{margin-top:8px;}
+    .vr-panel-b{overflow-x:auto;}
     .vr-table{width:100%; border-collapse:separate; border-spacing:0;}
     .vr-table th{font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:#64748b; border-bottom:1px solid rgba(148,163,184,0.25); padding:10px 8px;}
     .vr-table td{padding:11px 8px; border-bottom:1px solid rgba(148,163,184,0.18); font-size:13px; color:#0f172a;}
@@ -56,6 +57,18 @@ ob_start();
     .vr-governance-body{padding:0 12px 12px;}
     @media (max-width: 1100px){
         .vr-operational-grid{grid-template-columns:1fr;}
+    }
+    @media (max-width: 820px){
+        .qa-like-main{padding:12px;}
+        .vr-kpis{grid-template-columns:repeat(2, minmax(0, 1fr));}
+        .vr-actions{flex-direction:column; align-items:stretch;}
+        .vr-btn{justify-content:center; width:100%;}
+        .vr-table{min-width:620px;}
+    }
+    @media (max-width: 560px){
+        .vr-kpis{grid-template-columns:1fr;}
+        .qa-like-head{align-items:flex-start;}
+        .qa-like-controls{width:100%; justify-content:flex-start;}
     }
 </style>
 

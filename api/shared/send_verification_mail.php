@@ -304,7 +304,9 @@ try {
         'client_name' => $clientName,
         'actor_name' => ($senderName !== '' ? $senderName : ucfirst($senderRole))
     ]);
-    $canonicalKey = (string)($tpl['template_key'] ?? '');
+    $resolvedAction = wc_canonical_action('verification_request', $componentKey);
+    $mappedKey = wc_template_key_for_action($resolvedAction, $componentKey);
+    $canonicalKey = (string)($mappedKey ?: ($tpl['template_key'] ?? ''));
     $tmplContext = [
         'candidate_name' => $candidateName,
         'client_name' => $clientName,
@@ -316,7 +318,10 @@ try {
         'organization_name' => $orgName,
         'actor_name' => ($senderName !== '' ? $senderName : ucfirst($senderRole)),
     ];
-    $dbTpl = $canonicalKey !== '' ? tmpl_fetch_active_template_by_key($pdo, $canonicalKey, 'email') : null;
+    $dbTpl = wc_find_template($pdo, $senderRole, $componentKey, $resolvedAction);
+    if (!$dbTpl && $canonicalKey !== '') {
+        $dbTpl = tmpl_fetch_active_template_by_key($pdo, $canonicalKey, 'email');
+    }
     if ($dbTpl) {
         $subMeta = [];
         $bodyMeta = [];
@@ -334,6 +339,7 @@ try {
     } else {
         tmpl_log_warning('verification_template_key_not_found_fallback', [
             'template_key' => $canonicalKey,
+            'action' => $resolvedAction,
             'communication_mode' => 'verification',
             'application_id' => $applicationId,
             'case_id' => $caseId,
@@ -364,7 +370,7 @@ try {
         'component_key' => (string)$componentKey,
         'recipient_email' => (string)$recipientEmail,
         'recipient_name' => (string)$orgName,
-        'template_key' => (string)($tpl['template_key'] ?? ''),
+        'template_key' => (string)$canonicalKey,
         'sender_role' => (string)$senderRole,
         'sender_user_id' => (string)($senderUserId > 0 ? $senderUserId : 0),
         'remarks' => svm_nullable_string($remarks),
@@ -388,8 +394,18 @@ try {
         exit;
     }
     $nodeBody = is_array($nodeRes['response'] ?? null) ? $nodeRes['response'] : [];
-    $nodeThreadId = (string)($nodeBody['thread_id'] ?? $nodeBody['data']['thread_id'] ?? $last['node_thread_id'] ?? '');
-    $nodeConversationId = (string)($nodeBody['conversation_id'] ?? $nodeBody['data']['conversation_id'] ?? $last['node_conversation_id'] ?? '');
+    $nodeThreadId = (string)($nodeBody['thread_id']
+        ?? $nodeBody['node_thread_id']
+        ?? $nodeBody['data']['thread_id']
+        ?? $nodeBody['data']['node_thread_id']
+        ?? $last['node_thread_id']
+        ?? '');
+    $nodeConversationId = (string)($nodeBody['conversation_id']
+        ?? $nodeBody['node_conversation_id']
+        ?? $nodeBody['data']['conversation_id']
+        ?? $nodeBody['data']['node_conversation_id']
+        ?? $last['node_conversation_id']
+        ?? '');
     $status = (string)($nodeBody['status'] ?? 'sent');
 
     $ins = $pdo->prepare(

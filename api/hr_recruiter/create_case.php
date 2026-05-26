@@ -7,7 +7,9 @@ require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/mail.php';
 require_once __DIR__ . '/../../includes/integration.php';
 require_once __DIR__ . '/../shared/candidate_account_notify.php';
+require_once __DIR__ . '/../shared/auth_client_snapshot.php';
 require_once __DIR__ . '/../shared/case_component_binding.php';
+require_once __DIR__ . '/../shared/workflow_mode.php';
 
 auth_require_login('company_recruiter');
 auth_session_start();
@@ -26,13 +28,8 @@ function post_str(string $key, string $default = ''): string {
 }
 
 function resolve_client_id(): int {
-    if (session_status() === PHP_SESSION_NONE) session_start();
-    $cid = isset($_SESSION['auth_client_id']) ? (int)$_SESSION['auth_client_id'] : 0;
-    if ($cid > 0) return $cid;
-
-    http_response_code(401);
-    echo json_encode(['status' => 0, 'message' => 'Unauthorized']);
-    exit;
+    $pdo = getDB();
+    return auth_client_snapshot_resolve_client_id_or_401($pdo);
 }
 
 function resolve_user_id(): int {
@@ -88,6 +85,81 @@ function save_case_selected_level(PDO $pdo, int $caseId, string $selectedLevel):
     }
 }
 
+function save_case_selected_stage(PDO $pdo, int $caseId, string $selectedStage): void {
+    if ($caseId <= 0 || $selectedStage === '') {
+        return;
+    }
+    try {
+        $sql = "UPDATE Vati_Payfiller_Cases
+                SET selected_stage = ?, updated_at = NOW()
+                WHERE case_id = ?";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([$selectedStage, $caseId]);
+    } catch (Throwable $e) {
+        // best-effort for environments where selected_stage column is not yet present
+    }
+}
+
+function normalize_stage_key_local(string $stage): string {
+    $s = strtolower(trim($stage));
+    if ($s === '') return '';
+    if (strpos($s, '__') !== false) {
+        $s = trim((string)explode('__', $s, 2)[0]);
+    }
+    if ($s === 'p1') return 'pre_interview';
+    if ($s === 'p2') return 'post_interview';
+    if ($s === 'p3') return 'employee_pool';
+    return $s;
+}
+
+function resolve_job_role_id_local(PDO $pdo, int $clientId, string $jobRoleName): int {
+    if ($clientId <= 0 || trim($jobRoleName) === '') return 0;
+    $st = $pdo->prepare('SELECT job_role_id FROM Vati_Payfiller_Job_Roles WHERE client_id = ? AND LOWER(TRIM(role_name)) = LOWER(TRIM(?)) LIMIT 1');
+    $st->execute([$clientId, $jobRoleName]);
+    return (int)($st->fetchColumn() ?: 0);
+}
+
+function resolve_default_stage_level(PDO $pdo, int $jobRoleId): array {
+    if ($jobRoleId <= 0) return ['', '', 0, []];
+    try {
+        $sql = 'SELECT
+                    LOWER(TRIM(COALESCE(j.level_key, ""))) AS level_key_raw,
+                    LOWER(TRIM(COALESCE(j.stage_key, ""))) AS stage_key_raw
+                FROM Vati_Payfiller_Job_Role_Verification_Types j
+                WHERE j.job_role_id = ?
+                  AND COALESCE(j.is_enabled,1) = 1';
+        $st = $pdo->prepare($sql);
+        $st->execute([$jobRoleId]);
+        $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $pairs = [];
+        foreach ($rows as $row) {
+            $rawLevel = trim((string)($row['level_key_raw'] ?? ''));
+            $rawStage = trim((string)($row['stage_key_raw'] ?? ''));
+            if ($rawStage === '') continue;
+
+            if ($rawLevel === '' && strpos($rawStage, '__') !== false) {
+                $parts = explode('__', $rawStage, 2);
+                $rawStage = trim((string)($parts[0] ?? ''));
+                $rawLevel = trim((string)($parts[1] ?? ''));
+            }
+
+            $lvl = strtoupper($rawLevel);
+            $stg = normalize_stage_key_local($rawStage);
+            if ($lvl === '' || $stg === '') continue;
+            $k = $lvl . '|' . $stg;
+            $pairs[$k] = ['level' => $lvl, 'stage' => $stg];
+        }
+        $uniq = array_values($pairs);
+        if (count($uniq) === 1) {
+            return [$uniq[0]['level'], $uniq[0]['stage'], 1, $uniq];
+        }
+        return ['', '', count($uniq), $uniq];
+    } catch (Throwable $e) {
+        error_log('HR_CREATE_CASE_SCOPE_RESOLVE_ERR: ' . $e->getMessage());
+    }
+    return ['', '', 0, []];
+}
+
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         http_response_code(405);
@@ -116,7 +188,8 @@ try {
 
     $joiningLocation = post_str('joining_location');
     $jobRole = post_str('job_role');
-    $selectedLevel = post_str('selected_level', post_str('level_key', ''));
+    $selectedLevel = post_str('job_level', post_str('selected_level', post_str('level_key', '')));
+    $selectedStage = post_str('stage_key', post_str('selected_stage', ''));
 
     $recruiterName = post_str('recruiter_name');
     $recruiterEmail = integration_normalize_email(post_str('recruiter_email'));
@@ -164,31 +237,88 @@ try {
 
     $pdo = getDB();
 
+    if (trim($selectedLevel) === '' || trim($selectedStage) === '') {
+        $jobRoleId = resolve_job_role_id_local($pdo, $clientId, $jobRole);
+        [$autoLevel, $autoStage, $scopeCount, $scopePairs] = resolve_default_stage_level($pdo, $jobRoleId);
+        if (trim($selectedLevel) === '') $selectedLevel = $autoLevel;
+        if (trim($selectedStage) === '') $selectedStage = $autoStage;
+
+        if (trim($selectedLevel) === '' || trim($selectedStage) === '') {
+            $errCode = ($scopeCount > 1) ? 'ROLE_SCOPE_AMBIGUOUS' : 'CASE_SCOPE_UNRESOLVED';
+            $errMsg = ($scopeCount > 1)
+                ? 'Multiple active level/stage scopes exist for this role; configure a single default scope'
+                : 'Unable to resolve job level/stage for candidate mapping';
+            http_response_code(400);
+            echo json_encode([
+                'status' => 0,
+                'code' => $errCode,
+                'message' => $errMsg,
+                'debug' => [
+                    'job_role' => $jobRole,
+                    'job_role_id' => $jobRoleId,
+                    'scope_count' => $scopeCount,
+                    'scope_pairs' => $scopePairs,
+                    'selected_level' => $selectedLevel,
+                    'selected_stage' => $selectedStage,
+                ]
+            ]);
+            exit;
+        }
+    }
+
     $applicationId = new_application_id();
 
-    $stmt = $pdo->prepare('CALL SP_Vati_Payfiller_CreateCase(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-    $stmt->execute([
-        $clientId,
-        $createdByUserId,
-        $applicationId,
-        $firstName,
-        $middleName,
-        $lastName,
-        $dob,
-        $fatherName,
-        $mobile,
-        $email,
-        $state,
-        $city,
-        $joiningLocation,
-        $jobRole,
-        $recruiterName,
-        $recruiterEmail,
-        $candidateReferenceId,
-        $requisitionId,
-        $customerCostCenter,
-        $rehireCandidate
-    ]);
+    try {
+        $stmt = $pdo->prepare('CALL SP_Vati_Payfiller_CreateCase(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $stmt->execute([
+            $clientId,
+            $createdByUserId,
+            $applicationId,
+            $firstName,
+            $middleName,
+            $lastName,
+            $dob,
+            $fatherName,
+            $mobile,
+            $email,
+            $state,
+            $city,
+            $joiningLocation,
+            $jobRole,
+            $selectedLevel,
+            $selectedStage,
+            $recruiterName,
+            $recruiterEmail,
+            $candidateReferenceId,
+            $requisitionId,
+            $customerCostCenter,
+            $rehireCandidate
+        ]);
+    } catch (Throwable $eCreateCaseSp) {
+        $stmt = $pdo->prepare('CALL SP_Vati_Payfiller_CreateCase(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $stmt->execute([
+            $clientId,
+            $createdByUserId,
+            $applicationId,
+            $firstName,
+            $middleName,
+            $lastName,
+            $dob,
+            $fatherName,
+            $mobile,
+            $email,
+            $state,
+            $city,
+            $joiningLocation,
+            $jobRole,
+            $recruiterName,
+            $recruiterEmail,
+            $candidateReferenceId,
+            $requisitionId,
+            $customerCostCenter,
+            $rehireCandidate
+        ]);
+    }
 
     $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
     while ($stmt->nextRowset()) {
@@ -203,6 +333,8 @@ try {
     }
 
     save_case_selected_level($pdo, $caseId, $selectedLevel);
+    save_case_selected_stage($pdo, $caseId, $selectedStage);
+    wf_mode_set_case_mode($pdo, $caseId, 'verifier_first');
 
     // Ensure workflow snapshot rows exist for every required case component.
     case_component_binding_sync_case_components($pdo, $caseId, $applicationId);

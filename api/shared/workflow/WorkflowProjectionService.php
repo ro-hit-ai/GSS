@@ -4,6 +4,7 @@ require_once __DIR__ . '/../workflow_status_semantics.php';
 require_once __DIR__ . '/../workflow_stage_config.php';
 require_once __DIR__ . '/../workflow_semantics.php';
 require_once __DIR__ . '/../case_component_binding.php';
+require_once __DIR__ . '/../verifier_case_queue.php';
 
 final class WorkflowProjectionService
 {
@@ -88,6 +89,16 @@ final class WorkflowProjectionService
         }
 
         if ($stage === $stage2) {
+            $mode = verifier_case_queue_is_case_model($this->repo->pdo(), $caseId, '');
+            if ($mode) {
+                $queue = verifier_case_queue_sync($this->repo->pdo(), $caseId, $userId);
+                $this->logProjection($stage2 . '_case_recompute', $caseId, $componentKey, [
+                    'ownership_model' => 'case_level',
+                    'queue_row' => $queue,
+                    'case_status' => $caseStatus,
+                ]);
+                return;
+            }
             $actedGroup = $this->groupForComponent($componentKey);
             $seededGroups = $this->repo->loadVerifierQueueGroupsForCase($caseId);
             $targetGroups = [];

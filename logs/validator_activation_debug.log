@@ -75,3 +75,13 @@
 [2026-05-20 13:35:57] source=store_authorization application_id=APP-20260520133405872 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none
 [2026-05-20 14:54:02] source=submit application_id=APP-20260520133405872 case_id=206 final_submit_completed=1 authorization_completed=1 queue_created=1 queue_seed_reason=final_submit
 [2026-05-20 15:23:05] source=submit application_id=APP-20260520133405872 case_id=206 final_submit_completed=1 authorization_completed=1 queue_created=1 queue_seed_reason=final_submit
+[2026-05-21 14:45:42] source=store_authorization application_id=APP-20260521144306157 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none
+[2026-05-21 14:48:54] source=submit application_id=APP-20260521144306157 case_id=207 final_submit_completed=1 authorization_completed=1 queue_created=1 queue_seed_reason=final_submit
+[2026-05-21 15:05:51] source=store_authorization application_id=APP-20260521150410320 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none
+[2026-05-22 06:48:54] source=store_authorization application_id=APP-20260522064231397 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none
+[2026-05-22 06:54:42] source=submit application_id=APP-20260522064231397 case_id=209 final_submit_completed=1 authorization_completed=1 queue_created=1 queue_seed_reason=final_submit
+[2026-05-25 11:19:17] source=store_authorization application_id=APP-20260525111359594 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none
+[2026-05-25 14:15:40] source=store_authorization application_id=APP-20260525141338783 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none
+[2026-05-25 14:20:30] source=submit application_id=APP-20260525141338783 case_id=213 final_submit_completed=1 authorization_completed=1 queue_created=1 queue_seed_reason=final_submit
+[2026-05-25 15:14:21] source=store_authorization application_id=APP-20260525150831514 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none
+[2026-05-25 15:20:43] source=submit application_id=APP-20260525150831514 case_id=214 final_submit_completed=1 authorization_completed=1 queue_created=1 queue_seed_reason=final_submit

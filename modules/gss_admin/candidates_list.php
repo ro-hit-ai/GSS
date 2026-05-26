@@ -50,7 +50,8 @@ ob_start();
                 <th>Email</th>
                 <th>Mobile</th>
                 <th>Stage</th>
-                <th>Validator Assigned</th>
+                <th>Flow</th>
+                <th>Validator / Compat</th>
                 <th>Verifier Assigned</th>
                 <th>Status</th>
                 <th>PDF</th>

@@ -210,7 +210,7 @@ if ($role === 'gss_admin') {
 
 $moduleHomeHref = '../../index.php';
 if ($role === 'gss_admin') {
-    $moduleHomeHref = '../gss_admin/dashboard.php';
+    $moduleHomeHref = '../gss_admin.php';
 } elseif ($role === 'db_verifier') {
     $moduleHomeHref = '../db_verifier/candidates_list.php';
 } elseif ($role === 'verifier') {
@@ -579,61 +579,6 @@ ob_start();
     .cr-report-root.cr-role-verifier .cr-shell,
     .cr-report-root.cr-role-validator .cr-shell,
     .cr-report-root.cr-role-db_verifier .cr-shell{gap:12px;}
-
-    /* Validator: fixed sidebar + stable content flow */
-    /* Validator layout: internal scrolling only */
-    .cr-report-root.cr-validator-workspace{
-        height:100vh;
-        overflow:hidden;
-        display:flex;
-        flex-direction:column;
-    }
-    .cr-report-root.cr-validator-workspace .cr-hero{flex-shrink:0;}
-    .cr-report-root.cr-validator-workspace .cr-shell{
-        flex:1;
-        min-height:0;
-        display:flex;
-        gap:12px;
-        overflow:hidden;
-    }
-    .cr-report-root.cr-validator-workspace .cr-sidebar{
-        width:250px;
-        flex-shrink:0;
-        overflow-y:auto;
-        height:fit-content;
-        max-height:100%;
-    }
-    .cr-report-root.cr-validator-workspace .cr-main{
-        flex:1;
-        min-width:0;
-        display:flex;
-        flex-direction:column;
-        overflow:hidden;
-    }
-    .cr-report-root.cr-validator-workspace .cr-upload-inline{flex-shrink:0;}
-    .cr-report-root.cr-validator-workspace .cr-sections-scroll{
-        flex:1;
-        overflow-y:auto;
-        padding-right:6px;
-        max-height:none;
-    }
-    body.cr-fullscreen-validator .cr-report-root.cr-validator-workspace .cr-sidebar{
-        top:12px;
-        height:calc(100vh - 24px);
-    }
-    .cr-report-root.cr-validator-workspace .cr-main{
-        min-width:0;
-    }
-    .cr-report-root.cr-validator-workspace{
-        position:relative;
-        height:auto;
-        overflow:visible;
-    }
-    .cr-report-root.cr-validator-workspace .cr-sections-scroll{
-        max-height:none;
-        overflow:visible;
-        padding-right:0;
-    }
 
     .cr-remarksbar{width:320px; padding:12px; border:1px solid rgba(148,163,184,0.22); border-radius:10px; background:#fff; position:sticky; top:76px; height:fit-content;}
     .cr-remarksbar-title{font-size:11px; font-weight:950; letter-spacing:.10em; text-transform:uppercase; color:#64748b; margin-bottom:10px; display:flex; align-items:center; justify-content:space-between; gap:10px;}
@@ -1541,21 +1486,6 @@ ob_start();
     #cvUploadBtn{background:#2563eb; border-color:#2563eb;}
     #cvUploadBtn:hover{filter:brightness(0.96);}
     .cr-hero .cr-stat{backdrop-filter: blur(8px);}
-    @media (max-width: 1100px){
-        .cr-shell{flex-direction:column;}
-        .cr-sidebar{width:auto; position:relative; top:auto;}
-        .cr-docbar{width:auto; position:relative; top:auto;}
-        .cr-upload-grid{grid-template-columns:1fr;}
-        .cr-sections-scroll{max-height:none; overflow:visible;}
-        .cr-report-root.cr-role-validator .cr-shell{padding-left:0;}
-        .cr-report-root.cr-role-validator .cr-sidebar{
-            position:relative;
-            top:auto;
-            height:auto;
-            overflow:visible;
-        }
-    }
-
     .cr-print .cr-sidebar{display:none;}
     .cr-print .cr-upload-card{display:none;}
     .cr-print .cr-actions{display:none;}
@@ -1806,77 +1736,6 @@ ob_start();
         display: none;
     }
 }
-/* QA Case Review iframe-only layout fix */
-.qa-case-review-mode .cr-shell{
-    display:flex;
-    flex-direction:row;
-    flex-wrap:nowrap;
-    align-items:flex-start;
-    gap:12px;
-}
-
-.qa-case-review-mode .cr-sidebar{
-    flex:0 0 250px;
-    width:250px;
-    min-width:250px;
-    max-width:250px;
-    position:sticky;
-    top:12px;
-}
-
-.qa-case-review-mode .cr-main{
-    flex:1 1 auto;
-    min-width:0;
-}
-
-/* Parent QA page already provides right-side remarks/timeline.
-   Hide iframe utility column to match validator/verifier content width. */
-.qa-case-review-mode .cr-right{
-    display:none !important;
-}
-
-.qa-case-review-mode .cr-sections-scroll{
-    max-height:none;
-    overflow:visible;
-    padding-right:2px;
-}
-
-/* Override generic <=1100px stack rule only for QA case review mode */
-@media (max-width: 1100px){
-    .qa-case-review-mode .cr-shell{
-        flex-direction:row !important;
-        align-items:flex-start;
-    }
-    .qa-case-review-mode .cr-sidebar{
-        width:230px;
-        min-width:230px;
-        max-width:230px;
-        position:sticky;
-        top:12px;
-    }
-    .qa-case-review-mode .cr-main{
-        min-width:0;
-    }
-}
-
-/* Mobile fallback */
-@media (max-width: 700px){
-    .qa-case-review-mode .cr-shell{
-        flex-direction:column !important;
-    }
-    .qa-case-review-mode .cr-sidebar{
-        width:auto;
-        min-width:0;
-        max-width:none;
-        position:relative;
-        top:auto;
-    }
-    .qa-case-review-mode .cr-sections-scroll{
-        max-height:none;
-        overflow:visible;
-    }
-}
-
 /* =========================
    QA Remarks – Bottom Input (QA Case Review iframe mode only)
    ========================= */
@@ -2499,81 +2358,6 @@ ob_start();
     cursor:se-resize;
 }
 
-/* ===========================
-   Connected Enterprise Cockpit
-   (validator/verifier workspace only)
-   =========================== */
-.page-content{overflow:hidden;}
-.cr-report-root.cr-validator-workspace{
-    background:#f8fafc;
-    border:1px solid #e5e7eb;
-    box-shadow:none;
-    border-radius:12px;
-}
-.cr-report-root.cr-validator-workspace .cr-shell.cr-layout.cr-page{
-    display:grid;
-    grid-template-columns:260px minmax(0,1fr) 320px;
-    gap:0;
-    margin-top:16px;
-    align-items:start;
-    border-top:1px solid #e5e7eb;
-}
-.cr-report-root.cr-validator-workspace .cr-sections{
-    grid-column:1;
-    position:sticky;
-    top:12px;
-    max-height:calc(100vh - 120px);
-    overflow-y:auto;
-    border:0 !important;
-    border-right:1px solid #e5e7eb !important;
-    border-radius:0 !important;
-    box-shadow:none !important;
-    background:#fff !important;
-    padding:16px !important;
-}
-.cr-report-root.cr-validator-workspace .cr-content{
-    grid-column:2;
-    min-width:0;
-    overflow-y:auto;
-    max-height:calc(100vh - 120px);
-    border:0;
-    background:#fff;
-    padding:0;
-}
-.cr-report-root.cr-validator-workspace .cr-right{
-    grid-column:3;
-    min-width:0;
-    overflow-y:auto;
-    max-height:calc(100vh - 120px);
-    border-left:1px solid #e5e7eb;
-    background:#fff;
-    padding:0;
-}
-.cr-report-root.cr-validator-workspace .cr-main{
-    gap:0 !important;
-}
-.cr-report-root.cr-validator-workspace .cr-review-actionbar{
-    position:sticky;
-    top:0;
-    z-index:30;
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:16px;
-    padding:12px 16px;
-    border-bottom:1px solid #e5e7eb;
-    background:#fff;
-}
-.cr-report-root.cr-validator-workspace #crReviewActionbar{
-    display:none !important; /* keep JS-bound original buttons in DOM, but hidden */
-}
-.cr-report-root.cr-validator-workspace .cr-review-actionbar-title{
-    font-size:12px;
-    letter-spacing:.08em;
-    text-transform:uppercase;
-    color:#6b7280;
-    font-weight:800;
-}
 .cr-report-root.cr-validator-workspace .cr-secbar{
     align-items:center !important;
 }
@@ -3009,18 +2793,6 @@ ob_start();
     color:#64748b !important;
 }
 
-@media (max-width: 1100px){
-    .cr-report-root.cr-validator-workspace .cr-content .candidate-section.cr-multi-record .cr-kv2-wrap{
-        grid-template-columns:1fr !important;
-    }
-}
-@media (max-width: 860px){
-    .cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-kv2-grid,
-    .cr-report-root.cr-validator-workspace .cr-content .candidate-section.cr-single-record .form-grid{
-        grid-template-columns:1fr !important;
-    }
-}
-
 /* Unified 3-column center worksheet grid across all components */
 .cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-kv2-grid{
     display:grid !important;
@@ -3108,22 +2880,6 @@ ob_start();
     margin-bottom:4px !important;
 }
 
-/* Responsive behavior */
-@media (max-width: 1280px){
-    .cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-kv2-grid,
-    .cr-report-root.cr-validator-workspace .cr-content .candidate-section .form-grid{
-        grid-template-columns:repeat(2, minmax(0, 1fr)) !important;
-    }
-}
-@media (max-width: 860px){
-    .cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-kv2-grid,
-    .cr-report-root.cr-validator-workspace .cr-content .candidate-section .form-grid{
-        grid-template-columns:1fr !important;
-    }
-    .cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-kv2-cell:has(.cr-doc-uploadbox){
-        grid-column:1 / -1 !important;
-    }
-}
 .cr-report-root.cr-validator-workspace .cr-secbar{
     border-radius:10px 10px 0 0 !important;
     border:0 !important;
@@ -3255,39 +3011,6 @@ ob_start();
     font-weight:800 !important;
 }
 
-@media (max-width: 1280px){
-    .cr-report-root.cr-validator-workspace .cr-shell.cr-layout.cr-page{
-        grid-template-columns:230px minmax(0,1fr) 300px;
-    }
-}
-@media (max-width: 1080px){
-    .cr-report-root.cr-validator-workspace .cr-shell.cr-layout.cr-page{
-        grid-template-columns:220px minmax(0,1fr);
-    }
-    .cr-report-root.cr-validator-workspace .cr-right{
-        grid-column:1 / -1;
-        border-left:0;
-        border-top:1px solid #e5e7eb;
-        max-height:none;
-    }
-}
-@media (max-width: 860px){
-    .cr-report-root.cr-validator-workspace .cr-shell.cr-layout.cr-page{
-        grid-template-columns:1fr;
-    }
-    .cr-report-root.cr-validator-workspace .cr-sections{
-        position:relative;
-        top:auto;
-        max-height:none;
-        border-right:0 !important;
-        border-bottom:1px solid #e5e7eb !important;
-    }
-    .cr-report-root.cr-validator-workspace .cr-content,
-    .cr-report-root.cr-validator-workspace .cr-right{
-        max-height:none;
-        overflow-y:visible;
-    }
-}
 @media (max-width: 900px){
     .cv-docviewer-modal{
         top:12px;
@@ -3298,6 +3021,730 @@ ob_start();
         min-height:0;
         resize:none;
     }
+}
+@media (max-width: 767px){
+    .cr-report-root.cr-validator-workspace{
+        padding-bottom:92px;
+    }
+    #cvMailModal .modal-dialog,
+    #cvVerificationMailModal .modal-dialog,
+    #cvCorrectionModal .modal-dialog,
+    #cvUploadModal .modal-dialog,
+    #cvTimelineModal .modal-dialog{
+        width:calc(100vw - 16px);
+        max-width:none;
+        margin:8px auto;
+    }
+    #cvMailModal .modal-content,
+    #cvVerificationMailModal .modal-content,
+    #cvCorrectionModal .modal-content,
+    #cvUploadModal .modal-content,
+    #cvTimelineModal .modal-content{
+        border-radius:14px;
+    }
+    #cvMailModal .modal-body,
+    #cvVerificationMailModal .modal-body,
+    #cvCorrectionModal .modal-body,
+    #cvUploadModal .modal-body,
+    #cvTimelineModal .modal-body{
+        padding:12px;
+    }
+    #cvMailModal .modal-footer,
+    #cvVerificationMailModal .modal-footer,
+    #cvCorrectionModal .modal-footer,
+    #cvUploadModal .modal-footer,
+    #cvTimelineModal .modal-footer{
+        display:flex;
+        flex-direction:column;
+        align-items:stretch;
+        gap:8px;
+    }
+    #cvMailModal .modal-footer .btn,
+    #cvVerificationMailModal .modal-footer .btn,
+    #cvCorrectionModal .modal-footer .btn,
+    #cvUploadModal .modal-footer .btn,
+    #cvTimelineModal .modal-footer .btn{
+        width:100%;
+    }
+    #cvMailModal .form-grid,
+    #cvVerificationMailModal .form-grid,
+    #cvUploadModal .cr-upload-grid{
+        display:grid;
+        grid-template-columns:1fr !important;
+        gap:10px;
+    }
+    #cvMailPreview{
+        max-height:220px !important;
+        min-height:120px !important;
+    }
+    #cvCommHistory{
+        max-height:140px !important;
+    }
+    .cr-report-root.cr-validator-workspace .cr-util-tabs{
+        flex-wrap:nowrap;
+        overflow-x:auto;
+        overflow-y:hidden;
+        padding-bottom:6px;
+        scrollbar-width:thin;
+    }
+    .cr-report-root.cr-validator-workspace .cr-util-tabs .nav-link{
+        white-space:nowrap;
+        flex:0 0 auto;
+    }
+    .cr-record-tabs{
+        flex-wrap:nowrap;
+        overflow-x:auto;
+        padding-bottom:4px;
+        scrollbar-width:thin;
+    }
+    .cr-record-tabs .btn,
+    .cr-record-tabs .cr-record-tab,
+    .cr-record-tabs button{
+        white-space:nowrap;
+        flex:0 0 auto;
+    }
+    .cr-report-root.cr-validator-workspace .cr-docbar-item{
+        align-items:flex-start;
+        flex-direction:column;
+    }
+    .cr-report-root.cr-validator-workspace .cr-docbar-open{
+        margin-top:2px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-secbar-actions{
+        display:flex !important;
+        flex-wrap:wrap;
+        justify-content:flex-start;
+        gap:8px;
+        margin-left:0;
+        max-width:100%;
+    }
+    .cr-report-root.cr-validator-workspace #crReviewActionbar{
+        display:flex !important;
+        position:fixed;
+        left:10px;
+        right:10px;
+        bottom:10px;
+        top:auto;
+        z-index:1200;
+        border:1px solid rgba(203,213,225,0.95);
+        border-radius:16px;
+        box-shadow:0 12px 28px rgba(15,23,42,0.16);
+        background:rgba(255,255,255,0.98);
+        backdrop-filter:blur(10px);
+        padding:10px 12px;
+        flex-direction:column;
+        align-items:stretch;
+        gap:10px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-review-actionbar-title{
+        text-align:left;
+        font-size:11px;
+    }
+    .cr-report-root.cr-validator-workspace #crReviewActionbar .cr-actions{
+        display:grid;
+        grid-template-columns:repeat(2, minmax(0, 1fr));
+        gap:8px;
+        width:100%;
+    }
+    .cr-report-root.cr-validator-workspace #crReviewActionbar .cr-action-btn{
+        width:100%;
+        min-height:40px;
+        justify-content:center;
+        padding:8px 10px;
+        font-size:13px;
+    }
+}
+@media (max-width: 520px){
+    .cr-report-root.cr-validator-workspace{
+        padding-bottom:104px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-util-content,
+    .cr-report-root.cr-validator-workspace .cr-util-scroll,
+    .cr-validator-timeline,
+    .cr-validator-remarks-list{
+        max-height:none !important;
+    }
+    .cr-report-root.cr-validator-workspace .candidate-section{
+        border-radius:14px !important;
+    }
+    .cr-report-root.cr-validator-workspace .cr-secbar-title{
+        font-size:13px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-secbar-icon{
+        width:30px;
+        height:30px;
+        flex-basis:30px;
+    }
+    .cr-report-root.cr-validator-workspace #crReviewActionbar{
+        left:8px;
+        right:8px;
+        bottom:8px;
+        padding:10px;
+    }
+    .cr-report-root.cr-validator-workspace #crReviewActionbar .cr-actions{
+        grid-template-columns:1fr;
+    }
+}
+
+/* Final responsive authority for validator / verifier / QA / team lead report shell */
+.cv-docviewer-modal.is-compact{
+    left:8px !important;
+    top:8px !important;
+    width:calc(100vw - 16px) !important;
+    height:calc(100vh - 16px) !important;
+    max-width:none !important;
+    max-height:none !important;
+}
+.cv-docviewer-modal.is-compact .cv-docviewer-btn[title="Minimize"],
+.cv-docviewer-modal.is-compact .cv-docviewer-resize{
+    display:none !important;
+}
+.cv-docviewer-modal.is-compact .cv-docviewer-split{
+    grid-template-columns:minmax(0, 1fr);
+}
+.cv-docviewer-modal.is-compact .cv-docviewer-upload{
+    display:none;
+}
+.cr-record-panel-head{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    margin-bottom:10px;
+}
+.cr-record-panel-title{
+    font-size:12px;
+    font-weight:950;
+    color:#0f172a;
+}
+.cr-record-panel-meta{
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px;
+}
+.cr-record-chip{
+    display:inline-flex;
+    align-items:center;
+    gap:4px;
+    padding:4px 8px;
+    border-radius:999px;
+    border:1px solid rgba(148,163,184,0.24);
+    background:#f8fafc;
+    font-size:11px;
+    color:#334155;
+    min-width:0;
+}
+.cr-record-chip b{
+    color:#0f172a;
+    font-weight:800;
+}
+
+@media (min-width: 1280px){
+    .cr-report-root.cr-validator-workspace .cr-shell.cr-layout.cr-page{
+        display:grid;
+        grid-template-columns:280px minmax(0, 1fr) 320px;
+        gap:16px;
+        align-items:start;
+    }
+    .cr-report-root.cr-validator-workspace .cr-sidebar,
+    .cr-report-root.cr-validator-workspace .cr-docbar,
+    .cr-report-root.cr-validator-workspace .cr-right,
+    .cr-validator-side{
+        position:sticky;
+        top:14px;
+        align-self:start;
+    }
+    .cr-report-root.cr-validator-workspace #crReviewActionbar{
+        display:none !important;
+    }
+}
+
+@media (min-width: 768px) and (max-width: 1279px){
+    .cr-report-root.cr-validator-workspace{
+        padding:12px;
+        overflow:visible;
+    }
+    .cr-report-root.cr-validator-workspace .cr-shell.cr-layout.cr-page{
+        display:grid;
+        grid-template-columns:1fr;
+        gap:12px;
+        margin-top:12px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-sidebar,
+    .cr-report-root.cr-validator-workspace .cr-main,
+    .cr-report-root.cr-validator-workspace .cr-content,
+    .cr-report-root.cr-validator-workspace .cr-right,
+    .cr-report-root.cr-validator-workspace .cr-docbar,
+    .cr-validator-side{
+        grid-column:auto;
+        width:auto;
+        max-height:none;
+        position:relative;
+        top:auto;
+        overflow:visible;
+    }
+    .cr-report-root.cr-validator-workspace .cr-sidebar{
+        order:1;
+        padding:12px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-main,
+    .cr-report-root.cr-validator-workspace .cr-content{
+        order:2;
+    }
+    .cr-report-root.cr-validator-workspace .cr-right,
+    .cr-report-root.cr-validator-workspace .cr-docbar,
+    .cr-validator-side{
+        order:3;
+    }
+    .cr-report-root.cr-validator-workspace .cr-nav{
+        display:flex;
+        flex-direction:row;
+        flex-wrap:nowrap;
+        overflow-x:auto;
+        gap:8px;
+        padding-bottom:4px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-nav .list-group-item{
+        min-width:220px;
+        flex:0 0 220px;
+        min-height:64px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-review-tabs,
+    .cr-report-root.cr-validator-workspace .cr-compnav,
+    .cr-report-root.cr-validator-workspace .cr-util-tabs,
+    .cr-report-root.cr-validator-workspace .cr-record-tabs{
+        flex-wrap:nowrap;
+        overflow-x:auto;
+        overflow-y:hidden;
+        scrollbar-width:thin;
+    }
+    .cr-report-root.cr-validator-workspace .cr-review-tab,
+    .cr-report-root.cr-validator-workspace .cr-compnav-btn,
+    .cr-report-root.cr-validator-workspace .cr-util-tabs .nav-link,
+    .cr-report-root.cr-validator-workspace .cr-record-tabs button,
+    .cr-report-root.cr-validator-workspace .cr-record-tabs .cr-record-tab{
+        white-space:nowrap;
+        flex:0 0 auto;
+    }
+    .cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-kv2-grid,
+    .cr-report-root.cr-validator-workspace .cr-content .candidate-section .form-grid{
+        grid-template-columns:repeat(2, minmax(0, 1fr)) !important;
+    }
+    .cr-report-root.cr-validator-workspace .cr-content .candidate-section.cr-multi-record .cr-kv2-wrap{
+        grid-template-columns:1fr !important;
+        row-gap:12px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-secbar{
+        display:flex;
+        flex-direction:row;
+        align-items:flex-start;
+        justify-content:space-between;
+        gap:12px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-secbar-actions{
+        display:flex;
+        flex-wrap:wrap;
+        justify-content:flex-end;
+        gap:8px;
+        max-width:100%;
+        margin-left:auto;
+    }
+    .cr-report-root.cr-validator-workspace .cr-docbar{
+        display:block;
+    }
+    .cr-report-root.cr-validator-workspace .cr-docbar-frame{
+        height:340px;
+    }
+    .cr-report-root.cr-validator-workspace #crReviewActionbar{
+        display:none !important;
+    }
+
+    .cr-report-root.cr-role-verifier.cr-validator-workspace .cr-hero-row-actions .cr-hero-toolbar,
+    .cr-report-root.cr-role-db_verifier.cr-validator-workspace .cr-hero-row-actions .cr-hero-toolbar,
+    .cr-report-root.cr-role-qa.cr-validator-workspace .cr-hero-row-actions .cr-hero-toolbar,
+    .cr-report-root.cr-role-team_lead.cr-validator-workspace .cr-hero-row-actions .cr-hero-toolbar{
+        flex-direction:column;
+        align-items:stretch;
+    }
+    .cr-report-root.cr-role-verifier.cr-validator-workspace .cr-hero-row-actions .cr-actions-primary,
+    .cr-report-root.cr-role-verifier.cr-validator-workspace .cr-hero-row-actions .cr-actions-secondary,
+    .cr-report-root.cr-role-db_verifier.cr-validator-workspace .cr-hero-row-actions .cr-actions-primary,
+    .cr-report-root.cr-role-db_verifier.cr-validator-workspace .cr-hero-row-actions .cr-actions-secondary,
+    .cr-report-root.cr-role-qa.cr-validator-workspace .cr-hero-row-actions .cr-actions-primary,
+    .cr-report-root.cr-role-qa.cr-validator-workspace .cr-hero-row-actions .cr-actions-secondary,
+    .cr-report-root.cr-role-team_lead.cr-validator-workspace .cr-hero-row-actions .cr-actions-primary,
+    .cr-report-root.cr-role-team_lead.cr-validator-workspace .cr-hero-row-actions .cr-actions-secondary{
+        display:grid;
+        grid-template-columns:repeat(2, minmax(0, 1fr));
+        gap:10px;
+        width:100%;
+    }
+    .cr-report-root.cr-role-verifier.cr-validator-workspace .cr-hero-row-actions .cr-action-btn,
+    .cr-report-root.cr-role-db_verifier.cr-validator-workspace .cr-hero-row-actions .cr-action-btn,
+    .cr-report-root.cr-role-qa.cr-validator-workspace .cr-hero-row-actions .cr-action-btn,
+    .cr-report-root.cr-role-team_lead.cr-validator-workspace .cr-hero-row-actions .cr-action-btn{
+        width:100%;
+        justify-content:center;
+        min-height:42px;
+    }
+
+    .cr-report-root.cr-role-verifier.cr-validator-workspace .cr-sidebar,
+    .cr-report-root.cr-role-db_verifier.cr-validator-workspace .cr-sidebar,
+    .cr-report-root.cr-role-qa.cr-validator-workspace .cr-sidebar,
+    .cr-report-root.cr-role-team_lead.cr-validator-workspace .cr-sidebar{
+        padding:14px;
+    }
+    .cr-report-root.cr-role-verifier.cr-validator-workspace .cr-nav,
+    .cr-report-root.cr-role-db_verifier.cr-validator-workspace .cr-nav,
+    .cr-report-root.cr-role-qa.cr-validator-workspace .cr-nav,
+    .cr-report-root.cr-role-team_lead.cr-validator-workspace .cr-nav{
+        display:grid;
+        grid-template-columns:repeat(2, minmax(0, 1fr));
+        gap:10px;
+        overflow:visible;
+        padding-bottom:0;
+    }
+    .cr-report-root.cr-role-verifier.cr-validator-workspace .cr-nav .list-group-item,
+    .cr-report-root.cr-role-db_verifier.cr-validator-workspace .cr-nav .list-group-item,
+    .cr-report-root.cr-role-qa.cr-validator-workspace .cr-nav .list-group-item,
+    .cr-report-root.cr-role-team_lead.cr-validator-workspace .cr-nav .list-group-item{
+        min-width:0;
+        width:100%;
+        min-height:72px;
+        padding:12px;
+        border-radius:14px;
+    }
+    .cr-report-root.cr-role-verifier.cr-validator-workspace .cr-nav-label,
+    .cr-report-root.cr-role-db_verifier.cr-validator-workspace .cr-nav-label,
+    .cr-report-root.cr-role-qa.cr-validator-workspace .cr-nav-label,
+    .cr-report-root.cr-role-team_lead.cr-validator-workspace .cr-nav-label{
+        gap:8px;
+        padding-right:0;
+    }
+    .cr-report-root.cr-role-verifier.cr-validator-workspace .cr-nav .section-right,
+    .cr-report-root.cr-role-db_verifier.cr-validator-workspace .cr-nav .section-right,
+    .cr-report-root.cr-role-qa.cr-validator-workspace .cr-nav .section-right,
+    .cr-report-root.cr-role-team_lead.cr-validator-workspace .cr-nav .section-right{
+        margin-left:8px;
+    }
+    .cr-report-root.cr-role-verifier.cr-validator-workspace .cr-nav .badge,
+    .cr-report-root.cr-role-db_verifier.cr-validator-workspace .cr-nav .badge,
+    .cr-report-root.cr-role-qa.cr-validator-workspace .cr-nav .badge,
+    .cr-report-root.cr-role-team_lead.cr-validator-workspace .cr-nav .badge{
+        white-space:normal;
+        text-align:center;
+        line-height:1.15;
+        max-width:96px;
+    }
+}
+
+@media (min-width: 768px) and (max-width: 1024px){
+    .cr-report-root.cr-validator-workspace .cr-hero{
+        padding:14px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-validator-case-grid{
+        grid-template-columns:repeat(2, minmax(0, 1fr));
+        gap:10px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-stat{
+        min-height:62px;
+        padding:10px 12px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-nav .list-group-item{
+        min-width:188px;
+        flex-basis:188px;
+        min-height:60px;
+        padding:10px 12px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-util-tabs .nav-link{
+        font-size:11px;
+        padding:9px 8px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-record-tabs .cr-record-tab{
+        font-size:11px;
+        padding:6px 10px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-docbar-frame{
+        height:280px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-util-content{
+        padding-top:4px;
+    }
+
+    .cr-report-root.cr-role-verifier.cr-validator-workspace .cr-nav,
+    .cr-report-root.cr-role-db_verifier.cr-validator-workspace .cr-nav,
+    .cr-report-root.cr-role-qa.cr-validator-workspace .cr-nav,
+    .cr-report-root.cr-role-team_lead.cr-validator-workspace .cr-nav{
+        grid-template-columns:repeat(2, minmax(0, 1fr));
+    }
+    .cr-report-root.cr-role-verifier.cr-validator-workspace .cr-nav .list-group-item,
+    .cr-report-root.cr-role-db_verifier.cr-validator-workspace .cr-nav .list-group-item,
+    .cr-report-root.cr-role-qa.cr-validator-workspace .cr-nav .list-group-item,
+    .cr-report-root.cr-role-team_lead.cr-validator-workspace .cr-nav .list-group-item{
+        min-height:76px;
+    }
+    .cr-report-root.cr-role-verifier.cr-validator-workspace .cr-hero-row-actions .cr-actions-primary,
+    .cr-report-root.cr-role-verifier.cr-validator-workspace .cr-hero-row-actions .cr-actions-secondary,
+    .cr-report-root.cr-role-db_verifier.cr-validator-workspace .cr-hero-row-actions .cr-actions-primary,
+    .cr-report-root.cr-role-db_verifier.cr-validator-workspace .cr-hero-row-actions .cr-actions-secondary,
+    .cr-report-root.cr-role-qa.cr-validator-workspace .cr-hero-row-actions .cr-actions-primary,
+    .cr-report-root.cr-role-qa.cr-validator-workspace .cr-hero-row-actions .cr-actions-secondary,
+    .cr-report-root.cr-role-team_lead.cr-validator-workspace .cr-hero-row-actions .cr-actions-primary,
+    .cr-report-root.cr-role-team_lead.cr-validator-workspace .cr-hero-row-actions .cr-actions-secondary{
+        grid-template-columns:repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 767px){
+    .cr-report-root.cr-validator-workspace{
+        padding:10px 10px 104px;
+        border-radius:12px;
+        overflow:visible;
+    }
+    .cr-report-root.cr-validator-workspace .cr-hero{
+        padding:12px;
+        border-radius:14px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-shell.cr-layout.cr-page{
+        display:grid;
+        grid-template-columns:1fr;
+        gap:12px;
+        margin-top:12px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-sidebar,
+    .cr-report-root.cr-validator-workspace .cr-main,
+    .cr-report-root.cr-validator-workspace .cr-content,
+    .cr-report-root.cr-validator-workspace .cr-right,
+    .cr-report-root.cr-validator-workspace .cr-docbar,
+    .cr-validator-side{
+        grid-column:auto;
+        width:auto;
+        max-height:none;
+        position:relative;
+        top:auto;
+        overflow:visible;
+    }
+    .cr-report-root.cr-validator-workspace .cr-sidebar{
+        order:1;
+        padding:10px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-main,
+    .cr-report-root.cr-validator-workspace .cr-content{
+        order:2;
+        gap:12px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-right,
+    .cr-report-root.cr-validator-workspace .cr-docbar,
+    .cr-validator-side{
+        order:3;
+    }
+    .cr-report-root.cr-validator-workspace .cr-nav{
+        display:flex;
+        flex-direction:row;
+        flex-wrap:nowrap;
+        overflow-x:auto;
+        gap:8px;
+        padding-bottom:4px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-nav .list-group-item{
+        min-width:180px;
+        flex:0 0 180px;
+        min-height:60px;
+        padding:9px 10px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-review-tabs,
+    .cr-report-root.cr-validator-workspace .cr-compnav,
+    .cr-report-root.cr-validator-workspace .cr-util-tabs,
+    .cr-report-root.cr-validator-workspace .cr-record-tabs{
+        flex-wrap:nowrap;
+        overflow-x:auto;
+        overflow-y:hidden;
+        scrollbar-width:thin;
+    }
+    .cr-report-root.cr-validator-workspace .cr-review-tab,
+    .cr-report-root.cr-validator-workspace .cr-compnav-btn,
+    .cr-report-root.cr-validator-workspace .cr-util-tabs .nav-link,
+    .cr-report-root.cr-validator-workspace .cr-record-tabs button,
+    .cr-report-root.cr-validator-workspace .cr-record-tabs .cr-record-tab{
+        white-space:nowrap;
+        flex:0 0 auto;
+    }
+    .cr-report-root.cr-validator-workspace .candidate-section > .form-grid,
+    .cr-report-root.cr-validator-workspace .candidate-section > div[id$="_table"],
+    .cr-report-root.cr-validator-workspace .cr-comp-layout,
+    .cr-report-root.cr-validator-workspace .cr-content .candidate-section.cr-single-record .form-grid,
+    .cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-kv2-grid{
+        display:grid;
+        grid-template-columns:1fr !important;
+        gap:12px;
+        padding:12px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-kv2-cell,
+    .cr-report-root.cr-validator-workspace .cr-content .candidate-section .form-control{
+        grid-column:auto !important;
+    }
+    .cr-report-root.cr-validator-workspace .cr-content .candidate-section.cr-multi-record .cr-kv2-wrap{
+        grid-template-columns:1fr !important;
+        row-gap:10px;
+        padding:12px !important;
+    }
+    .cr-report-root.cr-validator-workspace .cr-content .candidate-section .form-control label,
+    .cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-kv2-k{
+        display:block;
+        margin-bottom:4px;
+        white-space:normal;
+    }
+    .cr-report-root.cr-validator-workspace .cr-secbar{
+        display:flex;
+        flex-direction:column;
+        align-items:stretch !important;
+        gap:10px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-secbar-copy,
+    .cr-report-root.cr-validator-workspace .cr-secbar-sub,
+    .cr-report-root.cr-validator-workspace .cr-stat span{
+        white-space:normal;
+    }
+    .cr-report-root.cr-validator-workspace .cr-secbar-actions{
+        display:none !important;
+    }
+    .cr-report-root.cr-validator-workspace .cr-record-panel{
+        border:1px solid rgba(226,232,240,0.95);
+        border-radius:14px;
+        background:#fff;
+        overflow:hidden;
+    }
+    .cr-report-root.cr-validator-workspace .cr-record-panel .cr-kv2-wrap{
+        padding:12px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-record-panel-head{
+        margin-bottom:12px;
+        padding-bottom:10px;
+        border-bottom:1px solid rgba(226,232,240,0.9);
+    }
+    .cr-report-root.cr-validator-workspace .cr-record-panel-title{
+        font-size:13px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-content .candidate-section.cr-multi-record .cr-kv2-grid{
+        gap:10px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-content .candidate-section.cr-multi-record .cr-kv2-cell{
+        padding:10px 12px;
+        border:1px solid rgba(226,232,240,0.95);
+        border-radius:12px;
+        background:#fbfdff;
+    }
+    .cr-report-root.cr-validator-workspace .cr-docbar{
+        display:block;
+    }
+    .cr-report-root.cr-validator-workspace .cr-docbar-frame{
+        height:240px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-docbar-item{
+        flex-direction:column;
+        align-items:flex-start;
+    }
+    .cr-report-root.cr-validator-workspace .cr-util-tabs{
+        display:flex;
+        grid-template-columns:none;
+        gap:8px;
+        padding-bottom:6px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-util-tabs .nav-item{
+        flex:0 0 auto;
+    }
+    .cr-report-root.cr-validator-workspace .cr-util-tabs .nav-link{
+        border:1px solid #e5e7eb;
+        border-radius:999px;
+        padding:7px 11px;
+        font-size:12px;
+        border-right:1px solid #e5e7eb;
+    }
+    .cr-report-root.cr-validator-workspace .cr-util-content,
+    .cr-report-root.cr-validator-workspace .cr-util-scroll,
+    .cr-validator-timeline,
+    .cr-validator-remarks-list{
+        max-height:none !important;
+    }
+    .cr-report-root.cr-validator-workspace .cr-secbar-actions .cr-sec-action,
+    .cr-report-root.cr-validator-workspace .cr-secbar-actions .cr-action-btn{
+        min-height:32px;
+        padding:6px 10px;
+        font-size:12px;
+        border-radius:10px;
+    }
+    .cr-report-root.cr-validator-workspace #crReviewActionbar{display:none !important;}
+}
+
+@media (max-width: 430px){
+    .cr-record-panel-meta{
+        flex-direction:column;
+        align-items:stretch;
+    }
+    .cr-record-chip{
+        border-radius:10px;
+        justify-content:flex-start;
+    }
+}
+
+@media (max-width: 390px){
+    .cr-report-root.cr-validator-workspace{
+        padding:8px 8px 112px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-hero{
+        padding:10px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-validator-case-grid{
+        gap:8px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-stat{
+        padding:9px 10px;
+        min-height:58px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-stat b{
+        font-size:10px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-stat span{
+        font-size:13px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-nav{
+        gap:6px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-nav .list-group-item{
+        min-width:152px;
+        flex-basis:152px;
+        min-height:56px;
+        padding:8px 9px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-nav .badge{
+        padding:3px 7px;
+        font-size:10px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-util-tabs .nav-link,
+    .cr-report-root.cr-validator-workspace .cr-record-tabs .cr-record-tab,
+    .cr-report-root.cr-validator-workspace .cr-compnav-btn{
+        font-size:11px;
+        padding:6px 9px;
+    }
+    .cr-record-panel-title{
+        font-size:12px;
+    }
+    .cr-record-chip{
+        font-size:10px;
+        padding:4px 7px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-docbar-frame{
+        height:220px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-secbar-actions .cr-sec-action,
+    .cr-report-root.cr-validator-workspace .cr-secbar-actions .cr-action-btn{
+        min-height:30px;
+        font-size:11px;
+        padding:6px 8px;
+    }
+}
+
+.cr-report-root.cr-validator-workspace #crReviewActionbar{
+    display:none !important;
 }
 </style>
 <?php
@@ -3461,6 +3908,7 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
                     <div class="cr-stat"><b>Candidate</b><span id="cvHeaderCandidate"></span></div>
                     <div class="cr-stat"><b>Application</b><span id="cvHeaderAppId"></span></div>
                     <div class="cr-stat"><b>Status</b><span id="cvHeaderStatus"></span></div>
+                    <div class="cr-stat"><b>Flow</b><span id="cvHeaderWorkflowMode">-</span></div>
                     <div class="cr-stat"><b>TAT</b><span id="cvHeaderTat">-</span></div>
                     <div class="cr-stat"><b>Reviewed</b><span id="cvHeaderReviewed">0 / 0 sections</span></div>
                 </div>

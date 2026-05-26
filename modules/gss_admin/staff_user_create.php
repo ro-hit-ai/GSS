@@ -15,7 +15,7 @@ ob_start();
 ?>
 <div class="card">
     <h3><?php echo !empty($_GET['user_id']) ? 'Edit Staff User' : 'Create Staff User'; ?></h3>
-    <p class="card-subtitle">Create staff users (GSS Admin / Validator / Verifier / DB Verifier / QA). Location is required for user mapping.</p>
+    <p class="card-subtitle">Create staff users (GSS Admin / Verifier / DB Verifier / QA / Team Lead). Location is required for user mapping.</p>
 
     <div id="staffUserCreateMessage" style="display:none; margin-top: 10px;"></div>
 
@@ -63,7 +63,6 @@ ob_start();
                     <label>Staff Role *</label>
                     <select name="role" required>
                         <option value="gss_admin">GSS Admin</option>
-                        <option value="validator">Validator</option>
                         <option value="verifier">Component Verifier</option>
                         <option value="db_verifier">DB Verifier</option>
                         <option value="qa">QA </option>

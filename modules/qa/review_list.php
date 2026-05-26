@@ -73,10 +73,6 @@ ob_start();
                     <select id="qaCasesClientSelect" class="qa-review-select"></select>
                 </div>
                 <div class="qa-review-filter-field">
-                    <label for="qaCasesValidatorSelect">Validator</label>
-                    <select id="qaCasesValidatorSelect" class="qa-review-select"></select>
-                </div>
-                <div class="qa-review-filter-field">
                     <label for="qaCasesVerifierSelect">Verifier</label>
                     <select id="qaCasesVerifierSelect" class="qa-review-select"></select>
                 </div>
@@ -109,7 +105,6 @@ ob_start();
                 <th>Email</th>
                 <th>Mobile</th>
                 <th>Stage</th>
-                <th>Validator Assigned</th>
                 <th>Verifier Assigned</th>
                 <th>Status</th>
                 <th>Created</th>

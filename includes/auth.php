@@ -63,6 +63,11 @@ function auth_is_logged_in(): bool {
     return auth_user_id() > 0;
 }
 
+function auth_is_disabled_role(?string $role = null): bool {
+    $role = strtolower(trim((string)($role ?? auth_module_access())));
+    return $role === 'validator';
+}
+
 function auth_has_access(string $required): bool {
     $required = trim($required);
     if ($required === '') return true;
@@ -94,6 +99,10 @@ function auth_require_login(?string $requiredAccess = null): void {
         auth_respond_unauthorized();
     }
 
+    if (auth_is_disabled_role()) {
+        auth_respond_forbidden();
+    }
+
     if ($requiredAccess !== null && $requiredAccess !== '' && !auth_has_access($requiredAccess)) {
         auth_respond_forbidden();
     }
@@ -109,6 +118,10 @@ function auth_require_any_access(array $requiredAny): void {
 
     if (!auth_is_logged_in()) {
         auth_respond_unauthorized();
+    }
+
+    if (auth_is_disabled_role()) {
+        auth_respond_forbidden();
     }
 
     $requiredAny = array_values(array_filter(array_map(function ($v) {

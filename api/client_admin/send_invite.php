@@ -1,4 +1,4 @@
-<?php
+777<?php
 header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../config/env.php';

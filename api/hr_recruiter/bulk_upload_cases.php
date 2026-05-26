@@ -5,7 +5,9 @@ require_once __DIR__ . '/../../config/env.php';
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/mail.php';
+require_once __DIR__ . '/../shared/auth_client_snapshot.php';
 require_once __DIR__ . '/../shared/case_component_binding.php';
+require_once __DIR__ . '/../shared/workflow_mode.php';
 
 auth_require_login('company_recruiter');
 auth_session_start();
@@ -24,13 +26,8 @@ function post_str(string $key, string $default = ''): string {
 }
 
 function resolve_client_id(): int {
-    if (session_status() === PHP_SESSION_NONE) session_start();
-    $cid = isset($_SESSION['auth_client_id']) ? (int)$_SESSION['auth_client_id'] : 0;
-    if ($cid > 0) return $cid;
-
-    http_response_code(401);
-    echo json_encode(['status' => 0, 'message' => 'Unauthorized']);
-    exit;
+    $pdo = getDB();
+    return auth_client_snapshot_resolve_client_id_or_401($pdo);
 }
 
 function resolve_user_id(): int {
@@ -356,6 +353,8 @@ try {
             if ($caseId <= 0) {
                 throw new Exception('case_id missing after create');
             }
+
+            wf_mode_set_case_mode($pdo, $caseId, 'verifier_first');
 
             // Ensure workflow snapshot rows exist for every required case component.
             case_component_binding_sync_case_components($pdo, $caseId, $applicationId);

@@ -29,6 +29,27 @@
             return href;
         }
 
+        function workflowModeLabel(mode) {
+            var m = String(mode || '').trim().toLowerCase();
+            if (m === 'verifier_first') return 'Verifier First';
+            if (m === 'validator_first') return 'Validator First';
+            return '-';
+        }
+
+        function workflowModePill(mode) {
+            var m = String(mode || '').trim().toLowerCase();
+            var bg = '#e2e8f0';
+            var fg = '#334155';
+            if (m === 'verifier_first') {
+                bg = '#dcfce7';
+                fg = '#166534';
+            } else if (m === 'validator_first') {
+                bg = '#fef3c7';
+                fg = '#92400e';
+            }
+            return '<span style="display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:700; background:' + bg + '; color:' + fg + ';">' + escapeHtml(workflowModeLabel(m)) + '</span>';
+        }
+
         function loadCss(href) {
             return new Promise(function (resolve, reject) {
                 var existing = document.querySelector('link[href="' + href + '"]');
@@ -136,6 +157,12 @@
                     { data: 'candidate_email' },
                     { data: 'candidate_mobile' },
                     { data: 'current_stage' },
+                    {
+                        data: 'workflow_mode',
+                        render: function (d) {
+                            return workflowModePill(d);
+                        }
+                    },
                     { data: 'case_status' },
                     {
                         data: null,

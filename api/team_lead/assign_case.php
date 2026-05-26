@@ -4,6 +4,8 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../shared/workflow_semantics.php';
+require_once __DIR__ . '/../shared/workflow_mode.php';
+require_once __DIR__ . '/../shared/verifier_case_queue.php';
 
 auth_require_login('team_lead');
 auth_session_start();
@@ -75,13 +77,13 @@ try {
         exit;
     }
 
-    if ($queue === 'vr' && !wf_is_valid_verifier_group($groupKey)) {
-        http_response_code(400);
-        echo json_encode(['status' => 0, 'message' => 'group_key is required for vr']);
+    $pdo = getDB();
+    $mode = wf_mode_get_case_mode($pdo, $caseId, '');
+    if ($queue === 'validator' && $mode === 'verifier_first') {
+        http_response_code(409);
+        echo json_encode(['status' => 0, 'message' => 'Validator queue assignment is disabled for verifier-first cases']);
         exit;
     }
-
-    $pdo = getDB();
 
     // Ensure user is active + role compatible
     $uStmt = $pdo->prepare('SELECT user_id, is_active, LOWER(TRIM(role)) AS role, allowed_sections FROM Vati_Payfiller_Users WHERE user_id = ? LIMIT 1');
@@ -105,39 +107,20 @@ try {
         exit;
     }
 
-    // VR: enforce group capability and dedicated assignment rule
+    // VR: legacy group capability check remains only for non-case-model flow.
     if ($queue === 'vr') {
-        $set = allowed_sections_set((string)($u['allowed_sections'] ?? ''));
-        if (!can_work_group($set, $groupKey)) {
-            http_response_code(400);
-            echo json_encode(['status' => 0, 'message' => 'Target user is not allowed for this VR group']);
-            exit;
-        }
-
-        try {
-            $clientLookup = $pdo->prepare('SELECT client_id FROM Vati_Payfiller_Cases WHERE case_id = ? LIMIT 1');
-            $clientLookup->execute([$caseId]);
-            $cidRow = $clientLookup->fetch(PDO::FETCH_ASSOC) ?: null;
-            $caseClientId = $cidRow && isset($cidRow['client_id']) ? (int)$cidRow['client_id'] : null;
-
-            $ruleStmt = $pdo->prepare(
-                "SELECT mode, dedicated_user_id\n" .
-                "  FROM Vati_Payfiller_VR_Assignment_Rules\n" .
-                " WHERE is_active = 1\n" .
-                "   AND (client_id <=> ?)\n" .
-                "   AND UPPER(TRIM(group_key)) = ?\n" .
-                " LIMIT 1"
-            );
-            $ruleStmt->execute([$caseClientId, $groupKey]);
-            $rule = $ruleStmt->fetch(PDO::FETCH_ASSOC) ?: null;
-            $mode = $rule ? strtolower(trim((string)($rule['mode'] ?? ''))) : '';
-            $dedicatedUserId = $rule && isset($rule['dedicated_user_id']) ? (int)$rule['dedicated_user_id'] : 0;
-            if ($mode === 'dedicated' && $dedicatedUserId > 0 && $dedicatedUserId !== $userId) {
-                http_response_code(409);
-                echo json_encode(['status' => 0, 'message' => 'Dedicated assignment rule: cannot assign to this user']);
+        if (!verifier_case_queue_is_case_model($pdo, $caseId, '')) {
+            if (!wf_is_valid_verifier_group($groupKey)) {
+                http_response_code(400);
+                echo json_encode(['status' => 0, 'message' => 'group_key is required for legacy vr assignment']);
                 exit;
             }
-        } catch (Throwable $e) {
+            $set = allowed_sections_set((string)($u['allowed_sections'] ?? ''));
+            if (!can_work_group($set, $groupKey)) {
+                http_response_code(400);
+                echo json_encode(['status' => 0, 'message' => 'Target user is not allowed for this VR group']);
+                exit;
+            }
         }
     }
 
@@ -155,16 +138,25 @@ try {
             exit;
         }
     } elseif ($queue === 'vr') {
-        $stmt = $pdo->prepare('CALL SP_Vati_Payfiller_VR_ClaimCase(?, ?, ?)');
-        $stmt->execute([$userId, $caseId, $groupKey]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
-        while ($stmt->nextRowset()) {
-        }
-        $affected = isset($row['affected_rows']) ? (int)$row['affected_rows'] : 0;
-        if ($affected <= 0) {
-            http_response_code(409);
-            echo json_encode(['status' => 0, 'message' => 'Already assigned/claimed or completed']);
-            exit;
+        if (verifier_case_queue_is_case_model($pdo, $caseId, '')) {
+            $claim = verifier_case_queue_claim($pdo, $caseId, $userId, true);
+            if (empty($claim['ok'])) {
+                http_response_code(409);
+                echo json_encode(['status' => 0, 'message' => (string)($claim['message'] ?? 'Already assigned/claimed or completed')]);
+                exit;
+            }
+        } else {
+            $stmt = $pdo->prepare('CALL SP_Vati_Payfiller_VR_ClaimCase(?, ?, ?)');
+            $stmt->execute([$userId, $caseId, $groupKey]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+            while ($stmt->nextRowset()) {
+            }
+            $affected = isset($row['affected_rows']) ? (int)$row['affected_rows'] : 0;
+            if ($affected <= 0) {
+                http_response_code(409);
+                echo json_encode(['status' => 0, 'message' => 'Already assigned/claimed or completed']);
+                exit;
+            }
         }
     } else {
         $stmt = $pdo->prepare('CALL SP_Vati_Payfiller_DBV_ClaimCase(?, ?)');
@@ -184,7 +176,7 @@ try {
     try {
         $role = !empty($_SESSION['auth_moduleAccess']) ? (string)$_SESSION['auth_moduleAccess'] : 'team_lead';
         $msg = 'Assigned (' . $queue . ') to user_id=' . $userId;
-        if ($queue === 'vr') {
+        if ($queue === 'vr' && $groupKey !== '') {
             $msg .= ' group=' . $groupKey;
         }
         $log = $pdo->prepare('INSERT INTO Vati_Payfiller_Case_Timeline (application_id, actor_user_id, actor_role, event_type, section_key, message, created_at) SELECT application_id, ?, ?, ?, ?, ?, NOW() FROM Vati_Payfiller_Cases WHERE case_id = ? LIMIT 1');

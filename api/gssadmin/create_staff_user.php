@@ -110,7 +110,7 @@ try {
     $sendEmail = post_bool('send_email');
     $allowedSections = post_allowed_sections();
 
-    $allowedRoles = ['gss_admin', 'verifier', 'db_verifier', 'validator', 'qa', 'team_lead'];
+    $allowedRoles = ['gss_admin', 'verifier', 'db_verifier', 'qa', 'team_lead'];
     if (!in_array($role, $allowedRoles, true)) {
         http_response_code(400);
         echo json_encode(['status' => 0, 'message' => 'Invalid staff role']);

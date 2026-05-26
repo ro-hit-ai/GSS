@@ -167,15 +167,12 @@ function car_run_resend(PDO $pdo, array $in, string $sessionRole, int $sessionUs
     $caseStatus = (string)($case['case_status'] ?? '');
     $caseClientId = (int)($case['client_id'] ?? 0);
 
-    if (!in_array($role, ['client_admin', 'validator', 'verifier', 'qa', 'gss_admin'], true)) {
+    if (!in_array($role, ['client_admin', 'verifier', 'qa', 'gss_admin'], true)) {
         return ['http' => 403, 'status' => 0, 'message' => 'Forbidden role'];
     }
 
     if ($role === 'client_admin' && ($sessionClientId <= 0 || $sessionClientId !== $caseClientId)) {
         return ['http' => 403, 'status' => 0, 'message' => 'Forbidden'];
-    }
-    if ($role === 'validator' && !car_user_has_validator_visibility($pdo, $caseId, $sessionUserId)) {
-        return ['http' => 403, 'status' => 0, 'message' => 'Validator not assigned'];
     }
     if ($role === 'verifier' && !car_user_has_verifier_visibility($pdo, $caseId, $sessionUserId)) {
         return ['http' => 403, 'status' => 0, 'message' => 'Verifier visibility missing'];

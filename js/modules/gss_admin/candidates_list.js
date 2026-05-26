@@ -57,6 +57,28 @@
             return parseInt(clientSelect.value || '0', 10) || 0;
         }
 
+        function workflowModeLabel(mode) {
+            var m = String(mode || '').trim().toLowerCase();
+            if (m === 'verifier_first') return 'Verifier First';
+            if (m === 'validator_first') return 'Validator First';
+            return '-';
+        }
+
+        function workflowModePill(mode) {
+            var m = String(mode || '').trim().toLowerCase();
+            var label = workflowModeLabel(m);
+            var bg = '#e2e8f0';
+            var fg = '#334155';
+            if (m === 'verifier_first') {
+                bg = '#dcfce7';
+                fg = '#166534';
+            } else if (m === 'validator_first') {
+                bg = '#fef3c7';
+                fg = '#92400e';
+            }
+            return '<span style="display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:700; background:' + bg + '; color:' + fg + ';">' + escapeHtml(label) + '</span>';
+        }
+
         function loadCss(href) {
             return new Promise(function (resolve, reject) {
                 var existing = document.querySelector('link[href="' + href + '"]');
@@ -201,9 +223,22 @@
                         }
                     },
                     {
-                        data: 'validator_assigned_name',
+                        data: 'workflow_mode',
                         render: function (d) {
+                            return workflowModePill(d);
+                        }
+                    },
+                    {
+                        data: 'validator_assigned_name',
+                        render: function (d, _t, row) {
                             var v = String(d || '').trim();
+                            var workflowMode = String(row && row.workflow_mode ? row.workflow_mode : '').trim().toLowerCase();
+                            if (workflowMode === 'verifier_first') {
+                                if (v !== '') {
+                                    return '<span title="Validator compatibility queue only" style="color:#475569;">Compat: ' + escapeHtml(v) + '</span>';
+                                }
+                                return '<span title="Validator compatibility queue only" style="color:#64748b;">Compat Only</span>';
+                            }
                             return escapeHtml(v !== '' ? v : '-');
                         }
                     },

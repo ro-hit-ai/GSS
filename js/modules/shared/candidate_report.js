@@ -53,6 +53,9 @@
     var EMAIL_REPLIES_INFLIGHT = null;
     var EMAIL_REPLIES_INFLIGHT_KEY = '';
     var EMAIL_REPLIES_LAST_RENDER_KEY = '';
+    var EMAIL_REPLIES_CACHE_READY = false;
+    var EMAIL_REPLIES_AUTO_REFRESH_TIMER = null;
+    var EMAIL_REPLIES_AUTO_REFRESH_MS = 15000;
     var TL_ACTIVE_FILTER = 'all';
     var COMPONENT_TABLE_ROWS = { id: [], education: [], employment: [] };
     var COMPONENT_TABLE_RENDERED = { id: false, education: false, employment: false };
@@ -660,6 +663,27 @@ function closeBsModal(id) {
         return role;
     }
 
+    function getResponsiveReportMode() {
+        var vw = Math.max(320, window.innerWidth || 0);
+        if (vw <= 767) return 'mobile';
+        if (vw <= 1279) return 'tablet';
+        return 'desktop';
+    }
+
+    function isCompactReportMode() {
+        return getResponsiveReportMode() !== 'desktop';
+    }
+
+    function updateReviewActionbarTitle(sectionKey) {
+        var titleEl = document.querySelector('#crReviewActionbar .cr-review-actionbar-title');
+        if (!titleEl) return;
+        var section = normSection(sectionKey || activeComponentSectionKey() || CURRENT_SECTION_KEY || LAST_COMPONENT_SECTION_KEY || '');
+        var label = section ? sectionLabel(section) : 'Section';
+        titleEl.textContent = getResponsiveReportMode() === 'mobile'
+            ? ('Actions - ' + label)
+            : ('Section Actions - ' + label);
+    }
+
     function isLikelyImageUrl(url) {
         var lower = String(url || '').toLowerCase();
         return lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png') || lower.endsWith('.gif') || lower.endsWith('.webp') || lower.endsWith('.bmp') || lower.endsWith('.svg');
@@ -997,6 +1021,13 @@ function closeBsModal(id) {
 
     function setDocViewerRect(modal, left, top, width, height) {
         if (!modal) return;
+        if (isCompactReportMode()) {
+            modal.style.left = '8px';
+            modal.style.top = '8px';
+            modal.style.width = 'calc(100vw - 16px)';
+            modal.style.height = 'calc(100vh - 16px)';
+            return;
+        }
         var r = fixModalBounds(modal, left, top, width, height);
         modal.style.left = r.left + 'px';
         modal.style.top = r.top + 'px';
@@ -1018,6 +1049,7 @@ function closeBsModal(id) {
             overlay.setAttribute('aria-hidden', 'true');
         }
         if (modal) {
+            modal.classList.remove('is-compact');
             modal.classList.remove('is-maximized');
             modal.classList.remove('is-minimized');
             setDocViewerRect(modal, 50, 50, Math.min((window.innerWidth || 1200) * 0.8, 1100), Math.min((window.innerHeight || 900) * 0.8, 700));
@@ -1033,6 +1065,7 @@ function closeBsModal(id) {
     function minimizeDocViewer() {
         var modal = document.getElementById('cvDocViewerModal');
         if (!modal) return;
+        if (isCompactReportMode()) return;
         if (DOC_VIEWER_STATE.isMaximized) toggleDocViewerMaximize();
         modal.classList.toggle('is-minimized');
     }
@@ -1040,6 +1073,14 @@ function closeBsModal(id) {
     function toggleDocViewerMaximize() {
         var modal = document.getElementById('cvDocViewerModal');
         if (!modal) return;
+        if (isCompactReportMode()) {
+            DOC_VIEWER_STATE.isMaximized = true;
+            modal.classList.add('is-compact');
+            modal.classList.add('is-maximized');
+            modal.classList.remove('is-minimized');
+            setDocViewerRect(modal, 0, 0, window.innerWidth || 0, window.innerHeight || 0);
+            return;
+        }
         modal.classList.remove('is-minimized');
         if (!DOC_VIEWER_STATE.isMaximized) {
             var rect = modal.getBoundingClientRect();
@@ -1085,22 +1126,28 @@ function closeBsModal(id) {
             mimeType: String(ctx.mimeType || '')
         };
         DOC_VIEWER_STATE.isOpen = true;
-        DOC_VIEWER_STATE.isMaximized = false;
+        DOC_VIEWER_STATE.isMaximized = isCompactReportMode();
         DOC_VIEWER_STATE.restoreRect = null;
 
         resetDocViewerUpload();
         renderDocViewerContent('cvDocViewerCandidatePane', String(docUrl || ''), DOC_VIEWER_STATE.context.mimeType);
         overlay.classList.add('open');
         overlay.setAttribute('aria-hidden', 'false');
+        modal.classList.toggle('is-compact', isCompactReportMode());
         modal.classList.remove('is-maximized');
         modal.classList.remove('is-minimized');
-        setDocViewerRect(
-            modal,
-            50,
-            50,
-            Math.min((window.innerWidth || 1200) * 0.8, 1100),
-            Math.min((window.innerHeight || 900) * 0.8, 700)
-        );
+        if (isCompactReportMode()) {
+            modal.classList.add('is-maximized');
+            setDocViewerRect(modal, 0, 0, window.innerWidth || 0, window.innerHeight || 0);
+        } else {
+            setDocViewerRect(
+                modal,
+                50,
+                50,
+                Math.min((window.innerWidth || 1200) * 0.8, 1100),
+                Math.min((window.innerHeight || 900) * 0.8, 700)
+            );
+        }
         return true;
     }
 
@@ -1133,6 +1180,7 @@ function closeBsModal(id) {
         header.addEventListener('mousedown', function (e) {
             if (e.button !== 0) return;
             if (e.target && e.target.closest && e.target.closest('.cv-docviewer-actions')) return;
+            if (isCompactReportMode()) return;
             if (DOC_VIEWER_STATE.isMaximized) return;
             dragging = true;
             var rect = modal.getBoundingClientRect();
@@ -1183,6 +1231,7 @@ function closeBsModal(id) {
         var resizeStartRect = null;
 
         function startResize(mode, e) {
+            if (isCompactReportMode()) return;
             if (DOC_VIEWER_STATE.isMaximized) return;
             resizing = true;
             resizeMode = mode;
@@ -1221,6 +1270,13 @@ function closeBsModal(id) {
             if (e && e.key === 'Escape') closeDocViewer();
         });
         window.addEventListener('resize', function () {
+            if (isCompactReportMode()) {
+                modal.classList.add('is-compact');
+                modal.classList.add('is-maximized');
+                modal.classList.remove('is-minimized');
+            } else {
+                modal.classList.remove('is-compact');
+            }
             setDocViewerRect(modal, modal.offsetLeft, modal.offsetTop, modal.offsetWidth, modal.offsetHeight);
         });
 
@@ -1531,6 +1587,43 @@ if (uploadInput) {
             }
         }
 
+        function resolverActionForMode(mode, action, componentKey) {
+            var m = String(mode || '').toLowerCase().trim();
+            var a = String(action || '').toLowerCase().trim();
+            var c = normSection(componentKey || '');
+            if (m === 'verification') {
+                if (a === 'resend_mail') return 'resend_mail';
+                return 'send_mail';
+            }
+            if (!a) return 'insufficient_documents';
+            if (a === 'reject') return 'rejected';
+            return a;
+        }
+
+        async function resolveTemplateContract(mode, action, componentKey, deadlineValue) {
+            var ctx = getContext();
+            var resolvedAction = resolverActionForMode(mode, action, componentKey);
+            var out = await fetchJsonWithTimeout(base + '/api/shared/mail_templates_resolve.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({
+                    role: role,
+                    component: componentKey,
+                    action: resolvedAction,
+                    mode: String(mode || 'workflow').toLowerCase().trim(),
+                    application_id: ctx.application_id,
+                    case_id: ctx.case_id,
+                    deadline: String(deadlineValue || '')
+                })
+            }, 5000);
+            var data = out.data;
+            if (!out.ok || !data || data.status !== 1 || !data.data) {
+                throw new Error((data && data.message) ? data.message : 'Failed to resolve communication template');
+            }
+            return data.data;
+        }
+
         async function loadHistory() {
             var ctx = getContext();
             var url = base + '/api/shared/workflow_communications_history.php?application_id=' + encodeURIComponent(ctx.application_id || '') + '&component=' + encodeURIComponent(ctx.component || '');
@@ -1543,27 +1636,11 @@ if (uploadInput) {
         async function resolveAction(action) {
             activeAction = String(action || '').toLowerCase().trim();
             var ctx = getContext();
-            var out = await fetchJsonWithTimeout(base + '/api/shared/mail_templates_resolve.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'same-origin',
-                body: JSON.stringify({
-                    role: role,
-                    component: ctx.component,
-                    action: activeAction,
-                    application_id: ctx.application_id,
-                    case_id: ctx.case_id,
-                    deadline: deadlineEl ? String(deadlineEl.value || '') : ''
-                })
-            }, 5000);
-            var data = out.data;
-            if (!out.ok || !data || data.status !== 1 || !data.data) {
-                throw new Error((data && data.message) ? data.message : 'Failed to resolve communication template');
-            }
-            activeTemplateId = data.data.template_id || null;
-            activeBody = String(data.data.body || '');
-            activeChecklist = Array.isArray(data.data.checklist) ? data.data.checklist : [];
-            if (subjEl) subjEl.value = String(data.data.subject || '');
+            var resolved = await resolveTemplateContract('workflow', activeAction, ctx.component, deadlineEl ? String(deadlineEl.value || '') : '');
+            activeTemplateId = resolved.template_id || null;
+            activeBody = String(resolved.body || '');
+            activeChecklist = Array.isArray(resolved.checklist) ? resolved.checklist : [];
+            if (subjEl) subjEl.value = String(resolved.subject || '');
             if (tplSel) tplSel.value = activeTemplateId ? String(activeTemplateId) : '';
             renderChecklist(activeChecklist);
             schedulePreview();
@@ -1571,23 +1648,8 @@ if (uploadInput) {
 
         async function loadActionCards() {
             var ctx = getContext();
-            var out = await fetchJsonWithTimeout(base + '/api/shared/mail_templates_resolve.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'same-origin',
-                body: JSON.stringify({
-                    role: role,
-                    component: ctx.component,
-                    action: 'insufficient_documents',
-                    application_id: ctx.application_id,
-                    case_id: ctx.case_id
-                })
-            }, 5000);
-            var data = out.data;
-            if (!out.ok || !data || data.status !== 1 || !data.data) {
-                throw new Error((data && data.message) ? data.message : 'Failed to load actions');
-            }
-            var actions = Array.isArray(data.data.actions) ? data.data.actions : [];
+            var resolved = await resolveTemplateContract('workflow', 'insufficient_documents', ctx.component, '');
+            var actions = Array.isArray(resolved.actions) ? resolved.actions : [];
             actionsEl.innerHTML = actions.map(function (a) {
                 var act = String(a.action || '');
                 return '<button type="button" class="btn btn-sm btn-outline-primary" data-comm-action="' + esc(act) + '" style="text-align:left;">' + esc(String(a.label || act)) + '</button>';
@@ -1602,10 +1664,10 @@ if (uploadInput) {
             }
             // Use the same resolver response for first paint to avoid a second blocking call.
             activeAction = 'insufficient_documents';
-            activeTemplateId = data.data.template_id || null;
-            activeBody = String(data.data.body || '');
-            activeChecklist = Array.isArray(data.data.checklist) ? data.data.checklist : [];
-            if (subjEl) subjEl.value = String(data.data.subject || '');
+            activeTemplateId = resolved.template_id || null;
+            activeBody = String(resolved.body || '');
+            activeChecklist = Array.isArray(resolved.checklist) ? resolved.checklist : [];
+            if (subjEl) subjEl.value = String(resolved.subject || '');
             if (tplSel) tplSel.value = activeTemplateId ? String(activeTemplateId) : '';
             renderChecklist(activeChecklist);
             schedulePreview();
@@ -1838,7 +1900,8 @@ if (uploadInput) {
         var sendBtn = document.getElementById('cvVerificationMailSendBtn');
         if (!toEl || !subjectEl || !bodyEl || !sendBtn) return;
 
-        var state = { component: '', resend: false, mode: 'verification', workflowAction: '', requiresMutation: false };
+        var state = { component: '', resend: false, mode: 'verification', workflowAction: '', requiresMutation: false, templateId: null };
+        var modalOpenNonce = 0;
 
         // Keep modal at top-level to avoid nested stacking contexts under report wrappers.
         try {
@@ -1930,6 +1993,16 @@ if (uploadInput) {
                 setBoxMessage('cvVerificationMailMessage', 'Recipient email is missing for this section. Update section data before sending.', 'warning');
             }
             refreshSendBtnState();
+        }
+
+        function resetUnifiedCommunicationState() {
+            state.templateId = null;
+            if (titleEl) titleEl.textContent = '';
+            if (toEl) toEl.value = '';
+            if (subjectEl) subjectEl.value = '';
+            if (bodyEl) bodyEl.value = '';
+            if (remarksEl) remarksEl.value = '';
+            setBoxMessage('cvVerificationMailMessage', '', '');
         }
 
         async function refreshButtonStates() {
@@ -2079,8 +2152,9 @@ if (uploadInput) {
             }
         }
 
-        function openUnifiedCommunicationModal(config) {
+        async function openUnifiedCommunicationModal(config) {
             var cfg = config && typeof config === 'object' ? config : {};
+            var requestNonce = ++modalOpenNonce;
             var mode = String(cfg.mode || 'verification').toLowerCase().trim();
             var component = normSection(cfg.component || activeComponentSectionKey() || 'basic');
             var actionDefault = (mode === 'workflow') ? 'insufficient_documents' : '';
@@ -2099,6 +2173,7 @@ if (uploadInput) {
             state.workflowAction = (state.mode === 'workflow') ? action : '';
             state.requiresMutation = !!cfg.requiresMutation;
             state.resend = false;
+            resetUnifiedCommunicationState();
             if (titleEl) {
                 if (state.mode === 'workflow') {
                     titleEl.textContent = 'Workflow Communication - ' + sectionLabel(component);
@@ -2108,6 +2183,25 @@ if (uploadInput) {
             }
             if (remarksEl) remarksEl.value = String(cfg.notes || '');
             prefillRecipientAndMessage(component);
+            if (state.mode === 'verification') {
+                try {
+                    var vrAction = state.resend ? 'resend_mail' : 'send_mail';
+                    var vrResolved = await resolveTemplateContract('verification', vrAction, component, '');
+                    if (requestNonce !== modalOpenNonce) return;
+                    if (state.mode !== 'verification' || state.component !== component) return;
+                    if (subjectEl && String(vrResolved.subject || '').trim()) {
+                        subjectEl.value = String(vrResolved.subject || '');
+                    }
+                    if (bodyEl && String(vrResolved.body || '').trim()) {
+                        bodyEl.value = String(vrResolved.body || '');
+                    }
+                    state.templateId = vrResolved.template_id || null;
+                } catch (_vrResolveErr) {
+                    // Keep prefilled defaults when resolver is unavailable.
+                }
+            } else {
+                state.templateId = null;
+            }
             openBsModal(modalId);
         }
 
@@ -2214,15 +2308,38 @@ if (uploadInput) {
         return !!(k && allowSet[k]);
     }
 
+    function getWorkflowModeValue(payload) {
+        var p = payload && typeof payload === 'object' ? payload : REPORT_PAYLOAD;
+        try {
+            return String(
+                (p && (p.workflow_mode || p.workflowMode || (p.case && p.case.workflow_mode) || (p.data && p.data.workflow_mode) || (p.data && p.data.case && p.data.case.workflow_mode))) || ''
+            ).trim().toLowerCase();
+        } catch (_e) {
+            return '';
+        }
+    }
+
+    function workflowModeLabel(mode) {
+        var m = String(mode || '').trim().toLowerCase();
+        if (m === 'verifier_first') return 'Verifier First';
+        if (m === 'validator_first') return 'Validator First';
+        return '-';
+    }
+
     function displayCaseStatus(appStatus, caseStatus) {
         var a = String(appStatus || '').trim();
         var c = String(caseStatus || '').trim();
         var role = getRole();
+        var workflowMode = getWorkflowModeValue();
         var cu = c.toUpperCase();
         if (cu === 'REJECTED' || cu === 'STOP_BGV' || cu === 'APPROVED' || cu === 'VERIFIED' || cu === 'COMPLETED' || cu === 'CLEAR') {
             return c;
         }
         var au = a.toUpperCase();
+        if (workflowMode === 'verifier_first') {
+            if (cu === 'PENDING_VERIFIER' || au === 'PENDING_VERIFIER' || au === 'SUBMITTED') return 'V Pending';
+            if (cu === 'PENDING_QA' || au === 'PENDING_QA') return 'Pending QA';
+        }
         if (role === 'validator' || role === 'db_verifier') {
             if (cu === 'PENDING_VERIFIER') return 'Pending Verifier';
             if (cu === 'PENDING_QA') return 'Pending QA';
@@ -2764,6 +2881,8 @@ if (uploadInput) {
         if (!Array.isArray(items) || items.length === 0) {
             return emailRepliesEmptyHtml(opts);
         }
+        var viewerRole = normalizeNodeWorkflowRole(String((opts && opts.role) ? opts.role : ''));
+        var reviewerView = (viewerRole === 'validator' || viewerRole === 'verifier' || viewerRole === 'qa');
 
         function communicationBadge(item) {
             var subject = String(item && item.subject ? item.subject : '').toLowerCase();
@@ -2887,8 +3006,8 @@ if (uploadInput) {
                 ts = when;
             }
             var badge = direction === 'incoming'
-                ? '<span style="font-size:10px; color:#065f46; background:#ecfdf3; border:1px solid #a7f3d0; border-radius:999px; padding:1px 6px;">Incoming</span>'
-                : '<span style="font-size:10px; color:#1e3a8a; background:#eff6ff; border:1px solid #bfdbfe; border-radius:999px; padding:1px 6px;">Outgoing</span>';
+                ? '<span style="font-size:10px; color:#065f46; background:#ecfdf3; border:1px solid #a7f3d0; border-radius:999px; padding:1px 6px;">' + (reviewerView ? 'Response' : 'Incoming') + '</span>'
+                : '<span style="font-size:10px; color:#1e3a8a; background:#eff6ff; border:1px solid #bfdbfe; border-radius:999px; padding:1px 6px;">' + (reviewerView ? 'Request' : 'Outgoing') + '</span>';
             var commBadge = communicationBadge(it);
 
             var safeMsg = esc(msg).replace(/\n/g, '<br>');
@@ -2905,12 +3024,238 @@ if (uploadInput) {
         }).join('');
     }
 
-    function emailRepliesRequestKey(applicationId, componentKey, shouldSync) {
+    function emailRepliesRequestKey(applicationId, componentKey, shouldSync, viewerRole) {
         return [
             String(applicationId || '').trim(),
             String(componentKey || '').trim(),
-            shouldSync ? 'sync' : 'nosync'
+            shouldSync ? 'sync' : 'nosync',
+            String(viewerRole || '').trim()
         ].join('|');
+    }
+
+    function normalizeNodeWorkflowRole(value) {
+        var role = String(value || '').toLowerCase().trim();
+        if (role === 'team_lead') return 'qa';
+        if (role === 'db_verifier') return 'verifier';
+        return role;
+    }
+
+    function parseNodeRepliesPayload(data) {
+        if (!data || typeof data !== 'object') return null;
+        if (data.source !== 'node' && !Object.prototype.hasOwnProperty.call(data, 'hasThread')) return null;
+        return data;
+    }
+
+    function shouldFallbackToPhpReplies(nodePayload) {
+        if (!nodePayload || typeof nodePayload !== 'object') return true;
+        if (nodePayload.success === false) return true;
+        var meta = nodePayload.meta && typeof nodePayload.meta === 'object' ? nodePayload.meta : {};
+        if (meta.fallbackRecommended === true) return true;
+        return false;
+    }
+
+    function nodePayloadHasMixedOutboundRoles(nodePayload) {
+        var rows = Array.isArray(nodePayload && nodePayload.messages) ? nodePayload.messages : [];
+        var seen = {};
+        var count = 0;
+        for (var i = 0; i < rows.length; i += 1) {
+            var msg = rows[i] || {};
+            var direction = String(msg.direction || '').toLowerCase().trim();
+            if (direction !== 'outbound') continue;
+            var role = normalizeNodeWorkflowRole(msg.sentByRole || '');
+            if (!role || role === 'candidate') continue;
+            if (!Object.prototype.hasOwnProperty.call(seen, role)) {
+                seen[role] = true;
+                count += 1;
+                if (count > 1) return true;
+            }
+        }
+        return false;
+    }
+
+    function nodeRowsHaveInboundCandidate(rows) {
+        if (!Array.isArray(rows)) return false;
+        for (var i = 0; i < rows.length; i += 1) {
+            var r = rows[i] || {};
+            var direction = String(r.direction || '').toLowerCase().trim();
+            var actor = normalizeNodeWorkflowRole(String(r.actor_role || '').trim());
+            if ((direction === 'incoming' || direction === 'inbound') && (actor === 'candidate' || actor === '')) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function nodeMessageComponentKey(msg) {
+        var meta = msg && msg.metadata && typeof msg.metadata === 'object' ? msg.metadata : {};
+        var workflow = meta.workflow && typeof meta.workflow === 'object' ? meta.workflow : {};
+        return normSection(
+            workflow.componentKey
+            || workflow.component_key
+            || meta.componentKey
+            || meta.component_key
+            || ''
+        );
+    }
+
+    function nodePayloadHasAnyComponentTag(nodePayload) {
+        var rows = Array.isArray(nodePayload && nodePayload.messages) ? nodePayload.messages : [];
+        for (var i = 0; i < rows.length; i += 1) {
+            if (nodeMessageComponentKey(rows[i])) return true;
+        }
+        return false;
+    }
+
+    function normalizeNodeMessageDirection(msg, senderType, actorRole) {
+        var raw = String(msg && msg.direction ? msg.direction : '').toLowerCase().trim();
+        if (raw === 'inbound' || raw === 'incoming' || raw === 'received') return 'incoming';
+        if (raw === 'outbound' || raw === 'outgoing' || raw === 'sent') return 'outgoing';
+        if (senderType === 'external') return 'incoming';
+        if (actorRole === 'candidate') return 'incoming';
+        return 'outgoing';
+    }
+
+    function normMsgIdLocal(v) {
+        var s = String(v || '').trim();
+        if (!s) return '';
+        if (s.charAt(0) === '<' && s.charAt(s.length - 1) === '>') {
+            s = s.substring(1, s.length - 1).trim();
+        }
+        return s.toLowerCase();
+    }
+
+    function extractMsgIdsLocal(v) {
+        var raw = String(v || '');
+        if (!raw) return [];
+        var out = [];
+        var seen = {};
+        var re = /<([^>]+)>/g;
+        var m;
+        while ((m = re.exec(raw)) !== null) {
+            var id = normMsgIdLocal(m[1]);
+            if (id && !seen[id]) {
+                seen[id] = true;
+                out.push(id);
+            }
+        }
+        if (out.length > 0) return out;
+        var one = normMsgIdLocal(raw);
+        return one ? [one] : [];
+    }
+
+    function rowTimeMsLocal(r) {
+        var t = Date.parse(String(r && r.created_at ? r.created_at : ''));
+        return Number.isFinite(t) ? t : 0;
+    }
+
+    function adaptNodeReplyMessage(msg) {
+        var sender = msg && msg.sender && typeof msg.sender === 'object' ? msg.sender : {};
+        var rawMeta = msg && msg.metadata && typeof msg.metadata === 'object' ? msg.metadata : {};
+        var rawHeaders = rawMeta.headers && typeof rawMeta.headers === 'object' ? rawMeta.headers : {};
+        var rawWorkflow = rawMeta.workflow && typeof rawMeta.workflow === 'object' ? rawMeta.workflow : {};
+        var senderName = String(sender.name || sender.email || 'Unknown');
+        var senderType = String(sender.type || '').toLowerCase().trim();
+        var actorRole = normalizeNodeWorkflowRole(msg && msg.sentByRole ? msg.sentByRole : '');
+        if (!actorRole && senderType === 'external') actorRole = 'candidate';
+        var direction = normalizeNodeMessageDirection(msg, senderType, actorRole);
+        var msgId = normMsgIdLocal(
+            msg && (
+                msg.messageId
+                || msg.externalMessageId
+                || rawHeaders['message-id']
+                || rawHeaders.messageId
+                || ''
+            )
+        );
+        var inReplyTo = normMsgIdLocal(
+            msg && (
+                msg.inReplyTo
+                || rawHeaders['in-reply-to']
+                || rawHeaders.inReplyTo
+                || ''
+            )
+        );
+        var referencesHeader = String(
+            msg && (
+                msg.references
+                || rawHeaders.references
+                || ''
+            )
+            || ''
+        );
+        return {
+            id: String(msg && msg.id ? msg.id : msg && msg._id ? msg._id : ''),
+            sender: senderName,
+            message: String(msg && (msg.body || msg.bodyHtml || '') || ''),
+            created_at: String(msg && (msg.createdAt || msg.updatedAt || '') || ''),
+            direction: direction,
+            actor_role: actorRole,
+            communication_type: 'node_reply',
+            component_key: nodeMessageComponentKey(msg) || normSection(rawWorkflow.componentKey || rawWorkflow.component_key || ''),
+            message_id: msgId,
+            in_reply_to: inReplyTo,
+            references_header: referencesHeader,
+            raw: msg || null
+        };
+    }
+
+    function pickConversationRowsForRole(rows, roleNow) {
+        if (!Array.isArray(rows) || rows.length === 0) return rows || [];
+        if (!(roleNow === 'validator' || roleNow === 'verifier' || roleNow === 'qa')) return rows;
+
+        var outgoing = rows.filter(function (r) {
+            var dir = String(r && r.direction ? r.direction : '').toLowerCase().trim();
+            var role = normalizeNodeWorkflowRole(String(r && r.actor_role ? r.actor_role : ''));
+            return dir === 'outgoing' && role === roleNow;
+        });
+        if (outgoing.length === 0) return rows;
+
+        outgoing.sort(function (a, b) { return rowTimeMsLocal(b) - rowTimeMsLocal(a); });
+        var anchor = outgoing[0];
+        var anchorIds = {};
+        var anchorMsgId = normMsgIdLocal(anchor && anchor.message_id ? anchor.message_id : '');
+        if (anchorMsgId) anchorIds[anchorMsgId] = true;
+        extractMsgIdsLocal(anchor && anchor.references_header ? anchor.references_header : '').forEach(function (id) {
+            anchorIds[id] = true;
+        });
+
+        var selected = [];
+        selected.push(anchor);
+
+        rows.forEach(function (r) {
+            if (!r || r.id === anchor.id) return;
+            var dir = String(r.direction || '').toLowerCase().trim();
+            if (dir !== 'incoming') return;
+            var inReplyTo = normMsgIdLocal(r.in_reply_to || '');
+            var refs = extractMsgIdsLocal(r.references_header || '');
+            var linked = (inReplyTo && anchorIds[inReplyTo]) || refs.some(function (id) { return !!anchorIds[id]; });
+            if (linked) selected.push(r);
+        });
+
+        selected.sort(function (a, b) { return rowTimeMsLocal(a) - rowTimeMsLocal(b); });
+        return selected;
+    }
+
+    function adaptNodeReplies(nodePayload, componentKey) {
+        var out = [];
+        var rows = Array.isArray(nodePayload && nodePayload.messages) ? nodePayload.messages : [];
+        var wantedComponent = normSection(componentKey || '');
+        var hasTaggedRows = false;
+        for (var i = 0; i < rows.length; i += 1) {
+            var rowComponent = nodeMessageComponentKey(rows[i]);
+            if (rowComponent) {
+                hasTaggedRows = true;
+            }
+        }
+        for (var j = 0; j < rows.length; j += 1) {
+            var item = rows[j];
+            var itemComponent = nodeMessageComponentKey(item);
+            if (wantedComponent && hasTaggedRows && itemComponent && itemComponent !== wantedComponent) {
+                continue;
+            }
+            out.push(adaptNodeReplyMessage(item));
+        }
+        return out;
     }
 
     function setRepliesSyncButtonState(isBusy) {
@@ -2936,6 +3281,10 @@ if (uploadInput) {
         btn.dataset.bound = '1';
         btn.addEventListener('click', function () {
             if (!CURRENT_APP_ID) return;
+            // Manual refresh should always force a new request and avoid stale in-flight reuse.
+            EMAIL_REPLIES_INFLIGHT = null;
+            EMAIL_REPLIES_INFLIGHT_KEY = '';
+            EMAIL_REPLIES_CACHE_READY = false;
             setRepliesSyncButtonState(true);
             loadEmailReplies(CURRENT_APP_ID, {
                 componentKey: currentRepliesScopeComponent(),
@@ -2947,6 +3296,21 @@ if (uploadInput) {
         });
     }
 
+    function bindRepliesAutoRefresh() {
+        if (EMAIL_REPLIES_AUTO_REFRESH_TIMER) return;
+        EMAIL_REPLIES_AUTO_REFRESH_TIMER = setInterval(function () {
+            try {
+                if (document.hidden) return;
+                if (!CURRENT_APP_ID) return;
+                if (EMAIL_REPLIES_INFLIGHT) return;
+                loadEmailReplies(CURRENT_APP_ID, {
+                    componentKey: currentRepliesScopeComponent(),
+                    sync: true
+                }).catch(function () {});
+            } catch (_e) {}
+        }, Math.max(5000, parseInt(String(EMAIL_REPLIES_AUTO_REFRESH_MS || 15000), 10) || 15000));
+    }
+
     async function loadEmailReplies(applicationId, opts) {
         opts = opts || {};
         var hostModal = document.getElementById('cvEmailReplies');
@@ -2956,7 +3320,7 @@ if (uploadInput) {
         var componentKey = normSection(opts.componentKey || currentRepliesScopeComponent() || '');
         var roleNow = getReplyViewerRole();
         var shouldSync = !!opts.sync;
-        var requestKey = emailRepliesRequestKey(applicationId, componentKey, shouldSync);
+        var requestKey = emailRepliesRequestKey(applicationId, componentKey, shouldSync, roleNow);
 
         function renderTarget(el, html) {
             if (el) el.innerHTML = html;
@@ -2968,18 +3332,87 @@ if (uploadInput) {
             return null;
         }
 
+        async function fetchNodeReplies(baseUrl, signal) {
+            var nodeUrl = baseUrl + '/api/shared/node_replies_proxy.php?application_id=' + encodeURIComponent(applicationId);
+            if (componentKey) {
+                nodeUrl += '&component_key=' + encodeURIComponent(componentKey);
+            }
+            if (shouldSync) {
+                nodeUrl += (nodeUrl.indexOf('?') >= 0 ? '&' : '?') + '_ts=' + String(Date.now());
+            }
+            var response = await fetch(nodeUrl, { credentials: 'same-origin', signal: signal || undefined });
+            var nodeData = await response.json().catch(function () { return null; });
+            if (!response.ok) {
+                return {
+                    ok: false,
+                    payload: parseNodeRepliesPayload(nodeData),
+                    rows: [],
+                    useFallback: true
+                };
+            }
+            var payload = parseNodeRepliesPayload(nodeData);
+            if (!payload) {
+                return {
+                    ok: false,
+                    payload: null,
+                    rows: [],
+                    useFallback: true
+                };
+            }
+            var useFallback = shouldFallbackToPhpReplies(payload);
+            var roleNow = getReplyViewerRole();
+            var adaptedRows = adaptNodeReplies(payload, componentKey);
+            adaptedRows = pickConversationRowsForRole(adaptedRows, roleNow);
+            var reviewerRole = (roleNow === 'validator' || roleNow === 'verifier' || roleNow === 'qa');
+            if (!useFallback && reviewerRole && componentKey) {
+                // If Node can't prove component tagging, prefer PHP scoped replies
+                // instead of leaking one component's conversation into all components.
+                var hasAnyTag = nodePayloadHasAnyComponentTag(payload);
+                if (!hasAnyTag) {
+                    useFallback = true;
+                }
+            }
+            if (!useFallback && componentKey && (roleNow === 'validator' || roleNow === 'verifier' || roleNow === 'qa')) {
+                if (nodePayloadHasMixedOutboundRoles(payload)) {
+                    useFallback = true;
+                }
+            }
+            return {
+                ok: payload.success !== false,
+                payload: payload,
+                rows: adaptedRows,
+                useFallback: useFallback
+            };
+        }
+
+        async function fetchPhpReplies(baseUrl, signal) {
+            var phpSync = shouldSync;
+            var caseUrl = baseUrl + '/api/get_replies.php?application_id=' + encodeURIComponent(applicationId) + '&scope=case&sync=' + (phpSync ? '1' : '0');
+            if (componentKey) {
+                caseUrl = baseUrl + '/api/get_replies.php?application_id=' + encodeURIComponent(applicationId)
+                    + '&scope=component&component_key=' + encodeURIComponent(componentKey) + '&sync=' + (phpSync ? '1' : '0');
+            }
+            if (shouldSync) {
+                caseUrl += '&_ts=' + String(Date.now());
+            }
+            var response = await fetch(caseUrl, { credentials: 'same-origin', signal: signal || undefined });
+            var caseData = await response.json().catch(function () { return null; });
+            return parseRows(caseData);
+        }
+
         if (!applicationId) {
             EMAIL_REPLIES_CACHE = [];
             EMAIL_REPLIES_SIDEBAR_CACHE = [];
             EMAIL_REPLIES_LAST_SYNC_AT = 0;
             EMAIL_REPLIES_LAST_SYNC_APP_ID = '';
+            EMAIL_REPLIES_CACHE_READY = false;
             renderTarget(hostModal, '<div style="color:#6b7280; font-size:13px;">application_id not found.</div>');
             renderTarget(hostSidebar, '<div style="color:#6b7280; font-size:13px;">application_id not found.</div>');
             if (countEl) countEl.textContent = '0';
             return;
         }
 
-        if (!shouldSync && EMAIL_REPLIES_LAST_RENDER_KEY === requestKey && (EMAIL_REPLIES_CACHE.length || EMAIL_REPLIES_SIDEBAR_CACHE.length)) {
+        if (!shouldSync && EMAIL_REPLIES_CACHE_READY && EMAIL_REPLIES_LAST_RENDER_KEY === requestKey) {
             renderTarget(hostModal, emailRepliesHtml(EMAIL_REPLIES_CACHE, { role: roleNow, componentKey: componentKey }));
             renderTarget(hostSidebar, emailRepliesHtml(EMAIL_REPLIES_SIDEBAR_CACHE.slice(0, 8), { role: roleNow, componentKey: componentKey }));
             if (countEl) countEl.textContent = String(EMAIL_REPLIES_SIDEBAR_CACHE.length);
@@ -2994,14 +3427,6 @@ if (uploadInput) {
         renderTarget(hostSidebar, '<div style="color:#6b7280; font-size:13px;">Loading email replies...</div>');
         setRepliesSyncButtonState(true);
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-        var caseUrl = base + '/api/get_replies.php?application_id=' + encodeURIComponent(applicationId) + '&scope=case&sync=' + (shouldSync ? '1' : '0');
-        var sidebarUrl = caseUrl;
-        if (componentKey) {
-            caseUrl = base + '/api/get_replies.php?application_id=' + encodeURIComponent(applicationId)
-                + '&scope=component&component_key=' + encodeURIComponent(componentKey) + '&sync=' + (shouldSync ? '1' : '0');
-            sidebarUrl = base + '/api/get_replies.php?application_id=' + encodeURIComponent(applicationId)
-                + '&scope=component&component_key=' + encodeURIComponent(componentKey) + '&sync=0';
-        }
 
         EMAIL_REPLIES_INFLIGHT_KEY = requestKey;
         EMAIL_REPLIES_INFLIGHT = (async function () {
@@ -3014,35 +3439,38 @@ if (uploadInput) {
                         try { ctrl.abort(); } catch (_e0) {}
                     }, replyTimeoutMs);
                 }
-                var responses = await Promise.all([
-                    fetch(caseUrl, { credentials: 'same-origin', signal: ctrl ? ctrl.signal : undefined }),
-                    fetch(sidebarUrl, { credentials: 'same-origin', signal: ctrl ? ctrl.signal : undefined })
-                ]);
-                if (tm) clearTimeout(tm);
-                var caseData = await responses[0].json().catch(function () { return null; });
-                var sidebarData = await responses[1].json().catch(function () { return null; });
-                var caseRows = parseRows(caseData);
-                var sidebarRows = parseRows(sidebarData);
-                if (!caseRows || !sidebarRows) {
-                    renderTarget(hostModal, '<div style="color:#b91c1c; font-size:13px;">Failed to load email replies.</div>');
-                    renderTarget(hostSidebar, '<div style="color:#b91c1c; font-size:13px;">Failed to load email replies.</div>');
-                    if (countEl) countEl.textContent = '0';
-                    return;
+                var nodeAttempt = await fetchNodeReplies(base, ctrl ? ctrl.signal : undefined);
+                var finalRows = nodeAttempt.rows;
+                var usedFallback = false;
+                var reviewerRole = (roleNow === 'validator' || roleNow === 'verifier' || roleNow === 'qa');
+                if (!nodeAttempt.useFallback && reviewerRole && componentKey && (!Array.isArray(finalRows) || finalRows.length === 0)) {
+                    nodeAttempt.useFallback = true;
                 }
 
-                EMAIL_REPLIES_CACHE = caseRows;
-                EMAIL_REPLIES_SIDEBAR_CACHE = sidebarRows;
+                if (nodeAttempt.useFallback) {
+                    usedFallback = true;
+                    finalRows = await fetchPhpReplies(base, ctrl ? ctrl.signal : undefined);
+                    if (!finalRows) {
+                        renderTarget(hostModal, '<div style="color:#b91c1c; font-size:13px;">Failed to load email replies.</div>');
+                        renderTarget(hostSidebar, '<div style="color:#b91c1c; font-size:13px;">Failed to load email replies.</div>');
+                        if (countEl) countEl.textContent = '0';
+                        return;
+                    }
+                }
+                if (tm) clearTimeout(tm);
+
+                EMAIL_REPLIES_CACHE = finalRows;
+                EMAIL_REPLIES_SIDEBAR_CACHE = finalRows;
                 EMAIL_REPLIES_LAST_RENDER_KEY = requestKey;
+                EMAIL_REPLIES_CACHE_READY = true;
                 if (shouldSync) {
                     EMAIL_REPLIES_LAST_SYNC_AT = Date.now();
                     EMAIL_REPLIES_LAST_SYNC_APP_ID = String(applicationId || '');
                 }
-                var hasOtherThread = Array.isArray(caseRows) && caseRows.length > 0 && (!Array.isArray(sidebarRows) || sidebarRows.length === 0);
                 renderTarget(hostModal, emailRepliesHtml(EMAIL_REPLIES_CACHE, { role: roleNow, componentKey: componentKey }));
                 renderTarget(hostSidebar, emailRepliesHtml(EMAIL_REPLIES_SIDEBAR_CACHE.slice(0, 8), {
                     role: roleNow,
-                    componentKey: componentKey,
-                    hasOtherThread: hasOtherThread
+                    componentKey: componentKey
                 }));
                 if (countEl) countEl.textContent = String(EMAIL_REPLIES_SIDEBAR_CACHE.length);
             } catch (_e) {
@@ -4643,10 +5071,11 @@ if (uploadInput) {
         // Fallback only when workflow stage label is not available for reports.
         if (!getWorkflowStageLabel(d, 'reports')) {
             if (reportsDone) {
-                var reportsLabel = role === 'validator'
+                var workflowMode = String((d && (d.workflow_mode || d.workflowMode || (d.case && d.case.workflow_mode))) || '').toLowerCase().trim();
+                var reportsLabel = (role === 'validator' && workflowMode !== 'verifier_first')
                     ? ((window.WF_UI && typeof window.WF_UI.labelByRole === 'function') ? window.WF_UI.labelByRole('pending', 'validator') : 'Pending')
                     : ((window.WF_UI && typeof window.WF_UI.labelByRole === 'function') ? window.WF_UI.labelByRole('completed', role || 'verifier') : 'Completed');
-                setBadge('cvNavBadgeReports', role === 'validator' ? 'wip' : 'done', reportsLabel);
+                setBadge('cvNavBadgeReports', (role === 'validator' && workflowMode !== 'verifier_first') ? 'wip' : 'done', reportsLabel);
             } else {
                 setBadge('cvNavBadgeReports', 'pending', 'Pending');
             }
@@ -5049,6 +5478,26 @@ if (uploadInput) {
             }
         }
 
+        host.setAttribute('data-record-section', sectionKey || '');
+        host.classList.add('cr-record-host');
+
+        function buildRecordSummary(row) {
+            var summaryFields = [];
+            (Array.isArray(columns) ? columns : []).forEach(function (c) {
+                var key = c && c.key ? String(c.key) : '';
+                var label = c && c.label ? String(c.label) : key;
+                if (!key || summaryFields.length >= 2) return;
+                var raw = row ? row[key] : '';
+                var text = String(raw == null ? '' : raw).trim();
+                if (!text || text === '-' || fileUrlForField(key, raw)) return;
+                summaryFields.push({
+                    label: label,
+                    value: text
+                });
+            });
+            return summaryFields;
+        }
+
         var tabsHtml = rows.map(function (_r, idx) {
             var itemKey = deriveRecordItemKey(sectionKey, _r || {}, idx);
             return '<button type="button" class="cr-record-tab' + (idx === 0 ? ' active' : '') + '" data-record-tab="' + esc(String(idx)) + '" data-record-item-key="' + esc(itemKey) + '">' +
@@ -5069,10 +5518,16 @@ if (uploadInput) {
                     '<div class="cr-kv2-v">' + valHtml + '</div>' +
                 '</div>';
             }).join('');
+            var summary = buildRecordSummary(r).map(function (item) {
+                return '<span class="cr-record-chip"><b>' + esc(item.label) + ':</b> ' + esc(item.value) + '</span>';
+            }).join('');
 
             return '<div class="cr-record-panel' + (idx === 0 ? ' active' : '') + '" data-record-panel="' + esc(String(idx)) + '">' +
                 '<div class="cr-kv2-wrap">' +
-                    '<div style="font-size:12px; font-weight:950; color:#0f172a; margin-bottom:4px;">' + esc((tabPrefix || 'Item') + ' ' + String(idx + 1)) + '</div>' +
+                    '<div class="cr-record-panel-head">' +
+                        '<div class="cr-record-panel-title">' + esc((tabPrefix || 'Item') + ' ' + String(idx + 1)) + '</div>' +
+                        (summary ? ('<div class="cr-record-panel-meta">' + summary + '</div>') : '') +
+                    '</div>' +
                     '<div class="cr-kv2-grid">' + body + '</div>' +
                 '</div>' +
             '</div>';
@@ -5937,6 +6392,7 @@ function askActionConfirm(label) {
                     var active = currentSectionKey();
                     console.debug('[CR actions] section-changed:', active, 'actionable=', isActionableComponent(active));
                 } catch (_e0) {}
+                updateReviewActionbarTitle(currentSectionKey());
                 syncSectionActionVisibility();
                 applyComponentActionLock();
                 try {
@@ -6383,6 +6839,7 @@ function askActionConfirm(label) {
 
         // Initial lock based on current component + stage status
         bindSectionChangeLock();
+        updateReviewActionbarTitle(currentSectionKey());
         syncSectionActionVisibility();
         applyComponentActionLock();
     }
@@ -7132,6 +7589,7 @@ function askActionConfirm(label) {
             summary.push(kvBox('Mobile', (basic.mobile || cs.candidate_mobile || '') + ''));
             summary.push(kvBox('Case ID', coverCase));
             summary.push(kvBox('Application ID', coverApp));
+            summary.push(kvBox('Flow', workflowModeLabel(getWorkflowModeValue(d))));
             summary.push(kvBox('Status', (displayCaseStatus(app.status, cs.case_status) || '') + ''));
             setHtml('cvPdfSummaryGrid', summary.join(''));
 
@@ -7144,6 +7602,7 @@ function askActionConfirm(label) {
         setText('cvHeaderCandidate', (cs.candidate_first_name || '') + ' ' + (cs.candidate_last_name || ''));
         setText('cvHeaderAppId', applicationId);
         setText('cvHeaderStatus', (displayCaseStatus(app.status, cs.case_status) || ''));
+        setText('cvHeaderWorkflowMode', workflowModeLabel(getWorkflowModeValue(d)));
         setCandidateAvatar(basic, cs);
         var tatDays = cs && typeof cs.internal_tat !== 'undefined' ? (parseInt(cs.internal_tat || '20', 10) || 20) : 20;
         var rules = cs && cs.weekend_rules ? cs.weekend_rules : 'exclude';
@@ -7400,6 +7859,10 @@ function askActionConfirm(label) {
         initDocViewModal();
         initClientAdminEscalation();
         bindRepliesSyncButton();
+        bindRepliesAutoRefresh();
+        window.addEventListener('resize', function () {
+            updateReviewActionbarTitle(currentSectionKey());
+        });
         if (document.querySelector('.cr-report-root.cr-validator-workspace') && String(qs('print') || '') !== '1') {
             document.body.style.overflow = 'hidden';
         }

@@ -49,7 +49,6 @@ try {
         'gss_admin' => true,
         'verifier' => true,
         'db_verifier' => true,
-        'validator' => true,
         'qa' => true,
         'team_lead' => true,
     ];

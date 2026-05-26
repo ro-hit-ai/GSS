@@ -3,7 +3,6 @@
         var viewSelect = document.getElementById('qaCasesViewSelect');
         var stateFilterEl = document.getElementById('qaCasesStateFilter');
         var clientSelect = document.getElementById('qaCasesClientSelect');
-        var validatorSelect = document.getElementById('qaCasesValidatorSelect');
         var verifierSelect = document.getElementById('qaCasesVerifierSelect');
         var verifierGroupSelect = document.getElementById('qaCasesVerifierGroupSelect');
         var searchEl = document.getElementById('qaCasesListSearch');
@@ -35,11 +34,6 @@
         function getSelectedClientId() {
             if (!clientSelect) return 0;
             return parseInt(clientSelect.value || '0', 10) || 0;
-        }
-
-        function getSelectedValidatorId() {
-            if (!validatorSelect) return 0;
-            return parseInt(validatorSelect.value || '0', 10) || 0;
         }
 
         function getSelectedVerifierId() {
@@ -173,12 +167,10 @@
                     var search = searchEl ? (searchEl.value || '').trim() : '';
                     var clientId = getSelectedClientId();
                     var view = getSelectedView();
-                    var validatorId = getSelectedValidatorId();
                     var verifierId = getSelectedVerifierId();
                     var verifierGroup = getSelectedVerifierGroup();
                     var url = base + '/api/qa/cases_list.php?view=' + encodeURIComponent(view)
                         + '&client_id=' + encodeURIComponent(clientId || 0)
-                        + '&validator_user_id=' + encodeURIComponent(validatorId || 0)
                         + '&verifier_user_id=' + encodeURIComponent(verifierId || 0)
                         + '&verifier_group=' + encodeURIComponent(verifierGroup || '')
                         + '&search=' + encodeURIComponent(search || '');
@@ -237,13 +229,6 @@
                             else if (u === 'COMPLETED' || u === 'QA COMPLETED') { bg = '#dbeafe'; fg = '#1e40af'; }
                             else if (u === 'QA PENDING') { bg = '#fef9c3'; fg = '#854d0e'; }
                             return '<span style="display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; background:' + bg + '; color:' + fg + ';">' + escapeHtml(t || '-') + '</span>';
-                        }
-                    },
-                    {
-                        data: 'validator_assigned_name',
-                        render: function (d) {
-                            var v = String(d || '').trim();
-                            return escapeHtml(v !== '' ? v : '-');
                         }
                     },
                     {
@@ -318,21 +303,7 @@
             var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
             var clientId = getSelectedClientId();
 
-            var p1 = Promise.resolve();
             var p2 = Promise.resolve();
-
-            if (validatorSelect) {
-                p1 = fetch(base + '/api/qa/staff_dropdown.php?role=validator&client_id=' + encodeURIComponent(clientId || 0), { credentials: 'same-origin' })
-                    .then(function (res) { return res.json(); })
-                    .then(function (data) {
-                        var rows = (data && data.status === 1 && Array.isArray(data.data)) ? data.data : [];
-                        setStaffOptions(validatorSelect, rows, 'All');
-                    })
-                    .catch(function () {
-                        setStaffOptions(validatorSelect, [], 'All');
-                    });
-            }
-
             if (verifierSelect) {
                 p2 = fetch(base + '/api/qa/staff_dropdown.php?role=verifier&client_id=' + encodeURIComponent(clientId || 0), { credentials: 'same-origin' })
                     .then(function (res) { return res.json(); })
@@ -345,7 +316,7 @@
                     });
             }
 
-            return Promise.all([p1, p2]);
+            return Promise.all([p2]);
         }
 
         if (clientSelect) {
@@ -361,10 +332,6 @@
         }
         if (stateFilterEl) {
             stateFilterEl.addEventListener('change', reloadTable);
-        }
-
-        if (validatorSelect) {
-            validatorSelect.addEventListener('change', reloadTable);
         }
 
         if (verifierSelect) {

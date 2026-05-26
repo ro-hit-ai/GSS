@@ -4,7 +4,7 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 
-auth_require_any_access(['client_admin', 'gss_admin']);
+auth_require_any_access(['client_admin', 'gss_admin', 'company_recruiter']);
 auth_session_start();
 
 function get_int_qs(string $key, int $default = 0): int {
@@ -49,7 +49,7 @@ try {
     $access = strtolower(auth_module_access());
 
     $clientId = 0;
-    if (strpos($access, 'client_admin') !== false) {
+    if (strpos($access, 'client_admin') !== false || strpos($access, 'company_recruiter') !== false) {
         $clientId = !empty($_SESSION['auth_client_id']) ? (int)$_SESSION['auth_client_id'] : 0;
     } else {
         $clientId = get_int_qs('client_id', 0);

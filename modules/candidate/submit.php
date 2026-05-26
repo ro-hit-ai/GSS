@@ -29,8 +29,13 @@ require_once __DIR__ . '/../../includes/mail.php';
 require_once __DIR__ . '/../../api/shared/case_component_binding.php';
 require_once __DIR__ . '/../../api/shared/candidate_account_notify.php';
 require_once __DIR__ . '/../../api/shared/application_status_guard.php';
+require_once __DIR__ . '/../../api/shared/workflow_mode.php';
 
 try {
+    $caseId = 0;
+    $clientId = 0;
+    $workflowCaseStatus = 'PENDING_VALIDATOR';
+    $verifierFirst = false;
 
     if (empty($_SESSION['application_id'])) {
         throw new Exception("Session expired. Please restart your application.");
@@ -72,17 +77,29 @@ try {
     $upsert->execute([$application_id, $candidateName]);
 
     try {
-        $caseStmt = $pdo->prepare('SELECT case_id FROM Vati_Payfiller_Cases WHERE application_id = ? LIMIT 1');
+        $caseStmt = $pdo->prepare('SELECT case_id, client_id FROM Vati_Payfiller_Cases WHERE application_id = ? LIMIT 1');
         $caseStmt->execute([$application_id]);
-        $caseId = (int)($caseStmt->fetchColumn() ?: 0);
+        $caseRow = $caseStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        $caseId = (int)($caseRow['case_id'] ?? 0);
+        $clientId = (int)($caseRow['client_id'] ?? 0);
         if ($caseId > 0) {
+            $verifierFirst = wf_mode_is_verifier_first($pdo, $caseId, $application_id);
+            $workflowCaseStatus = $verifierFirst ? 'PENDING_VERIFIER' : 'PENDING_VALIDATOR';
             case_component_binding_sync_case_components($pdo, $caseId, $application_id);
+            try {
+                $ensure = $pdo->prepare('CALL SP_Vati_Payfiller_VAL_EnsureQueue(?)');
+                $ensure->execute([$clientId > 0 ? $clientId : null]);
+                while ($ensure->nextRowset()) {
+                }
+            } catch (Throwable $e) {
+                // ignore
+            }
             $pdo->prepare(
                 "UPDATE Vati_Payfiller_Cases
-                 SET case_status = 'PENDING_VALIDATOR'
+                 SET case_status = ?
                  WHERE case_id = ?
                    AND UPPER(TRIM(COALESCE(case_status,''))) NOT IN ('REJECTED','STOP_BGV','APPROVED','COMPLETED','CLEAR')"
-            )->execute([$caseId]);
+            )->execute([$workflowCaseStatus, $caseId]);
         }
         $submittedStatus = wf_assert_valid_application_status('submitted', 'modules.candidate.submit');
         $pdo->prepare(
@@ -127,6 +144,10 @@ try {
             )->execute([$application_id]);
         } catch (Throwable $e) {
             // ignore
+        }
+
+        if ($verifierFirst && $caseId > 0) {
+            wf_mode_shadow_validator_and_seed_verifier($pdo, $caseId, $application_id, $clientId);
         }
     } catch (Throwable $e) {
         // ignore

@@ -10,11 +10,10 @@ function wf_sem_norm(string $v): string
 function wf_verifier_group_map(): array
 {
     return [
-        // reports is a validator-internal operational component and is not part of
-        // verifier workload participation.
         'BASIC' => ['basic', 'id', 'contact'],
         'EDUCATION' => ['education', 'employment', 'reference'],
         'ADDITIONAL' => ['ecourt', 'socialmedia'],
+        'REPORTS' => ['reports'],
     ];
 }
 

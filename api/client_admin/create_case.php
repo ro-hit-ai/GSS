@@ -8,6 +8,7 @@ require_once __DIR__ . '/../../includes/mail.php';
 require_once __DIR__ . '/../../includes/integration.php';
 require_once __DIR__ . '/../shared/candidate_account_notify.php';
 require_once __DIR__ . '/../shared/case_component_binding.php';
+require_once __DIR__ . '/../shared/workflow_mode.php';
 
 auth_require_any_access(['client_admin', 'gss_admin']);
 
@@ -327,6 +328,7 @@ try {
         // Keep reused cases deterministic for role+level+stage snapshot resolution.
         save_case_selected_level($pdo, $caseId, $selectedLevel);
         save_case_selected_stage($pdo, $caseId, $selectedStage);
+        wf_mode_set_case_mode($pdo, $caseId, 'verifier_first');
         case_component_binding_sync_case_components($pdo, $caseId, $applicationId);
         case_component_binding_seed_stage_workflow_rows($pdo, $caseId, $applicationId, ['candidate', 'validator']);
 
@@ -441,6 +443,7 @@ try {
 
     save_case_selected_level($pdo, $caseId, $selectedLevel);
     save_case_selected_stage($pdo, $caseId, $selectedStage);
+    wf_mode_set_case_mode($pdo, $caseId, 'verifier_first');
 
     // Ensure workflow snapshot rows exist for every required case component.
     case_component_binding_sync_case_components($pdo, $caseId, $applicationId);

@@ -44,6 +44,7 @@ try {
                 c.candidate_email,
                 c.candidate_mobile,
                 c.case_status,
+                COALESCE(NULLIF(TRIM(c.workflow_mode), ''), 'validator_first') AS workflow_mode,
                 c.invite_token,
                 c.invite_sent_at,
                 c.created_at,
@@ -61,6 +62,7 @@ try {
                     WHEN (vq.completed_at IS NOT NULL AND COALESCE(vr.vr_pending, 0) = 0 AND COALESCE(vr.vr_total, 0) > 0) THEN 'QA Pending'
                     WHEN (COALESCE(vr.vr_total, 0) > 0 AND COALESCE(vr.vr_pending, 0) > 0 AND COALESCE(vr.vr_in_progress, 0) > 0) THEN 'Verifier In Progress'
                     WHEN (COALESCE(vr.vr_total, 0) > 0 AND COALESCE(vr.vr_pending, 0) > 0) THEN 'Verifier Pending'
+                    WHEN (COALESCE(NULLIF(TRIM(c.workflow_mode), ''), 'validator_first') = 'verifier_first' AND LOWER(TRIM(COALESCE(app.status, ''))) = 'submitted') THEN 'Verifier Pending'
                     WHEN (vq.assigned_user_id IS NOT NULL AND vq.completed_at IS NULL) THEN 'Validation In Progress'
                     WHEN (vq.case_id IS NOT NULL AND vq.completed_at IS NULL) THEN 'Validation Pending'
                     WHEN LOWER(TRIM(COALESCE(app.status, ''))) = 'submitted' THEN 'Validation Pending'

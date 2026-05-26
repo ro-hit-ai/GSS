@@ -4,6 +4,7 @@ require_once __DIR__ . '/../../config/env.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/integration.php';
 require_once __DIR__ . '/workflow_snapshot_service.php';
+require_once __DIR__ . '/workflow_mode.php';
 
 integration_bootstrap_json_api();
 auth_session_start();
@@ -132,6 +133,7 @@ try {
                 c.case_id,
                 c.application_id,
                 c.client_id,
+                COALESCE(NULLIF(TRIM(c.workflow_mode), ''), 'validator_first') AS workflow_mode,
                 c.candidate_first_name,
                 c.candidate_last_name,
                 c.candidate_email,
@@ -162,6 +164,7 @@ try {
                     WHEN (vq.completed_at IS NOT NULL AND COALESCE(vw.verifier_progress, 0) > 0 AND COALESCE(vr.vr_pending, 0) > 0) THEN 'QA Available'
                     WHEN (COALESCE(vr.vr_total, 0) > 0 AND COALESCE(vr.vr_pending, 0) > 0 AND COALESCE(vr.vr_in_progress, 0) > 0) THEN 'Verifier In Progress'
                     WHEN (COALESCE(vr.vr_total, 0) > 0 AND COALESCE(vr.vr_pending, 0) > 0) THEN 'Verifier Pending'
+                    WHEN (COALESCE(NULLIF(TRIM(c.workflow_mode), ''), 'validator_first') = 'verifier_first' AND LOWER(TRIM(COALESCE(app.status, ''))) = 'submitted') THEN 'Verifier Pending'
                     WHEN (vq.assigned_user_id IS NOT NULL AND vq.completed_at IS NULL) THEN 'Validation In Progress'
                     WHEN (vq.case_id IS NOT NULL AND vq.completed_at IS NULL) THEN 'Validation Pending'
                     WHEN LOWER(TRIM(COALESCE(app.status, ''))) = 'submitted' THEN 'Validation Pending'
@@ -219,6 +222,7 @@ try {
     }
 
     $caseId = (int)($case['case_id'] ?? 0);
+    $case['workflow_mode'] = wf_mode_get_case_mode($pdo, $caseId, $applicationId);
     $candidateName = trim((string)($case['candidate_first_name'] ?? '') . ' ' . (string)($case['candidate_last_name'] ?? ''));
 
     $validatorUserId = isset($case['validator_user_id']) ? (int)$case['validator_user_id'] : 0;

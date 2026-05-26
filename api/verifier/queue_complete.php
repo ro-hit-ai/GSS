@@ -5,6 +5,7 @@ require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../shared/application_status_guard.php';
 require_once __DIR__ . '/queue_visibility.php';
+require_once __DIR__ . '/../shared/verifier_case_queue.php';
 
 auth_require_login('verifier');
 
@@ -28,7 +29,31 @@ try {
         exit;
     }
 
-    if ($caseId <= 0 || !wf_is_valid_verifier_group($groupKey)) {
+    $pdo = getDB();
+    if ($caseId <= 0) {
+        http_response_code(400);
+        echo json_encode(['status' => 0, 'message' => 'case_id is required']);
+        exit;
+    }
+
+    if (verifier_case_queue_is_case_model($pdo, $caseId, '')) {
+        if (!verifier_case_queue_can_open($pdo, $caseId, $userId)) {
+            http_response_code(403);
+            echo json_encode(['status' => 0, 'message' => 'Access denied']);
+            exit;
+        }
+        $queue = verifier_case_queue_sync($pdo, $caseId, $userId);
+        if (!$queue || strtolower(trim((string)($queue['status'] ?? ''))) !== 'completed') {
+            http_response_code(409);
+            echo json_encode(['status' => 0, 'message' => 'Verifier work is not completed yet']);
+            exit;
+        }
+
+        echo json_encode(['status' => 1, 'message' => 'completed', 'data' => ['case_id' => $caseId]]);
+        exit;
+    }
+
+    if (!wf_is_valid_verifier_group($groupKey)) {
         http_response_code(400);
         echo json_encode(['status' => 0, 'message' => 'case_id and valid group are required']);
         exit;
@@ -41,7 +66,6 @@ try {
         exit;
     }
 
-    $pdo = getDB();
     $stmt = $pdo->prepare('CALL SP_Vati_Payfiller_VR_CompleteCase(?, ?, ?)');
     $stmt->execute([$userId, $caseId, $groupKey]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];

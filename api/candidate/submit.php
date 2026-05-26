@@ -32,6 +32,7 @@ require_once __DIR__ . '/../shared/candidate_correction_service.php';
 require_once __DIR__ . '/../shared/workflow/WorkflowTransitionService.php';
 require_once __DIR__ . '/../shared/workflow_stage_config.php';
 require_once __DIR__ . '/../shared/application_status_guard.php';
+require_once __DIR__ . '/../shared/workflow_mode.php';
 
 function submission_mail_debug_log(string $message): void
 {
@@ -104,6 +105,10 @@ function is_authorization_completed(PDO $pdo, string $applicationId): bool
 }
 
 try {
+    $caseId = 0;
+    $clientId = 0;
+    $verifierFirst = false;
+    $workflowCaseStatus = 'PENDING_VALIDATOR';
 
     if (empty($_SESSION['application_id'])) {
         throw new Exception("Session expired. Please restart your application.");
@@ -149,10 +154,10 @@ try {
         $components = array_values(array_keys($components));
         $pdo->beginTransaction();
         $changed = ccs_resume_components_after_candidate_submit($pdo, (int)$corrRow['case_id'], $application_id, $components);
-        $requestedRole = ccs_role_norm((string)($corrRow['requested_role'] ?? 'validator'));
+        $requestedRole = ccs_role_norm((string)($corrRow['requested_role'] ?? wf_mode_default_requested_role($pdo, (int)$corrRow['case_id'], $application_id)));
         $resumeStage = ccs_component_stage_for_role($requestedRole);
         if ($resumeStage === '') {
-            $resumeStage = wf_stage_keys()[0] ?? 'validator';
+            $resumeStage = wf_mode_first_human_stage($pdo, (int)$corrRow['case_id'], $application_id);
         }
         $setAppPending = $pdo->prepare(
             "UPDATE Vati_Payfiller_Candidate_Applications
@@ -229,10 +234,12 @@ try {
         $c = $caseStmt->fetch(PDO::FETCH_ASSOC) ?: null;
         if ($c && !empty($c['case_id'])) {
             $caseId = (int)$c['case_id'];
-            $clientId = isset($c['client_id']) ? (int)$c['client_id'] : null;
+            $clientId = isset($c['client_id']) ? (int)$c['client_id'] : 0;
+            $verifierFirst = wf_mode_is_verifier_first($pdo, $caseId, $application_id);
+            $workflowCaseStatus = $verifierFirst ? 'PENDING_VERIFIER' : 'PENDING_VALIDATOR';
             case_component_binding_sync_case_components($pdo, $caseId, $application_id);
             $ensure = $pdo->prepare('CALL SP_Vati_Payfiller_VAL_EnsureQueue(?)');
-            $ensure->execute([$clientId]);
+            $ensure->execute([$clientId > 0 ? $clientId : null]);
             while ($ensure->nextRowset()) {
             }
             $qchk = $pdo->prepare('SELECT 1 FROM Vati_Payfiller_Validator_Queue WHERE case_id = ? LIMIT 1');
@@ -248,10 +255,10 @@ try {
 
             $pdo->prepare(
                 "UPDATE Vati_Payfiller_Cases
-                 SET case_status = 'PENDING_VALIDATOR'
+                 SET case_status = ?
                  WHERE case_id = ?
                    AND UPPER(TRIM(COALESCE(case_status,''))) NOT IN ('REJECTED','STOP_BGV','APPROVED','COMPLETED','CLEAR')"
-            )->execute([$caseId]);
+            )->execute([$workflowCaseStatus, $caseId]);
 
             $pdo->prepare(
                 "UPDATE Vati_Payfiller_Candidate_Applications
@@ -292,13 +299,23 @@ try {
     // Finalize candidate-stage workflow statuses once per submit request.
     try {
         $wfAffected = markCandidateWorkflowSubmitted($pdo, $application_id);
-        $validatorReady = ensureValidatorWorkflowPending($pdo, $application_id);
+        $validatorReady = 0;
+        if ($verifierFirst && $caseId > 0) {
+            $shadow = wf_mode_shadow_validator_and_seed_verifier($pdo, $caseId, $application_id, $clientId);
+            submission_mail_debug_log(
+                'verifier-first shadow validator applied: groups=' . implode(',', $shadow['groups_seeded'] ?? [])
+                . '; unassigned=' . implode(',', $shadow['groups_unassigned'] ?? [])
+                . '; application_id=' . $application_id
+            );
+        } else {
+            $validatorReady = ensureValidatorWorkflowPending($pdo, $application_id);
+        }
         if ($wfAffected <= 0) {
             submission_mail_debug_log('candidate workflow transition: 0 rows updated; application_id=' . $application_id);
         } else {
             submission_mail_debug_log('candidate workflow transition: rows updated=' . $wfAffected . '; application_id=' . $application_id);
         }
-        submission_mail_debug_log('validator workflow ready: rows updated=' . $validatorReady . '; application_id=' . $application_id);
+        submission_mail_debug_log(($verifierFirst ? 'verifier-first shadow validator ready' : 'validator workflow ready') . ': rows updated=' . $validatorReady . '; application_id=' . $application_id);
     } catch (Throwable $e) {
         submission_mail_debug_log('candidate workflow transition: exception=' . $e->getMessage() . '; application_id=' . $application_id);
     }
@@ -379,7 +396,7 @@ try {
             'candidateEmail' => $summary['candidateEmail'] ?? '',
             'candidateName' => $summary['candidateName'] ?? '',
             'currentStage' => 'Candidate Submitted',
-            'status' => 'PENDING_VALIDATOR',
+            'status' => $workflowCaseStatus,
             'triggeredBy' => [
                 'userId' => 0,
                 'role' => 'candidate',

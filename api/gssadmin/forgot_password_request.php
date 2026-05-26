@@ -22,7 +22,7 @@ try {
         "SELECT user_id, username, email, first_name, last_name, role
            FROM Vati_Payfiller_Users
           WHERE (LOWER(TRIM(username)) = LOWER(TRIM(?)) OR LOWER(TRIM(email)) = LOWER(TRIM(?)))
-            AND LOWER(TRIM(role)) IN ('client_admin','validator','verifier','db_verifier','qa','team_lead','gss_admin')
+            AND LOWER(TRIM(role)) IN ('client_admin','verifier','db_verifier','qa','team_lead','gss_admin')
             AND COALESCE(is_active, 1) = 1
           LIMIT 1"
     );

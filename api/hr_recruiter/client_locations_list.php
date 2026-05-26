@@ -3,6 +3,7 @@ header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../shared/auth_client_snapshot.php';
 
 auth_require_login('company_recruiter');
 
@@ -16,13 +17,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 function resolve_client_id(): int {
-    if (session_status() === PHP_SESSION_NONE) session_start();
-    $cid = isset($_SESSION['auth_client_id']) ? (int)$_SESSION['auth_client_id'] : 0;
-    if ($cid > 0) return $cid;
-
-    http_response_code(401);
-    echo json_encode(['status' => 0, 'message' => 'Unauthorized']);
-    exit;
+    $pdo = getDB();
+    return auth_client_snapshot_resolve_client_id_or_401($pdo);
 }
 
 try {

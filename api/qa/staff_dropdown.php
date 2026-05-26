@@ -36,13 +36,11 @@ try {
     $clientId = get_int('client_id', 0);
 
     $roleSet = [];
-    if ($role === 'validator') {
-        $roleSet = ['validator'];
-    } elseif ($role === 'verifier') {
+    if ($role === 'verifier') {
         $roleSet = ['verifier', 'db_verifier'];
     } else {
         http_response_code(400);
-        echo json_encode(['status' => 0, 'message' => 'role is required (validator|verifier)']);
+        echo json_encode(['status' => 0, 'message' => 'role is required (verifier)']);
         exit;
     }
 

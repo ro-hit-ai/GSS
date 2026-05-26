@@ -337,11 +337,14 @@ ob_start();
 <div class="gss-final-report-shell">
 <div class="card">
     <h3>Final Component Report</h3>
-    <p class="card-subtitle">Case-wise component matrix with Validator (VA), Verifier (VE), and QA stage symbols.</p>
+    <p class="card-subtitle">Case-wise component matrix with Validator compatibility (VA), Verifier (VE), and QA stage symbols.</p>
 </div>
 
 <div class="card">
     <div id="gssFinalReportMessage" style="display:none; margin-bottom:10px;"></div>
+    <div id="gssFinalReportCompatNote" class="alert alert-info" style="display:none; margin-bottom:10px;">
+        Verifier-first cases may still show validator-stage symbols as compatibility rows only. They do not mean a human validator handled the case.
+    </div>
 
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:10px; flex-wrap:wrap;">
         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; width:100%;">

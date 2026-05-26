@@ -981,15 +981,7 @@ final class WorkflowRepository
             return;
         }
 
-        // Preserve collaborative verifier pool semantics:
-        // for normal pool queues we seed the row and leave it unassigned so eligible
-        // verifiers can pull/claim it through the existing queue endpoints.
-        // Dedicated rules remain authoritative and may still stamp an assignee.
-        if ($dedicatedUserId <= 0) {
-            return;
-        }
-
-        $autoUserId = $dedicatedUserId;
+        $autoUserId = $dedicatedUserId > 0 ? $dedicatedUserId : $this->pickAutoAssignedVerifierUserId($clientId > 0 ? $clientId : null, $g);
         if ($autoUserId <= 0) {
             return;
         }
@@ -1024,7 +1016,7 @@ final class WorkflowRepository
             "SELECT user_id, allowed_sections
                FROM Vati_Payfiller_Users
               WHERE is_active = 1
-                AND LOWER(TRIM(role)) = 'verifier'
+                AND LOWER(TRIM(role)) IN ('verifier','db_verifier')
               ORDER BY user_id ASC"
         );
         $users = $st ? ($st->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
@@ -1048,39 +1040,38 @@ final class WorkflowRepository
         }
 
         $placeholders = implode(',', array_fill(0, count($eligible), '?'));
+        $groupPlaceholders = implode(',', array_fill(0, count($eligible), '?'));
         $sql =
             "SELECT assigned_user_id AS user_id,
-                    COUNT(*) AS open_count,
-                    MAX(COALESCE(claimed_at, created_at)) AS last_touch
+                    COUNT(*) AS total_open_count,
+                    SUM(CASE WHEN UPPER(TRIM(group_key)) = ? THEN 1 ELSE 0 END) AS group_open_count
                FROM Vati_Payfiller_Verifier_Group_Queue
               WHERE completed_at IS NULL
                 AND assigned_user_id IN ($placeholders)
               GROUP BY assigned_user_id";
         $loadStmt = $this->pdo->prepare($sql);
-        $loadStmt->execute($eligible);
+        $loadStmt->execute(array_merge([$g], $eligible));
         $loads = $loadStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         $loadByUser = [];
         foreach ($loads as $row) {
             $uid = isset($row['user_id']) ? (int)$row['user_id'] : 0;
             if ($uid <= 0) continue;
             $loadByUser[$uid] = [
-                'open_count' => isset($row['open_count']) ? (int)$row['open_count'] : 0,
-                'last_touch' => (string)($row['last_touch'] ?? ''),
+                'group_open_count' => isset($row['group_open_count']) ? (int)$row['group_open_count'] : 0,
+                'total_open_count' => isset($row['total_open_count']) ? (int)$row['total_open_count'] : 0,
             ];
         }
 
         usort($eligible, function (int $a, int $b) use ($loadByUser): int {
-            $la = $loadByUser[$a]['open_count'] ?? 0;
-            $lb = $loadByUser[$b]['open_count'] ?? 0;
-            if ($la !== $lb) {
-                return $la <=> $lb;
+            $ga = $loadByUser[$a]['group_open_count'] ?? 0;
+            $gb = $loadByUser[$b]['group_open_count'] ?? 0;
+            if ($ga !== $gb) {
+                return $ga <=> $gb;
             }
-            $ta = (string)($loadByUser[$a]['last_touch'] ?? '');
-            $tb = (string)($loadByUser[$b]['last_touch'] ?? '');
-            if ($ta === '' && $tb !== '') return -1;
-            if ($tb === '' && $ta !== '') return 1;
+            $ta = $loadByUser[$a]['total_open_count'] ?? 0;
+            $tb = $loadByUser[$b]['total_open_count'] ?? 0;
             if ($ta !== $tb) {
-                return strcmp($ta, $tb);
+                return $ta <=> $tb;
             }
             return $a <=> $b;
         });

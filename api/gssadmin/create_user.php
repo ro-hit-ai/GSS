@@ -50,6 +50,11 @@ function post_locations(): array {
     return array_keys($out);
 }
 
+function role_requires_explicit_client(string $role): bool {
+    $role = strtolower(trim($role));
+    return in_array($role, ['company_recruiter', 'client_admin', 'customer_location_admin'], true);
+}
+
 function resolve_client_id(): int {
     $posted = post_int('client_id');
     if ($posted > 0) return $posted;
@@ -81,6 +86,7 @@ try {
     }
 
     $clientId = resolve_client_id();
+    $postedClientId = post_int('client_id');
     $username = post_str('username');
     $firstName = post_str('first_name');
     $middleName = post_str('middle_name');
@@ -96,6 +102,12 @@ try {
     if ($username === '' || $firstName === '' || $lastName === '' || $phone === '' || $email === '' || $role === '') {
         http_response_code(400);
         echo json_encode(['status' => 0, 'message' => 'client_id, username, first_name, last_name, phone, email and role are required.']);
+        exit;
+    }
+
+    if (role_requires_explicit_client($role) && $postedClientId <= 0) {
+        http_response_code(400);
+        echo json_encode(['status' => 0, 'message' => 'client_id is required for the selected role.']);
         exit;
     }
 
@@ -128,6 +140,13 @@ try {
     $userId = isset($row['user_id']) ? (int)$row['user_id'] : 0;
 
     if ($userId > 0) {
+        try {
+            $fix = $pdo->prepare('UPDATE Vati_Payfiller_Users SET client_id = ?, allowed_sections = ? WHERE user_id = ?');
+            $fix->execute([$clientId, $allowedSections, $userId]);
+        } catch (Throwable $e) {
+            // ignore; stored procedure result is still valid
+        }
+
         $tempPassword = generate_temp_password(10);
         $pwdStmt = $pdo->prepare('CALL SP_Vati_Payfiller_SetUserPassword(?, ?, ?, ?)');
         $pwdStmt->execute([$userId, $username, $tempPassword, 1]);

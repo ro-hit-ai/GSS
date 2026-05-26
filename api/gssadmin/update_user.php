@@ -52,6 +52,11 @@ function post_allowed_sections(): string {
     return implode(',', array_keys($out));
 }
 
+function role_requires_explicit_client(string $role): bool {
+    $role = strtolower(trim($role));
+    return in_array($role, ['company_recruiter', 'client_admin', 'customer_location_admin'], true);
+}
+
 function post_tinyint_nullable(string $key): ?int {
     if (!isset($_POST[$key])) return null;
     $v = trim((string)$_POST[$key]);
@@ -90,6 +95,7 @@ try {
 
     $userId = post_int('user_id');
     $clientId = resolve_client_id();
+    $postedClientId = post_int('client_id');
     $username = post_str('username');
     $firstName = post_str('first_name');
     $middleName = post_str('middle_name');
@@ -111,6 +117,12 @@ try {
     if ($username === '' || $firstName === '' || $lastName === '' || $phone === '' || $email === '' || $role === '') {
         http_response_code(400);
         echo json_encode(['status' => 0, 'message' => 'client_id, username, first_name, last_name, phone, email and role are required.']);
+        exit;
+    }
+
+    if (role_requires_explicit_client($role) && $postedClientId <= 0) {
+        http_response_code(400);
+        echo json_encode(['status' => 0, 'message' => 'client_id is required for the selected role.']);
         exit;
     }
 
@@ -146,8 +158,8 @@ try {
 
     // Force exact allowed_sections from UI (some SP builds may apply role defaults).
     try {
-        $fix = $pdo->prepare('UPDATE Vati_Payfiller_Users SET allowed_sections = ? WHERE user_id = ?');
-        $fix->execute([$allowedSections, $userId]);
+        $fix = $pdo->prepare('UPDATE Vati_Payfiller_Users SET client_id = ?, allowed_sections = ? WHERE user_id = ?');
+        $fix->execute([$clientId, $allowedSections, $userId]);
     } catch (Throwable $e) {
         // ignore; SP update result still used for API response
     }

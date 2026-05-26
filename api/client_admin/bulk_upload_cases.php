@@ -6,6 +6,7 @@ require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/mail.php';
 require_once __DIR__ . '/../shared/case_component_binding.php';
+require_once __DIR__ . '/../shared/workflow_mode.php';
 
 auth_require_login('client_admin');
 
@@ -357,6 +358,8 @@ try {
             if ($caseId <= 0) {
                 throw new Exception('case_id missing after create');
             }
+
+            wf_mode_set_case_mode($pdo, $caseId, 'verifier_first');
 
             // Ensure workflow snapshot rows exist for every required case component.
             case_component_binding_sync_case_components($pdo, $caseId, $applicationId);

@@ -95,6 +95,34 @@ function wc_action_catalog(string $role): array {
     return $base;
 }
 
+function wc_canonical_action(string $action, string $component = ''): string {
+    $a = strtolower(trim($action));
+    $c = strtolower(trim($component));
+    if ($a === 'need_docs' || $a === 'need docs' || $a === 'missing_documents') return 'insufficient_documents';
+    if ($a === 'hold_mail' || $a === 'verification_hold') return 'hold';
+    if ($a === 'verification_rejected') return 'rejected';
+    if ($a === 'candidate_correction_mail') return 'candidate_correction';
+    if ($a === 'send_mail' || $a === 'resend_mail' || $a === 'verification_request') {
+        if ($c === 'education') return 'verification_request_education';
+        if ($c === 'employment') return 'verification_request_employment';
+        return 'verification_request';
+    }
+    return $a;
+}
+
+function wc_template_key_for_action(string $action, string $component = ''): ?string {
+    $a = wc_canonical_action($action, $component);
+    if ($a === 'insufficient_documents') return 'candidate_missing_docs';
+    if ($a === 'clarification_required') return 'clarification_required';
+    if ($a === 'hold') return 'verification_hold';
+    if ($a === 'rejected') return 'verification_rejected';
+    if ($a === 'candidate_correction') return 'candidate_correction';
+    if ($a === 'verification_completed') return 'verification_completed';
+    if ($a === 'verification_request_education') return 'education_verification';
+    if ($a === 'verification_request_employment') return 'employment_verification';
+    return null;
+}
+
 function wc_template_candidates(string $role, string $component, string $action): array {
     $role = strtoupper(trim($role));
     $component = strtoupper(trim($component));
@@ -112,13 +140,11 @@ function wc_template_candidates(string $role, string $component, string $action)
 function wc_find_template(PDO $pdo, string $role, string $component, string $action): ?array {
     $role = strtolower(trim($role));
     $component = strtolower(trim($component));
-    $action = strtolower(trim($action));
+    $action = wc_canonical_action($action, $component);
     $keys = [];
-    if ($action === 'insufficient_documents') $keys[] = 'candidate_missing_docs';
-    if ($action === 'clarification_required') $keys[] = 'clarification_required';
+    $mapped = wc_template_key_for_action($action, $component);
+    if ($mapped) $keys[] = $mapped;
     if ($action === 'additional_proof_required') $keys[] = 'additional_proof_required';
-    if ($action === 'hold') $keys[] = 'verification_hold';
-    if ($action === 'rejected') $keys[] = 'rejected';
     $keys[] = $role . '_' . $component . '_' . $action;
     $keys[] = $component . '_' . $action;
     $keys[] = $role . '_' . $action;

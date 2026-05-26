@@ -23,7 +23,9 @@ try {
     $pdo = getDB();
     $role = wc_norm_role((string)($in['role'] ?? wc_session_role()));
     $component = strtolower(trim((string)($in['component'] ?? '')));
-    $action = strtolower(trim((string)($in['action'] ?? '')));
+    $actionRaw = strtolower(trim((string)($in['action'] ?? '')));
+    $mode = strtolower(trim((string)($in['mode'] ?? 'workflow')));
+    $action = wc_canonical_action($actionRaw, $component);
     $applicationId = wc_resolve_application_id($pdo, (string)($in['application_id'] ?? ''), (int)($in['case_id'] ?? 0));
     if ($applicationId === '' || $component === '' || $action === '') {
         http_response_code(400);
@@ -48,6 +50,8 @@ try {
     $subject = $tpl ? wc_render_placeholders((string)($tpl['subject'] ?? ''), $map) : ('Action Required: ' . ucfirst($component));
     $body = $tpl ? wc_render_placeholders((string)($tpl['body'] ?? ''), $map) : ('Dear {candidate_name}, please provide requested documents for {component_name}.');
     $body = wc_render_placeholders($body, $map);
+    $resolvedTemplateKey = $tpl ? tmpl_normalize_key((string)($tpl['template_name'] ?? '')) : '';
+    $expectedTemplateKey = wc_template_key_for_action($action, $component);
 
     echo json_encode([
         'status' => 1,
@@ -55,6 +59,11 @@ try {
         'data' => [
             'template_id' => $tpl ? (int)($tpl['template_id'] ?? 0) : null,
             'template_name' => $tpl ? (string)($tpl['template_name'] ?? '') : '',
+            'template_key' => $resolvedTemplateKey,
+            'expected_template_key' => $expectedTemplateKey,
+            'action_raw' => $actionRaw,
+            'action' => $action,
+            'mode' => $mode,
             'subject' => $subject,
             'body' => $body,
             'html' => wc_format_html($body),

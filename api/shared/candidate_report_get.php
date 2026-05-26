@@ -7,6 +7,8 @@ require_once __DIR__ . '/case_component_binding.php';
 require_once __DIR__ . '/workflow_snapshot_service.php';
 require_once __DIR__ . '/workflow_status_semantics.php';
 require_once __DIR__ . '/workflow/WorkflowLockService.php';
+require_once __DIR__ . '/workflow_mode.php';
+require_once __DIR__ . '/verifier_case_queue.php';
 
 integration_bootstrap_json_api();
 
@@ -552,6 +554,7 @@ try {
         echo json_encode(['status' => 0, 'message' => 'Case not found for this application_id']);
         exit;
     }
+    $case['workflow_mode'] = wf_mode_get_case_mode($pdo, (int)($case['case_id'] ?? 0), $applicationId);
 
     $isReviewerRole = in_array($role, ['validator', 'verifier', 'db_verifier', 'qa', 'team_lead'], true);
     $isSubmitted = candidate_profile_submitted((array)$application, (array)$case);
@@ -963,7 +966,14 @@ try {
             }
         }
 
-        if (count($verifierAssignedMap) > 0) {
+        $verifierCaseOwned = verifier_case_queue_is_case_model($pdo, (int)($case['case_id'] ?? 0), $applicationId)
+            && verifier_case_queue_can_open($pdo, (int)($case['case_id'] ?? 0), (int)$userId);
+
+        if ($verifierCaseOwned) {
+            foreach ($clientRequiredMap as $k => $_v) {
+                $visibleSections[] = $k;
+            }
+        } elseif (count($verifierAssignedMap) > 0) {
             foreach ($clientRequiredMap as $k => $_v) {
                 if (!isset($verifierAssignedMap[$k])) continue;
                 if (!can_section($allowedSet, $k)) continue;
@@ -1046,7 +1056,14 @@ try {
         }));
     }
 
-    if (($role === 'verifier' || $role === 'db_verifier' || $role === 'validator') && !isset($allowedSet['*']) && count($allowedSet) === 0) {
+    $verifierCaseOwnedForAccess = ($role === 'verifier')
+        && verifier_case_queue_is_case_model($pdo, (int)($case['case_id'] ?? 0), $applicationId)
+        && verifier_case_queue_can_open($pdo, (int)($case['case_id'] ?? 0), (int)$userId);
+
+    if (($role === 'verifier' || $role === 'db_verifier' || $role === 'validator')
+        && !isset($allowedSet['*'])
+        && count($allowedSet) === 0
+        && !$verifierCaseOwnedForAccess) {
         http_response_code(403);
         echo json_encode(['status' => 0, 'message' => 'Access denied']);
         exit;
@@ -1074,6 +1091,16 @@ try {
                 $hasComponentAssignment = true;
                 break;
             }
+        }
+
+        $caseIdForVerifier = (int)($case['case_id'] ?? 0);
+        if (verifier_case_queue_is_case_model($pdo, $caseIdForVerifier, $applicationId)) {
+            if (!verifier_case_queue_can_open($pdo, $caseIdForVerifier, $userId)) {
+                http_response_code(403);
+                echo json_encode(['status' => 0, 'message' => 'Forbidden']);
+                exit;
+            }
+            $hasComponentAssignment = true;
         }
     }
 
@@ -1208,6 +1235,8 @@ try {
         'data' => [
             'applicationId' => $case['application_id'],
             'caseId' => isset($case['case_id']) ? (int)$case['case_id'] : null,
+            'workflow_mode' => $case['workflow_mode'],
+            'workflowMode' => $case['workflow_mode'],
             'case' => $case,
             'application' => $application,
             'basic' => $basic,

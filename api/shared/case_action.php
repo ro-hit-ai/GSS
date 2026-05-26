@@ -5,6 +5,8 @@ require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/integration.php';
 require_once __DIR__ . '/workflow_semantics.php';
+require_once __DIR__ . '/workflow_mode.php';
+require_once __DIR__ . '/verifier_case_queue.php';
 
 auth_require_login(null);
 
@@ -40,22 +42,30 @@ function enforce_qa_workflow_gate(PDO $pdo, string $applicationId): void {
         exit;
     }
 
-    // Verifier groups must be completed for all canonical verifier groups seeded on the case.
-    $q = $pdo->prepare(
-        "SELECT\n" .
-        "  SUM(CASE WHEN completed_at IS NULL THEN 1 ELSE 0 END) AS open_items,\n" .
-        "  COUNT(*) AS total_items\n" .
-        "FROM Vati_Payfiller_Verifier_Group_Queue\n" .
-        "WHERE case_id = ?"
-    );
-    $q->execute([$caseId]);
-    $r = $q->fetch(PDO::FETCH_ASSOC) ?: [];
-    $open = (int)($r['open_items'] ?? 0);
-    $total = (int)($r['total_items'] ?? 0);
-    if ($total < 2 || $open > 0) {
-        http_response_code(409);
-        echo json_encode(['status' => 0, 'message' => 'Verifier not completed yet']);
-        exit;
+    if (verifier_case_queue_is_case_model($pdo, $caseId, '')) {
+        $queueRow = verifier_case_queue_load_row($pdo, $caseId);
+        if (!$queueRow || trim((string)($queueRow['completed_at'] ?? '')) === '') {
+            http_response_code(409);
+            echo json_encode(['status' => 0, 'message' => 'Verifier not completed yet']);
+            exit;
+        }
+    } else {
+        $q = $pdo->prepare(
+            "SELECT\n" .
+            "  SUM(CASE WHEN completed_at IS NULL THEN 1 ELSE 0 END) AS open_items,\n" .
+            "  COUNT(*) AS total_items\n" .
+            "FROM Vati_Payfiller_Verifier_Group_Queue\n" .
+            "WHERE case_id = ?"
+        );
+        $q->execute([$caseId]);
+        $r = $q->fetch(PDO::FETCH_ASSOC) ?: [];
+        $open = (int)($r['open_items'] ?? 0);
+        $total = (int)($r['total_items'] ?? 0);
+        if ($total < 2 || $open > 0) {
+            http_response_code(409);
+            echo json_encode(['status' => 0, 'message' => 'Verifier not completed yet']);
+            exit;
+        }
     }
 }
 
@@ -242,7 +252,15 @@ try {
     // Note: completion is handled by /api/verifier/queue_complete.php
     try {
         $roleNorm = session_role_norm();
-        if ($roleNorm === 'verifier' && $caseId > 0 && wf_is_valid_verifier_group($groupKey)) {
+        if ($roleNorm === 'verifier' && $caseId > 0) {
+            if (verifier_case_queue_is_case_model($pdo, $caseId, '')) {
+                verifier_case_queue_sync($pdo, $caseId, $userId);
+                if ($action === 'hold') {
+                    $st = $pdo->prepare("UPDATE Vati_Payfiller_Verifier_Case_Queue SET status = 'followup', followup_at = COALESCE(followup_at, NOW()), updated_at = NOW() WHERE case_id = ? AND completed_at IS NULL");
+                    $st->execute([$caseId]);
+                    verifier_case_queue_sync_legacy_group_rows($pdo, $caseId, $userId, 'followup');
+                }
+            } elseif (wf_is_valid_verifier_group($groupKey)) {
             $queueStatus = null;
             if ($action === 'hold') {
                 $queueStatus = 'followup';
@@ -257,6 +275,7 @@ try {
                     . 'WHERE case_id = ? AND UPPER(TRIM(group_key)) = ? AND assigned_user_id = ? AND completed_at IS NULL'
                 );
                 $q->execute([$queueStatus, $caseId, $groupKey, $userId]);
+            }
             }
         }
     } catch (Throwable $e) {

@@ -5,6 +5,7 @@ require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/mail.php';
 require_once __DIR__ . '/workflow_status_semantics.php';
 require_once __DIR__ . '/workflow_communication_service.php';
+require_once __DIR__ . '/workflow_mode.php';
 
 function ccs_role_norm(string $role): string {
     $r = strtolower(trim($role));
@@ -134,7 +135,7 @@ function ccs_user_has_verifier_visibility(PDO $pdo, int $caseId, int $userId): b
 }
 
 function ccs_is_role_allowed(string $role): bool {
-    return in_array($role, ['client_admin', 'validator', 'verifier', 'qa', 'gss_admin'], true);
+    return in_array($role, ['client_admin', 'verifier', 'qa', 'gss_admin'], true);
 }
 
 function ccs_get_case(PDO $pdo, int $caseId, string $applicationId): ?array {

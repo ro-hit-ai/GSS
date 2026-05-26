@@ -3,6 +3,7 @@ header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/audit_log.php';
+require_once __DIR__ . '/../shared/auth_client_snapshot.php';
 session_start();
 
 $input  = json_decode(file_get_contents('php://input'), true) ?: [];
@@ -102,6 +103,42 @@ if (strtolower(trim($maccess)) === 'customer_admin') {
     $maccess = 'client_admin';
 }
 
+if (strtolower(trim($maccess)) === 'validator') {
+    audit_log_event('login', 'otp_verify', 'failed', [
+        'reason' => 'role_disabled',
+        'user_id' => $uid,
+        'module_access' => $maccess
+    ], $uid > 0 ? $uid : $userId, $maccess, $clientId > 0 ? $clientId : null);
+    echo json_encode([
+        'success' => false,
+        'message' => 'Validator access has been disabled. Please contact GSS Admin.'
+    ]);
+    exit;
+}
+
+if ($uid > 0 && ($clientId <= 0 || trim($allowedSections) === '')) {
+    try {
+        $_SESSION['auth_user_id'] = $uid;
+        $_SESSION['auth_moduleAccess'] = $maccess;
+        $_SESSION['auth_all_moduleAccess'] = $maccess;
+        if ($clientId > 0) {
+            $_SESSION['auth_client_id'] = $clientId;
+        }
+        if (trim($allowedSections) !== '') {
+            $_SESSION['auth_allowed_sections'] = $allowedSections;
+        }
+        $snapshot = auth_client_snapshot_hydrate($pdo);
+        if ($clientId <= 0) {
+            $clientId = (int)($snapshot['client_id'] ?? 0);
+        }
+        if (trim($allowedSections) === '') {
+            $allowedSections = trim((string)($snapshot['allowed_sections'] ?? ''));
+        }
+    } catch (Throwable $e) {
+        // keep login non-blocking; session hydration will fall back at API level if needed
+    }
+}
+
 // Mark user as logged in in PHP session
 $_SESSION['auth_user_id']    = $uid;
 $_SESSION['auth_user_name']  = $uname;
@@ -130,7 +167,6 @@ $defaultMap = [
     'team_lead' => 'modules/team_lead/dashboard.php',
     'verifier' => 'modules/verifier/dashboard.php',
     'db_verifier' => 'modules/db_verifier/candidates_list.php',
-    'validator' => 'modules/validator/dashboard.php',
     'qa' => 'modules/qa/review_list.php'
 ];
 
@@ -146,7 +182,6 @@ if ($candidate !== '' && strpos($candidate, '..') === false) {
         'team_lead' => ['modules/team_lead/'],
         'verifier' => ['modules/verifier/'],
         'db_verifier' => ['modules/db_verifier/'],
-        'validator' => ['modules/validator/'],
         'qa' => ['modules/qa/']
     ];
 

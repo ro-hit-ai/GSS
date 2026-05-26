@@ -1,13 +1,13 @@
 <?php
 require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../../api/shared/workflow_semantics.php';
+require_once __DIR__ . '/../../api/shared/verifier_case_queue.php';
 auth_require_login('verifier');
 auth_session_start();
 
 $applicationId = isset($_GET['application_id']) ? trim((string)$_GET['application_id']) : '';
 $clientId = isset($_GET['client_id']) ? (int)$_GET['client_id'] : 0;
-$group = isset($_GET['group']) ? trim((string)$_GET['group']) : '';
 $caseId = isset($_GET['case_id']) ? (int)$_GET['case_id'] : 0;
+$fromBoard = isset($_GET['board']) && (string)$_GET['board'] === '1';
 $view = isset($_GET['view']) ? strtolower(trim((string)$_GET['view'])) : '';
 $filter = isset($_GET['filter']) ? strtolower(trim((string)$_GET['filter'])) : '';
 $allowedViews = ['mine', 'available', 'followup', 'participated', 'history', 'completed'];
@@ -35,11 +35,10 @@ if ($applicationId === '' && $caseId <= 0) {
     exit;
 }
 
-// Direct-open support from Candidate List: auto-claim case when group is provided.
-// This prevents Forbidden when opening an available row that wasn't claimed yet.
+// Direct-open support from legacy list routes: auto-claim case only when not coming
+// from the board. Board flow is explicit claim-first, open-second.
 $userId = (int)($_SESSION['auth_user_id'] ?? 0);
-$groupKey = strtoupper(trim((string)$group));
-if ($userId > 0 && wf_is_valid_verifier_group($groupKey)) {
+if (!$fromBoard && $userId > 0) {
     require_once __DIR__ . '/../../config/db.php';
     try {
         $pdo = getDB();
@@ -57,29 +56,7 @@ if ($userId > 0 && wf_is_valid_verifier_group($groupKey)) {
         }
 
         if ($caseId > 0) {
-            $claim = $pdo->prepare('CALL SP_Vati_Payfiller_VR_ClaimCase(?, ?, ?)');
-            $claim->execute([$userId, $caseId, $groupKey]);
-            while ($claim->nextRowset()) {
-            }
-
-            // Keep queue row state consistent for dashboard/list counters on direct-open flow.
-            try {
-                $sync = $pdo->prepare(
-                    "UPDATE Vati_Payfiller_Verifier_Group_Queue
-                     SET assigned_user_id = COALESCE(assigned_user_id, ?),
-                         claimed_at = COALESCE(claimed_at, NOW()),
-                         status = CASE
-                             WHEN COALESCE(LOWER(TRIM(status)), '') = 'followup' THEN status
-                             WHEN completed_at IS NULL THEN 'in_progress'
-                             ELSE status
-                         END
-                     WHERE case_id = ?
-                       AND UPPER(TRIM(group_key)) = ?
-                       AND completed_at IS NULL"
-                );
-                $sync->execute([$userId, $caseId, $groupKey]);
-            } catch (Throwable $e) {
-            }
+            verifier_case_queue_claim($pdo, $caseId, $userId);
         }
     } catch (Throwable $e) {
         // Ignore claim errors and continue; assignment check in report API is authoritative.
@@ -97,9 +74,6 @@ if ($clientId > 0) {
     $target .= '&client_id=' . urlencode((string)$clientId);
 }
 
-if ($group !== '') {
-    $target .= '&group=' . urlencode($group);
-}
 if (in_array($view, $allowedViews, true)) {
     $_SESSION['verifier_last_list_view'] = $view;
     $target .= '&view=' . urlencode($view);

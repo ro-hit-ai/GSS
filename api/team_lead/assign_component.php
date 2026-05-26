@@ -5,6 +5,7 @@ require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/integration.php';
 require_once __DIR__ . '/../shared/case_component_binding.php';
+require_once __DIR__ . '/../shared/workflow_mode.php';
 
 auth_require_login('team_lead');
 auth_session_start();
@@ -80,6 +81,11 @@ try {
     if ($applicationId === '') {
         http_response_code(500);
         echo json_encode(['status' => 0, 'message' => 'application_id missing for case']);
+        exit;
+    }
+    if ($assignedRole === 'validator' && wf_mode_is_verifier_first($pdo, $caseId, $applicationId)) {
+        http_response_code(409);
+        echo json_encode(['status' => 0, 'message' => 'Validator component assignment is disabled for verifier-first cases']);
         exit;
     }
 

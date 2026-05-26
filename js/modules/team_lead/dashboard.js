@@ -5,22 +5,19 @@
         var autoEl = document.getElementById('tlAutoRefresh');
 
         var clientSelect = document.getElementById('tlClientSelect');
-        var validatorSelect = document.getElementById('tlValidatorSelect');
         var verifierSelect = document.getElementById('tlVerifierSelect');
         var vrGroupSelect = document.getElementById('tlVrGroupSelect');
 
-        var kVal = document.getElementById('tlKpiValUnassigned');
         var kVr = document.getElementById('tlKpiVrUnassigned');
         var kDbv = document.getElementById('tlKpiDbvUnassigned');
         var kAsg = document.getElementById('tlKpiActiveAssignments');
 
-        var valBody = document.getElementById('tlValUnassignedBody');
         var vrBody = document.getElementById('tlVrUnassignedBody');
         var dbvBody = document.getElementById('tlDbvUnassignedBody');
         var asgBody = document.getElementById('tlAssignmentsBody');
 
         var timer = null;
-        var staff = { validators: [], verifiers: [] };
+        var staff = { verifiers: [] };
 
         function setMessage(text, type) {
             if (!msgEl) return;
@@ -84,13 +81,6 @@
 
         function loadStaff() {
             var cid = selectedInt(clientSelect);
-            var v1 = fetch(baseUrl() + '/api/qa/staff_dropdown.php?role=validator&client_id=' + encodeURIComponent(String(cid)), { credentials: 'same-origin' })
-                .then(function (res) { return res.json(); })
-                .then(function (data) {
-                    staff.validators = (data && data.status === 1 && Array.isArray(data.data)) ? data.data : [];
-                })
-                .catch(function () { staff.validators = []; });
-
             var v2 = fetch(baseUrl() + '/api/qa/staff_dropdown.php?role=verifier&client_id=' + encodeURIComponent(String(cid)), { credentials: 'same-origin' })
                 .then(function (res) { return res.json(); })
                 .then(function (data) {
@@ -98,14 +88,7 @@
                 })
                 .catch(function () { staff.verifiers = []; });
 
-            return Promise.all([v1, v2]).then(function () {
-                if (validatorSelect) {
-                    var html = '<option value="0">All</option>';
-                    staff.validators.forEach(function (u) {
-                        html += '<option value="' + esc(String(u.user_id || 0)) + '">' + esc(String(u.name || '')) + '</option>';
-                    });
-                    validatorSelect.innerHTML = html;
-                }
+            return Promise.all([v2]).then(function () {
                 if (verifierSelect) {
                     var html2 = '<option value="0">All</option>';
                     staff.verifiers.forEach(function (u) {
@@ -131,7 +114,7 @@
         function renderAssignCell(queueType, row) {
             var id = n(row.case_id);
             var group = row.group_key ? String(row.group_key) : '';
-            var users = queueType === 'validator' ? staff.validators : staff.verifiers;
+            var users = staff.verifiers;
             var selectId = 'tlAssign_' + queueType + '_' + id + (group ? '_' + group : '');
             var btnId = 'tlAssignBtn_' + queueType + '_' + id + (group ? '_' + group : '');
             var opts = userOptions(users);
@@ -173,14 +156,6 @@
             }
 
             host.innerHTML = rows.map(function (r) {
-                if (queueType === 'validator') {
-                    return '<tr>' +
-                        '<td>' + esc(String(r.application_id || '')) + '<div style="font-size:11px; color:#64748b;">Case #' + esc(String(r.case_id || '')) + '</div></td>' +
-                        '<td>' + esc(String(r.customer_name || '')) + '</td>' +
-                        '<td style="font-size:12px; color:#64748b;">' + esc(String(r.created_at || '')) + '</td>' +
-                        '<td>' + renderAssignCell('validator', r) + '</td>' +
-                        '</tr>';
-                }
                 if (queueType === 'vr') {
                     return '<tr>' +
                         '<td>' + esc(String(r.application_id || '')) + '<div style="font-size:11px; color:#64748b;">Case #' + esc(String(r.case_id || '')) + '</div></td>' +
@@ -236,11 +211,9 @@
 
             var q = [];
             var cid = selectedInt(clientSelect);
-            var validatorId = selectedInt(validatorSelect);
             var verifierId = selectedInt(verifierSelect);
             var group = selectedStr(vrGroupSelect);
             if (cid > 0) q.push('client_id=' + encodeURIComponent(String(cid)));
-            if (validatorId > 0) q.push('validator_user_id=' + encodeURIComponent(String(validatorId)));
             if (verifierId > 0) q.push('verifier_user_id=' + encodeURIComponent(String(verifierId)));
             if (group) q.push('vr_group=' + encodeURIComponent(String(group)));
 
@@ -253,12 +226,10 @@
                     if (!data || data.status !== 1) throw new Error((data && data.message) ? data.message : 'Failed');
                     var d = data.data || {};
 
-                    setKpi(kVal, n(d.kpis && d.kpis.validator_unassigned));
                     setKpi(kVr, n(d.kpis && d.kpis.vr_unassigned));
                     setKpi(kDbv, n(d.kpis && d.kpis.dbv_unassigned));
                     setKpi(kAsg, n(d.kpis && d.kpis.active_assignments));
 
-                    renderTable(valBody, d.unassigned && d.unassigned.validator ? d.unassigned.validator : [], 'validator');
                     renderTable(vrBody, d.unassigned && d.unassigned.vr ? d.unassigned.vr : [], 'vr');
                     renderDbv(dbvBody, d.unassigned && d.unassigned.dbv ? d.unassigned.dbv : []);
                     renderAssignments(asgBody, d.assignments || []);
@@ -321,7 +292,6 @@
             if (clientSelect) clientSelect.addEventListener('change', function () {
                 loadStaff().then(loadDashboard);
             });
-            if (validatorSelect) validatorSelect.addEventListener('change', loadDashboard);
             if (verifierSelect) verifierSelect.addEventListener('change', loadDashboard);
             if (vrGroupSelect) vrGroupSelect.addEventListener('change', loadDashboard);
         }

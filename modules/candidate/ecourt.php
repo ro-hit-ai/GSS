@@ -208,9 +208,9 @@ $adultDobMax = date('Y-m-d', strtotime('-18 years'));
 
         <!-- EVIDENCE DOCUMENT SECTION -->
         <div class="form-row-full compact-row mb-3">
-            <div class="form-field">
+              <div class="form-row-2 compact-row mb-2">
                 <div class="form-control double-border compact-control">
-                    <label class="compact-label">Evidence Document <span class="required">*</span></label>
+                    <label class="compact-label">Proof of Current Address <span class="required">*</span></label>
                     <div class="file-upload-box" data-file-upload>
                         <div class="file-upload-row">
                             <button type="button" class="file-upload-btn" data-file-choose>Choose File</button>
@@ -225,9 +225,28 @@ $adultDobMax = date('Y-m-d', strtotime('-18 years'));
                            data-file-input
                            required>
                 </div>
+
+                <!-- <div class="form-control double-border compact-control">
+                    <label class="compact-label">Proof of Permanent Address <span class="required">*</span></label>
+                    <div class="file-upload-box" data-file-upload>
+                        <div class="file-upload-row">
+                            <button type="button" class="file-upload-btn" data-file-choose>Choose File</button>
+                            <button type="button" class="file-upload-name" data-file-name disabled>No file chosen</button>
+                        </div>
+                        <div class="file-upload-error" data-file-error></div>
+                    </div>
+                    <input type="file"
+                           name="evidence_document"
+                           accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                           class="compact-file d-none"
+                           data-file-input
+                           required>
+                </div> -->
             </div>
         </div>
 
+
+ 
         <!-- PERIOD & DATE INFORMATION -->
         <div class="form-grid-4 compact-row mb-3">
             <!-- From Date -->

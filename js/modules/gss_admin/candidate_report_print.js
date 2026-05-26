@@ -13,6 +13,7 @@
         var uploaderContext = {
             candidateName: ''
         };
+        var currentWorkflowMode = 'validator_first';
 
         var applicationId = String(root.getAttribute('data-application-id') || '').trim();
         var clientId = parseInt(root.getAttribute('data-client-id') || '0', 10) || 0;
@@ -124,6 +125,13 @@
             return String(appStatus || caseStatus || '');
         }
 
+        function workflowModeLabel(mode) {
+            var m = String(mode || '').toLowerCase().trim();
+            if (m === 'verifier_first') return 'Verifier First';
+            if (m === 'validator_first') return 'Validator First';
+            return '-';
+        }
+
         function statusTextClass(status) {
             var s = String(status || '').toLowerCase().trim();
             if (s === 'approved') return 'ok';
@@ -186,7 +194,7 @@
 
         function roleLabel(v) {
             var r = normalizeRole(v);
-            if (r === 'validator') return 'Validator (VA)';
+            if (r === 'validator') return isVerifierFirstWorkflow() ? 'Validator (Compat VA)' : 'Validator (VA)';
             if (r === 'verifier') return 'Verifier (VE)';
             if (r === 'qa') return 'QA';
             return toTitle(r);
@@ -207,7 +215,7 @@
             if (role === 'candidate') {
                 return uploaderContext.candidateName || 'Candidate';
             }
-            if (role === 'validator') return 'Validator';
+            if (role === 'validator') return isVerifierFirstWorkflow() ? 'Validator (Compat)' : 'Validator';
             if (role === 'verifier') return 'Verifier';
             if (role === 'qa') return 'QA';
             return roleLabel(role || 'unknown');
@@ -217,7 +225,7 @@
             var role = normalizeRole(doc && doc.uploaded_by_role ? doc.uploaded_by_role : doc && doc.__role ? doc.__role : '');
             var name = uploaderDisplayName(doc);
             if (role === 'candidate') return 'Candidate (' + (name || 'Candidate') + ')';
-            if (role === 'validator') return 'Validator (' + (name || 'Validator') + ')';
+            if (role === 'validator') return (isVerifierFirstWorkflow() ? 'Validator (Compat)' : 'Validator') + ' (' + (name || 'Validator') + ')';
             if (role === 'verifier') return 'Verifier (' + (name || 'Verifier') + ')';
             if (role === 'qa') return 'QA (' + (name || 'QA') + ')';
             return name || roleLabel(role || 'unknown');
@@ -394,7 +402,7 @@
                 var qa = String(row.data.qa && row.data.qa.status ? row.data.qa.status : 'pending');
                 return '<tr>' +
                     '<td>' + esc(componentLabel(row.key)) + '</td>' +
-                    '<td><span class="chip ' + statusTextClass(va) + '">VA ' + esc(va.toUpperCase()) + '</span></td>' +
+                    '<td><span class="chip ' + statusTextClass(va) + '">' + esc(isVerifierFirstWorkflow() ? 'VA COMPAT ' : 'VA ') + esc(va.toUpperCase()) + '</span></td>' +
                     '<td><span class="chip ' + statusTextClass(ve) + '">VE ' + esc(ve.toUpperCase()) + '</span></td>' +
                     '<td><span class="chip ' + statusTextClass(qa) + '">QA ' + esc(qa.toUpperCase()) + '</span></td>' +
                 '</tr>';
@@ -402,7 +410,7 @@
 
             return '<div class="sec">' +
                 '<div class="sec-h">Component Workflow</div>' +
-                '<div class="sec-b"><table><thead><tr><th>Component</th><th>Validator</th><th>Verifier</th><th>QA</th></tr></thead><tbody>' + body + '</tbody></table></div>' +
+                '<div class="sec-b"><table><thead><tr><th>Component</th><th>' + esc(isVerifierFirstWorkflow() ? 'Validator (Compat)' : 'Validator') + '</th><th>Verifier</th><th>QA</th></tr></thead><tbody>' + body + '</tbody></table></div>' +
             '</div>';
         }
 
@@ -416,6 +424,7 @@
                     var status = String(st[stage].status || '').trim();
                     var stamp = String(st[stage].updated_at || st[stage].completed_at || '').trim();
                     if (!stamp) return;
+                    if (isVerifierFirstWorkflow() && stage === 'validator') return;
                     var t = Date.parse(stamp);
                     if (!Number.isFinite(t)) return;
                     if (!best || t > best.t) {
@@ -937,6 +946,7 @@
             var basic = isObj(d.basic) ? d.basic : {};
             var workflow = isObj(d.component_workflow) ? d.component_workflow : {};
             var docs = sortDocumentsForReport(d.uploaded_docs);
+            currentWorkflowMode = String(d.workflow_mode || d.workflowMode || cs.workflow_mode || 'validator_first').toLowerCase().trim() || 'validator_first';
 
             var candidateName = ((cs.candidate_first_name || '') + ' ' + (cs.candidate_last_name || '')).trim() || ((basic.first_name || '') + ' ' + (basic.last_name || '')).trim();
             uploaderContext.candidateName = normalizeDisplayName(candidateName);
@@ -944,9 +954,14 @@
             var latest = latestWorkflow(workflow);
 
             if (metaEl) {
+                var compatLine = isVerifierFirstWorkflow()
+                    ? '<div><b>Compat Note:</b> Validator rows are compatibility-only for this case.</div>'
+                    : '';
                 metaEl.innerHTML = '' +
                     '<div><b>Application:</b> ' + esc(applicationId || '-') + '</div>' +
                     '<div><b>Case ID:</b> ' + esc(cs.case_id || '-') + '</div>' +
+                    '<div><b>Flow:</b> ' + esc(workflowModeLabel(currentWorkflowMode)) + '</div>' +
+                    compatLine +
                     '<div><b>Generated:</b> ' + esc(new Date().toLocaleString()) + '</div>';
             }
 
@@ -955,6 +970,7 @@
                     summaryCard('Candidate', candidateName || '-'),
                     summaryCard('Email', basic.email || cs.candidate_email || '-'),
                     summaryCard('Mobile', basic.mobile || cs.candidate_mobile || '-'),
+                    summaryCard('Flow', workflowModeLabel(currentWorkflowMode)),
                     summaryCard('Final Status', status || '-'),
                     summaryCard('Latest Action', latest ? ((latest.stage || '').toUpperCase() + ' ' + (latest.status || '').toUpperCase()) : '-'),
                     summaryCard('Latest Component', latest ? componentLabel(latest.component || '') : '-'),
@@ -1181,3 +1197,6 @@
         loadReport();
     });
 })();
+        function isVerifierFirstWorkflow() {
+            return String(currentWorkflowMode || '').toLowerCase().trim() === 'verifier_first';
+        }

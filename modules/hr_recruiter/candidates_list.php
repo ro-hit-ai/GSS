@@ -42,6 +42,7 @@ ob_start();
                 <th>Email</th>
                 <th>Mobile</th>
                 <th>Stage</th>
+                <th>Flow</th>
                 <th>Status</th>
                 <th>PDF</th>
                 <th>Invited</th>

@@ -17,6 +17,8 @@ function ma_current_stage_expr(): string
         WHEN UPPER(TRIM(COALESCE(c.case_status, ''))) IN ('APPROVED','VERIFIED','COMPLETED','CLEAR') THEN 'Completed'
         WHEN UPPER(TRIM(COALESCE(c.case_status, ''))) = 'PENDING_QA' THEN 'QA Pending'
         WHEN UPPER(TRIM(COALESCE(c.case_status, ''))) = 'PENDING_VERIFIER' THEN 'VE Pending'
+        WHEN COALESCE(NULLIF(TRIM(c.workflow_mode), ''), 'validator_first') = 'verifier_first'
+             AND LOWER(TRIM(COALESCE(app.status, ''))) = 'submitted' THEN 'VE Pending'
         WHEN UPPER(TRIM(COALESCE(c.case_status, ''))) = 'PENDING_VALIDATOR' THEN 'VA Pending'
         WHEN LOWER(TRIM(COALESCE(app.status, ''))) = 'submitted' THEN 'Candidate Submitted'
         WHEN c.invite_sent_at IS NOT NULL THEN 'Invited'

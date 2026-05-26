@@ -152,17 +152,51 @@
         return labelByRole(s, role);
     }
 
+    function isVerifierFirstMode(mode) {
+        return norm(mode) === 'verifier_first';
+    }
+
     function resolveComponentWorkflowStatus(stageRow, opts) {
         var row = (stageRow && typeof stageRow === 'object') ? stageRow : {};
         var options = (opts && typeof opts === 'object') ? opts : {};
         var caseStatus = norm(options.case_status || options.caseStatus || '');
+        var workflowMode = norm(options.workflow_mode || options.workflowMode || '');
         var val = norm(row.validator && row.validator.status);
         var ver = norm(row.verifier && row.verifier.status);
         var qa = norm(row.qa && row.qa.status);
         var cand = norm(row.candidate && row.candidate.status);
 
-        // Stage-priority active owner resolution:
-        // validator unresolved -> verifier unresolved -> qa unresolved.
+        // Stage-priority active owner resolution.
+        // Legacy cases: validator unresolved -> verifier unresolved -> qa unresolved.
+        // Verifier-first cases: verifier unresolved -> qa unresolved, with validator as compatibility-only state.
+        if (isVerifierFirstMode(workflowMode)) {
+            if (isUnresolvedStatus(ver)) {
+                return { owner: 'verifier', status: 'pending', label: labelByRole('pending', 'verifier') };
+            }
+            if (isFinalStatus(ver) && isUnresolvedStatus(qa)) {
+                if (isInvalidatedStatus(qa)) {
+                    return { owner: 'qa', status: qa, label: labelByRole(qa, 'qa') };
+                }
+                var qaPendingVF = labelByRole('pending', 'qa');
+                var verOutcomeVF = stageOutcomeLabel(ver, 'verifier');
+                return {
+                    owner: 'qa',
+                    status: 'pending',
+                    label: composeContextLabel(qaPendingVF, [verOutcomeVF]),
+                    upstream: { validator: '', verifier: verOutcomeVF }
+                };
+            }
+            if (qa) {
+                return { owner: 'qa', status: qa, label: labelByRole(qa, 'qa') };
+            }
+            if (ver) {
+                return { owner: 'verifier', status: ver, label: labelByRole(ver, 'verifier') };
+            }
+            if (val) {
+                return { owner: 'verifier', status: 'pending', label: labelByRole('pending', 'verifier') };
+            }
+        }
+
         if (isUnresolvedStatus(val)) {
             return { owner: 'validator', status: 'pending', label: labelByRole('pending', 'validator') };
         }

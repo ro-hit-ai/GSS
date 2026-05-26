@@ -43,6 +43,7 @@ ob_start();
                 <th>Email</th>
                 <th>Mobile</th>
                 <th>Stage</th>
+                <th>Flow</th>
                 <th>Status</th>
                 <th>SLA</th>
                 <th>PDF</th>

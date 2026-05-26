@@ -233,6 +233,23 @@ function row_is_outgoing_for_viewer(array $row, string $viewerRole): bool
     return $direction === 'outgoing' && $viewerRole !== '' && $actorRole === $viewerRole;
 }
 
+function canonical_verification_projection_exists(PDO $pdo, string $applicationId, string $componentKey = ''): bool
+{
+    $sql = "SELECT 1
+              FROM workflow_communications
+             WHERE application_id = ?
+               AND source_table = 'verification_communications'";
+    $params = [$applicationId];
+    if ($componentKey !== '') {
+        $sql .= ' AND component_key = ?';
+        $params[] = $componentKey;
+    }
+    $sql .= ' LIMIT 1';
+    $st = $pdo->prepare($sql);
+    $st->execute($params);
+    return (bool)$st->fetchColumn();
+}
+
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
         http_response_code(405);
@@ -263,10 +280,17 @@ try {
     $verificationProjected = 0;
     $canonicalIncomingInserted = 0;
     if ($shouldSync) {
-        $verificationProjected = wc_sync_verification_communications($pdo, $applicationId);
+        $needsVerificationProjection = false;
+        if ($scope === 'component' && in_array($componentKey, ['education', 'employment'], true)) {
+            $needsVerificationProjection = !canonical_verification_projection_exists($pdo, $applicationId, $componentKey);
+        } elseif ($scope !== 'component') {
+            $needsVerificationProjection = !canonical_verification_projection_exists($pdo, $applicationId);
+        }
+        if ($needsVerificationProjection) {
+            $verificationProjected = wc_sync_verification_communications($pdo, $applicationId);
+        }
         $canonicalIncomingInserted = wc_ingest_incoming_replies($pdo, $applicationId);
     }
-    wc_backfill_thread_metadata($pdo, $applicationId);
 
     $wcTable = 'workflow_communications';
     $hasDirection = table_has_column($pdo, $wcTable, 'direction');
@@ -377,6 +401,42 @@ try {
         return row_belongs_to_viewer_role($row, $viewerRole, $allowedThreadIds, $allowedMessageIds);
     }));
     $data = $strictData;
+
+    // If strict role matching yields only outgoing rows, allow additional incoming
+    // rows only when they still match viewer linkage (thread/message ownership).
+    // This prevents cross-role leakage (validator replies showing for verifier).
+    if (
+        $scope === 'component'
+        && $componentKey !== ''
+        && ($viewerRole === 'validator' || $viewerRole === 'verifier')
+        && count($data) > 0
+    ) {
+        $hasIncomingStrict = false;
+        foreach ($data as $row) {
+            if (strtolower(trim((string)($row['direction'] ?? ''))) === 'incoming') {
+                $hasIncomingStrict = true;
+                break;
+            }
+        }
+        if (!$hasIncomingStrict) {
+            $incomingScoped = array_values(array_filter($scopedData, static function (array $row) use ($viewerRole, $allowedThreadIds, $allowedMessageIds): bool {
+                $direction = strtolower(trim((string)($row['direction'] ?? '')));
+                if ($direction !== 'incoming') return false;
+                $actorRole = normalize_role_key((string)($row['actor_role'] ?? ''));
+                if (!($actorRole === 'candidate' || $actorRole === '')) return false;
+                return row_belongs_to_viewer_role($row, $viewerRole, $allowedThreadIds, $allowedMessageIds);
+            }));
+            if (!empty($incomingScoped)) {
+                $data = array_merge($data, $incomingScoped);
+                usort($data, static function (array $a, array $b): int {
+                    return strcmp((string)($b['created_at'] ?? ''), (string)($a['created_at'] ?? ''));
+                });
+                if (count($data) > 120) {
+                    $data = array_slice($data, 0, 120);
+                }
+            }
+        }
+    }
 
     // Older validator/verifier communications may lack stable thread/message metadata.
     // When the current role has definitely sent mail on this same component scope,

@@ -117,11 +117,11 @@ $maxCount = 4;
                         <label class="compact-label">Qualification *</label>
                         <select name="qualification[]" class="compact-select">
                             <option value="">Select qualification</option>
-                            <option value="10th">10th</option>
-                            <option value="12th">12th</option>
-                            <option value="Diploma">Diploma</option>
-                            <option value="UG">UG</option>
                             <option value="PG">PG</option>
+                            <option value="UG">UG</option>
+                            <option value="Diploma">Diploma</option>
+                            <option value="12th">12th</option>
+                            <option value="10th">10th</option>
                         </select>
                     </div>
                 </div>

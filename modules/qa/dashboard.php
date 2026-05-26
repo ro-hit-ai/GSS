@@ -255,6 +255,23 @@ ob_start();
             justify-content:flex-start;
         }
     }
+    @media (max-width: 820px){
+        .qa-dash-main{
+            padding:12px;
+        }
+        .qa-dash-controls{
+            width:100%;
+        }
+        .qa-dash-refresh-btn{
+            width:100%;
+        }
+        .qa-assignments-table{
+            overflow-x:auto;
+        }
+        .qa-assignments-table .table{
+            min-width:720px;
+        }
+    }
 </style>
 <?php
 $content = ob_get_clean();
