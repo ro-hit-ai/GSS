@@ -47,7 +47,7 @@ function svm_template(string $componentKey, array $ctx): array {
 
 function svm_ensure_tracking_table(PDO $pdo): void {
     $pdo->exec(
-        "CREATE TABLE IF NOT EXISTS verification_communications (
+        "CREATE TABLE IF NOT EXISTS Vati_Payfiller_Verification_Communications (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             case_id BIGINT NULL,
             application_id VARCHAR(64) NOT NULL,
@@ -66,13 +66,13 @@ function svm_ensure_tracking_table(PDO $pdo): void {
     );
     $st = $pdo->prepare('SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ? LIMIT 1');
     $need = [
-        'template_key' => "ALTER TABLE verification_communications ADD COLUMN template_key VARCHAR(191) NULL AFTER component_key",
-        'subject_snapshot' => "ALTER TABLE verification_communications ADD COLUMN subject_snapshot VARCHAR(500) NULL AFTER communication_status",
-        'body_snapshot' => "ALTER TABLE verification_communications ADD COLUMN body_snapshot MEDIUMTEXT NULL AFTER subject_snapshot",
+        'template_key' => "ALTER TABLE Vati_Payfiller_Verification_Communications ADD COLUMN template_key VARCHAR(191) NULL AFTER component_key",
+        'subject_snapshot' => "ALTER TABLE Vati_Payfiller_Verification_Communications ADD COLUMN subject_snapshot VARCHAR(500) NULL AFTER communication_status",
+        'body_snapshot' => "ALTER TABLE Vati_Payfiller_Verification_Communications ADD COLUMN body_snapshot MEDIUMTEXT NULL AFTER subject_snapshot",
     ];
     foreach ($need as $col => $sql) {
         try {
-            $st->execute(['verification_communications', $col]);
+            $st->execute(['Vati_Payfiller_Verification_Communications', $col]);
             if (!$st->fetchColumn()) $pdo->exec($sql);
         } catch (Throwable $e) {
         }
@@ -190,7 +190,7 @@ try {
 
         $st = $pdo->prepare(
             'SELECT id, node_thread_id, node_conversation_id
-               FROM verification_communications
+               FROM Vati_Payfiller_Verification_Communications
               WHERE application_id = ? AND component_key = ?
               ORDER BY id DESC
               LIMIT 1'
@@ -352,7 +352,7 @@ try {
 
     $existing = $pdo->prepare(
         'SELECT id, node_thread_id, node_conversation_id
-           FROM verification_communications
+           FROM Vati_Payfiller_Verification_Communications
           WHERE application_id = ? AND component_key = ?
           ORDER BY id DESC
           LIMIT 1'
@@ -409,7 +409,7 @@ try {
     $status = (string)($nodeBody['status'] ?? 'sent');
 
     $ins = $pdo->prepare(
-        'INSERT INTO verification_communications
+        'INSERT INTO Vati_Payfiller_Verification_Communications
             (case_id, application_id, component_key, template_key, recipient_email, node_thread_id, node_conversation_id, communication_status, subject_snapshot, body_snapshot, last_message_at, created_by, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW())'
     );
@@ -436,7 +436,7 @@ try {
         $messageId = 'verification.' . $applicationId . '.' . $verificationCommId . '@local';
         $sourceKey = 'verification_comm:' . $verificationCommId;
         $wcIns = $pdo->prepare(
-            'INSERT IGNORE INTO workflow_communications
+            'INSERT IGNORE INTO Vati_Payfiller_Workflow_Communications
              (application_id, case_id, component_key, role_key, action_key, subject, body, sent_by_user_id, sent_by_name, sent_at,
               delivery_status, communication_type, direction, actor_role, actor_name, workflow_stage, source_table, source_message_key,
               thread_id, thread_owner_role, thread_scope, root_outgoing_communication_id, message_id)
@@ -458,7 +458,7 @@ try {
             $senderRole,
             $senderNameResolved,
             $senderRole,
-            'verification_communications',
+            'Vati_Payfiller_Verification_Communications',
             $sourceKey,
             $threadId,
             $threadOwnerRole,
@@ -468,7 +468,7 @@ try {
         ]);
         $canonicalCommunicationId = (int)$pdo->lastInsertId();
         if ($canonicalCommunicationId > 0) {
-            $up = $pdo->prepare('UPDATE workflow_communications
+            $up = $pdo->prepare('UPDATE Vati_Payfiller_Workflow_Communications
                                     SET root_outgoing_communication_id = ?
                                   WHERE communication_id = ?
                                     AND COALESCE(root_outgoing_communication_id, 0) = 0');

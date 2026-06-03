@@ -6,6 +6,7 @@ require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/queue_visibility.php';
 require_once __DIR__ . '/../shared/workflow_status_semantics.php';
 require_once __DIR__ . '/../shared/operational_status_governance.php';
+require_once __DIR__ . '/../shared/verifier_case_queue.php';
 
 auth_require_login('verifier');
 auth_session_start();
@@ -275,15 +276,16 @@ try {
     $sourceRoute = get_str('src', '');
     $debug = get_str('debug', '') === '1';
 
-    if ($groupKey === '' || !wf_is_valid_verifier_group($groupKey)) {
+    if ($groupKey !== '' && !wf_is_valid_verifier_group($groupKey)) {
         http_response_code(400);
         echo json_encode(['status' => 0, 'message' => 'Valid group is required']);
         exit;
     }
 
     $pdo = getDB();
+    verifier_case_queue_clear_db_verifier_owners($pdo);
     $allowedSet = verifier_allowed_sections_set_from_session($pdo);
-    if (!verifier_can_group_by_sections($allowedSet, $groupKey)) {
+    if ($groupKey !== '' && !verifier_can_group_by_sections($allowedSet, $groupKey)) {
         http_response_code(403);
         echo json_encode(['status' => 0, 'message' => 'Access denied']);
         exit;
@@ -295,6 +297,76 @@ try {
     if ($view === 'active') $view = 'available';
     if ($view === 'history') $view = 'participated';
     if ($view === 'completed') $view = 'participated';
+
+    if ($groupKey === '' && $view !== 'participated') {
+        verifier_case_queue_ensure_table($pdo);
+        try {
+            $vfCases = $pdo->query(
+                "SELECT DISTINCT case_id FROM (
+                    SELECT case_id
+                      FROM Vati_Payfiller_Cases
+                     WHERE LOWER(TRIM(COALESCE(workflow_mode,''))) = 'verifier_first'
+                       AND UPPER(TRIM(COALESCE(case_status,''))) NOT IN ('REJECTED','STOP_BGV','APPROVED','COMPLETED','CLEAR')
+                    UNION
+                    SELECT case_id
+                      FROM Vati_Payfiller_Verifier_Group_Queue
+                ) x"
+            );
+            foreach (($vfCases ? ($vfCases->fetchAll(PDO::FETCH_ASSOC) ?: []) : []) as $vfRow) {
+                $cid = (int)($vfRow['case_id'] ?? 0);
+                if ($cid <= 0) continue;
+                if (verifier_case_queue_is_case_model($pdo, $cid, '')) {
+                    verifier_case_queue_ensure_row($pdo, $cid);
+                    verifier_case_queue_sync($pdo, $cid);
+                } else {
+                    verifier_case_queue_sync_from_group_rows($pdo, $cid);
+                }
+            }
+        } catch (Throwable $e) {
+        }
+        $whereStatus = "q.completed_at IS NULL";
+        if ($view === 'followup') {
+            $whereStatus = "q.completed_at IS NULL AND LOWER(TRIM(q.status)) IN ('followup','hold','reopened','blocked')";
+        }
+        $sql =
+            'SELECT q.id, q.case_id, q.application_id, q.client_id, NULL AS group_key, q.status, q.assigned_user_id, q.claimed_at, q.completed_at, ' .
+            'c.candidate_first_name, c.candidate_last_name, c.candidate_email, c.candidate_mobile, c.case_status, c.created_at ' .
+            'FROM Vati_Payfiller_Verifier_Case_Queue q ' .
+            'JOIN Vati_Payfiller_Cases c ON c.case_id = q.case_id ' .
+            'WHERE ' . $whereStatus . ' ' .
+            "AND UPPER(TRIM(COALESCE(c.case_status,''))) NOT IN ('STOP_BGV','REJECTED','APPROVED','COMPLETED','CLEAR') " .
+            "AND ( ? = '' OR c.application_id LIKE CONCAT('%', ?, '%') OR c.candidate_first_name LIKE CONCAT('%', ?, '%') OR c.candidate_last_name LIKE CONCAT('%', ?, '%') OR c.candidate_email LIKE CONCAT('%', ?, '%') OR c.candidate_mobile LIKE CONCAT('%', ?, '%') ) " .
+            'ORDER BY COALESCE(q.claimed_at, c.created_at) ASC, q.id ASC LIMIT 300';
+        $searchParam = $search !== '' ? $search : '';
+        $st = $pdo->prepare($sql);
+        $st->execute([$searchParam, $searchParam, $searchParam, $searchParam, $searchParam, $searchParam]);
+        $rows = verifier_filter_actionable_queue_rows($pdo, $st->fetchAll(PDO::FETCH_ASSOC) ?: [], $allowedSet);
+
+        if ($view === 'available') {
+            $rows = array_values(array_filter($rows, static function ($r): bool {
+                return !empty($r['can_claim']) || !empty($r['can_open']);
+            }));
+        } elseif ($view === 'mine') {
+            $rows = array_values(array_filter($rows, static function ($r): bool {
+                return !empty($r['can_open']) || !empty($r['can_claim']);
+            }));
+        }
+
+        foreach ($rows as &$r) {
+            $s = strtolower(trim((string)($r['status'] ?? '')));
+            $completedAt = trim((string)($r['completed_at'] ?? ''));
+            $r['visibility_context'] = 'operational';
+            $r['is_active_work'] = ($completedAt === '' && wf_is_active_queue_status($s)) ? 1 : 0;
+            $r['evaluated_visible'] = (($completedAt !== '') || wf_is_visible_historical_status($s)) ? 1 : 0;
+            $r['is_evaluated'] = $r['evaluated_visible'];
+            $r['rejected_visible'] = ((int)$r['evaluated_visible'] === 1 && $s === 'rejected') ? 1 : 0;
+            $r['visibility_class'] = $r['is_active_work'] ? 'active_work' : ($r['is_evaluated'] ? 'evaluated_history' : 'other');
+        }
+        unset($r);
+        $rows = os_enrich_rows($pdo, $rows, 'verifier');
+        echo json_encode(['status' => 1, 'message' => 'ok', 'data' => $rows]);
+        exit;
+    }
 
     $rawMineRows = [];
     $rawAvailRows = [];

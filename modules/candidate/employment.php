@@ -1,21 +1,25 @@
 <?php
 require_once __DIR__ . '/../../config/env.php';
 require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../../services/candidate/EmploymentService.php';
 
 $application_id = getApplicationId();
 ensureApplicationExists($application_id);
 
 $pdo = getDB();
-
-// Use stored procedure
 $stmt = $pdo->prepare("CALL SP_Vati_Payfiller_get_employment_details(?)");
 $stmt->execute([$application_id]);
 $dbRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-// Close the cursor
 $stmt->closeCursor();
 
-/* Normalize rows by index */
+$extraByIndex = EmploymentService::fetchExtras($pdo, (string)$application_id);
+foreach ($dbRows as &$dbRow) {
+    $idx = (int)($dbRow['employment_index'] ?? 0);
+    if ($idx > 0 && isset($extraByIndex[$idx])) {
+        $dbRow = array_merge($dbRow, $extraByIndex[$idx]);
+    }
+}
+unset($dbRow);
 $rows = [];
 foreach ($dbRows as $row) {
     $idx = ((int)$row['employment_index']) - 1;
@@ -24,16 +28,12 @@ foreach ($dbRows as $row) {
     }
 }
 $rows = array_values($rows);
-
-/* Fresher detection from database */
 $isFresher = (!empty($rows[0]['is_fresher']) && $rows[0]['is_fresher'] === 'yes');
 $defaultCount = $isFresher ? 1 : max(1, count($rows));
 $maxCount = 5;
 ?>
 
 <div class="candidate-form compact-form cr-fixed-form bgv-fixed-form create-like-spacing employment-create-compact">
-
-    <!-- HEADER -->
     <div class="form-header">
         <i class="fas fa-briefcase"></i> Employment Details
     </div>
@@ -41,6 +41,10 @@ $maxCount = 5;
     <p class="text-muted mb-3">
         Please list your recent employers starting with the most recent one.
     </p>
+    <div class="employment-order-hint mb-3">
+        <i class="fas fa-info-circle"></i>
+        Enter employment in descending order: Employer 1 must be your current/latest employment, followed by older employments.
+    </div>
 
     <div id="employmentFresherMessage" class="alert alert-info mb-3" style="display: none;">
         Fresher selected. No employment details required
@@ -72,9 +76,10 @@ $maxCount = 5;
         </div>
 
     <!-- Form -->
-        <form id="employmentForm" enctype="multipart/form-data">
+        <form id="employmentForm" enctype="multipart/form-data" data-server-visible-count="<?= (int) $defaultCount ?>">
             <div id="employmentContainer"></div>
             <input type="hidden" name="application_id" value="<?= $application_id ?>">
+            <input type="hidden" name="visibleEmploymentCount" id="visibleEmploymentCount" value="<?= (int) $defaultCount ?>">
         </form>
 
         <!-- Hidden data -->
@@ -161,7 +166,6 @@ $maxCount = 5;
             </div>
         </div>
 
-        <!-- Card Header -->
         <div class="employment-card-header compact-header">
             <h6 class="mb-0">Employment <span class="employer-num">1</span></h6>
             <span class="employment-badge compact-badge">
@@ -170,7 +174,6 @@ $maxCount = 5;
         </div>
 
         <div class="employment-card-body compact-body">
-            <!-- Row 1: Basic Info -->
             <div class="form-row-3 compact-row mb-2">
                 <div class="form-field">
                     <div class="form-control double-border compact-control">
@@ -194,25 +197,37 @@ $maxCount = 5;
                 </div>
             </div>
 
-            <!-- Row 2: Dates -->
-            <div class="form-row-2 compact-row mb-2">
+            <div class="form-row-3 compact-row mb-2">
+                <div class="form-field">
+                    <div class="form-control double-border compact-control">
+                        <label class="compact-label">Job Location</label>
+                        <input type="text" name="job_location[]" class="compact-input" placeholder="City, State">
+                    </div>
+                </div>
+
                 <div class="form-field">
                     <div class="form-control double-border compact-control">
                         <label class="compact-label">Start Date <span class="required">*</span></label>
-                        <input type="date" name="joining_date[]" required class="compact-input">
+                        <input type="date" name="joining_date[]" required class="compact-input" max="<?= htmlspecialchars(date('Y-m-d')) ?>">
                     </div>
                 </div>
 
                 <div class="form-field">
                     <div class="form-control double-border compact-control">
                         <label class="compact-label">End Date</label>
-                        <input type="date" name="relieving_date[]" class="compact-input">
+                        <input type="date" name="relieving_date[]" class="compact-input" max="<?= htmlspecialchars(date('Y-m-d')) ?>">
                     </div>
                 </div>
             </div>
 
-            <!-- Row 3: Employment Proof -->
-            <div class="form-row-2 compact-row mb-2">
+            <div class="form-row-3 compact-row mb-2">
+                <div class="form-field">
+                    <div class="form-control double-border compact-control">
+                        <label class="compact-label">Reason for Leaving <span class="required">*</span></label>
+                        <textarea name="reason_leaving[]" rows="1" required class="compact-textarea"></textarea>
+                    </div>
+                </div>
+
                 <div class="form-field">
                     <div class="form-control double-border compact-control">
                         <label class="compact-label">Employment Document Type <span class="required">*</span></label>
@@ -225,10 +240,13 @@ $maxCount = 5;
                 <div class="form-field">
                     <div class="form-control double-border compact-control">
                         <label class="compact-label">Employment Proof <span class="required">*</span></label>
-                        <div class="file-upload-box" data-file-upload>
+                        <div class="file-upload-box employment-inline-upload" data-file-upload>
                             <div class="file-upload-row">
                                 <button type="button" class="file-upload-btn" data-file-choose>Choose File</button>
                                 <button type="button" class="file-upload-name" data-file-name disabled>No file chosen</button>
+                                <button type="button" class="file-upload-remove" data-file-remove aria-label="Remove employment proof" style="display:none;">
+                                    <i class="fas fa-times"></i>
+                                </button>
                             </div>
                             <div class="file-upload-error" data-file-error></div>
                         </div>
@@ -240,18 +258,7 @@ $maxCount = 5;
                     </div>
                 </div>
             </div>
-
-            <!-- Row 4: Reason -->
-            <div class="form-row-1 compact-row mb-2">
-                <div class="form-field">
-                    <div class="form-control double-border compact-control">
-                        <label class="compact-label">Reason for Leaving <span class="required">*</span></label>
-                        <textarea name="reason_leaving[]" rows="1" required class="compact-textarea"></textarea>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Row 5: HR Details -->
+          
             <div class="form-row-3 compact-row mb-2">
                 <div class="form-field">
                     <div class="form-control double-border compact-control">
@@ -275,7 +282,7 @@ $maxCount = 5;
                 </div>
             </div>
 
-            <!-- Row 6: Manager Details -->
+    
             <div class="form-row-3 compact-row mb-2">
                 <div class="form-field">
                     <div class="form-control double-border compact-control">
@@ -321,7 +328,7 @@ $maxCount = 5;
                                class="form-check-input no-further-employment-checkbox"
                                value="1">
                         <label class="form-check-label compact-checkbox-label">
-                            I don't have any further employments
+                            I have further employments
                         </label>
                     </div>
                 </div>

@@ -470,3 +470,4 @@
 [2026-05-20 12:53:04 UTC] Unauthorized API request {"path":"/GSS/api/shared/my_assigned_applications.php"}
 [2026-05-20 12:53:04 UTC] Unauthorized API request {"path":"/GSS/api/shared/my_assigned_applications.php"}
 [2026-05-20 12:53:14 UTC] Unauthorized API request {"path":"/GSS/api/shared/my_assigned_applications.php"}
+[2026-05-30 05:16:43 UTC] Unauthorized API request {"path":"/GSS/api/shared/case_timeline_list.php?application_id=APP-20260529132431508"}

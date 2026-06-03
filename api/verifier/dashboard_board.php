@@ -34,6 +34,23 @@ function vr_case_board_row_state(string $bucket, int $assignedUserId, int $curre
     return 'claimed_by_other';
 }
 
+function vr_case_board_state_from_routing(array $routingState, string $bucket): string
+{
+    if (!empty($routingState['owned_active_components'])) {
+        return $bucket === 'followup' ? 'followup' : 'mine_active';
+    }
+    if (!empty($routingState['claimable_next_components'])) {
+        return 'available';
+    }
+    if (!empty($routingState['completed_components'])) {
+        return 'completed';
+    }
+    if (!empty($routingState['locked_future_components'])) {
+        return 'locked_future';
+    }
+    return 'hidden_unrelated';
+}
+
 function vr_case_board_open_url(int $caseId, string $applicationId, int $clientId, string $bucket): string
 {
     $params = [
@@ -73,6 +90,7 @@ try {
     }
 
     verifier_case_queue_ensure_table($pdo);
+    verifier_case_queue_clear_db_verifier_owners($pdo);
 
     // Ensure case queue rows exist for both new verifier-first cases and legacy cases
     // that still only have compatibility verifier-group rows.
@@ -130,14 +148,26 @@ try {
             continue;
         }
 
-        $state = vr_case_board_row_state($bucket, $assignedUserId, $userId, $row['completed_at'] ?? null);
+        $routingState = verifier_routing_case_state($pdo, $caseId, $userId);
+        $state = vr_case_board_state_from_routing($routingState, $bucket);
         $componentSummary = verifier_case_queue_component_summary($pdo, $caseId);
-        $familySet = [];
-        foreach ($componentSummary as $item) {
-            $family = strtolower(trim((string)($item['family_key'] ?? 'all')));
-            if ($family !== '') $familySet[$family] = true;
+        $matchingComponents = array_values(array_unique(array_merge(
+            $routingState['owned_active_components'] ?? [],
+            $routingState['claimable_next_components'] ?? [],
+            $routingState['completed_components'] ?? [],
+            $routingState['locked_future_components'] ?? []
+        )));
+        if ($state === 'hidden_unrelated' && !$matchingComponents) {
+            continue;
         }
-        $familyKeys = array_values(array_keys($familySet));
+        $routingPriorityRank = verifier_routing_best_priority_for_case($pdo, $caseId, $userId);
+        $stateKeys = [];
+        foreach (($routingState['components'] ?? []) as $componentState) {
+            $stateKey = strtolower(trim((string)($componentState['state'] ?? '')));
+            if ($stateKey !== '' && $stateKey !== 'context' && $stateKey !== 'hidden_unrelated') {
+                $stateKeys[$stateKey] = true;
+            }
+        }
 
         $bucketCounts[$bucket] = (int)($bucketCounts[$bucket] ?? 0) + 1;
         $rows[] = [
@@ -157,12 +187,20 @@ try {
             'created_at' => $row['created_at'] ?? null,
             'workflow_mode' => (string)($row['workflow_mode'] ?? 'validator_first'),
             'case_status' => (string)($row['case_status'] ?? ''),
-            'family_keys' => $familyKeys,
+            'state_keys' => array_values(array_keys($stateKeys)),
             'component_summary' => $componentSummary,
             'component_summary_text' => vr_case_board_summary_text($componentSummary),
-            'can_claim' => $state === 'available' ? 1 : 0,
-            'can_open' => in_array($state, ['mine_active', 'followup', 'completed'], true) ? 1 : 0,
-            'open_url' => in_array($state, ['mine_active', 'followup', 'completed'], true)
+            'matching_components' => $matchingComponents,
+            'routing_component_states' => $routingState['components'] ?? [],
+            'owned_active_components' => $routingState['owned_active_components'] ?? [],
+            'claimable_next_components' => $routingState['claimable_next_components'] ?? [],
+            'locked_future_components' => $routingState['locked_future_components'] ?? [],
+            'completed_components' => $routingState['completed_components'] ?? [],
+            'bucket_pending_by_priority' => $routingState['bucket_pending_by_priority'] ?? [],
+            'routing_priority_rank' => $routingPriorityRank,
+            'can_claim' => !empty($routingState['claimable_next_components']) ? 1 : 0,
+            'can_open' => !empty($routingState['can_open']) ? 1 : 0,
+            'open_url' => !empty($routingState['can_open'])
                 ? vr_case_board_open_url($caseId, (string)($row['application_id'] ?? ''), (int)($row['client_id'] ?? 0), $bucket)
                 : '',
         ];
@@ -173,6 +211,9 @@ try {
         $ao = $bucketOrder[$a['board_bucket']] ?? 99;
         $bo = $bucketOrder[$b['board_bucket']] ?? 99;
         if ($ao !== $bo) return $ao <=> $bo;
+        $ap = (int)($a['routing_priority_rank'] ?? 99);
+        $bp = (int)($b['routing_priority_rank'] ?? 99);
+        if ($ap !== $bp) return $ap <=> $bp;
         if ($a['board_bucket'] === 'completed') {
             return strcmp((string)($b['completed_at'] ?? ''), (string)($a['completed_at'] ?? ''));
         }

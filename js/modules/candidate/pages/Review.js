@@ -78,7 +78,7 @@ class Review {
 
         try {
             const base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-            const url = `${base}/api/shared/candidate_report_get.php?application_id=${encodeURIComponent(appId)}&t=${Date.now()}`;
+            const url = `${base}/api/shared/candidate_report_get.php?application_id=${encodeURIComponent(appId)}&role=candidate&t=${Date.now()}`;
             const res = await fetch(url, { credentials: 'same-origin' });
             const json = await res.json().catch(() => null);
 
@@ -132,6 +132,12 @@ class Review {
             }
 
             window.Router?.markCompleted?.('review');
+            if (window.Router?.caseConfig) {
+                window.Router.caseConfig.submitted_locked = 1;
+                window.Router.caseConfig.application_status = 'submitted';
+                window.CANDIDATE_CASE_CONFIG = window.Router.caseConfig;
+                window.Router._allowedPagesCache = null;
+            }
             window.Router?.updateProgress?.();
             window.Router?.navigateTo
                 ? window.Router.navigateTo('success')
@@ -229,10 +235,13 @@ class Review {
                 this.kv('Roll Number', row.roll_number),
                 this.kv('From Year', row.year_from),
                 this.kv('To Year', row.year_to),
+                this.kv('Year of Passing', row.year_of_passing),
+                this.kv('CA Membership Number', row.ca_membership_number),
                 this.kv('College Address', row.college_address),
                 this.kv('College Website', row.college_website),
-                this.kvHtml('Marksheet File', this.renderFile(row.marksheet_url || this.resolveDocUrl(row.marksheet_file, 'marksheet_file', 'education'), 'Download Marksheet')),
-                this.kvHtml('Degree File', this.renderFile(row.degree_url || this.resolveDocUrl(row.degree_file, 'degree_file', 'education'), 'Download Degree'))
+                this.kvHtml('Marksheet File', this.renderMarksheetDocs(row)),
+                this.kvHtml('Degree File', this.renderFile(row.degree_url || this.resolveDocUrl(row.degree_file, 'degree_file', 'education'), 'Download Degree')),
+                this.kvHtml('Supporting Documents', this.renderSupportingDocs(row.supporting_documents || []))
             ]), 'No education details added.'));
         }
         if (showByData('employment', data.employment)) {
@@ -303,7 +312,8 @@ class Review {
             this.kv('Pincode', basic?.pincode),
             this.kv('Citizenship', basic?.nationality),
             this.kv('Landline', basic?.landline),
-            this.kv('Alias or Other Name', basic?.other_name)
+            this.kv('Alias or Other Name', basic?.other_name),
+            this.kvHtml('Resume', this.renderFile(basic?.resume_url || this.resolveDocUrl(basic?.resume_file, 'resume', 'basic'), basic?.resume_original_name || 'Download Resume'))
         ]);
     }
 
@@ -317,8 +327,10 @@ class Review {
             this.kv('Current Address', this.joinParts([contact.address1, contact.address2, contact.city, contact.state, contact.country, contact.postal_code], ', ')),
             this.kv('Permanent Address', this.joinParts([contact.permanent_address1, contact.permanent_address2, contact.permanent_city, contact.permanent_state, contact.permanent_country, contact.permanent_postal_code], ', ')),
             this.kv('Same as Current', this.yesNo(contact.same_as_current)),
-            this.kv('Address Proof Type', contact.proof_type),
-            this.kvHtml('Address Proof File', this.renderFile(contact.address_proof_url || this.resolveDocUrl(contact.proof_file || contact.address_proof_file, 'proof_file', 'contact'), 'Download Address Proof'))
+            this.kv('Current Address Proof Type', contact.current_proof_type || contact.proof_type),
+            this.kvHtml('Current Address Proof', this.renderFile(contact.current_proof_url || contact.address_proof_url || this.resolveDocUrl(contact.current_proof_file || contact.proof_file || contact.address_proof_file, 'proof_file', 'contact'), 'Download Current Address Proof')),
+            this.kv('Permanent Address Proof Type', contact.permanent_proof_type),
+            this.kvHtml('Permanent Address Proof', this.renderFile(contact.permanent_proof_url || this.resolveDocUrl(contact.permanent_proof_file, 'proof_file', 'contact'), 'Download Permanent Address Proof'))
         ]);
     }
 
@@ -398,6 +410,9 @@ class Review {
         return this.renderGrid([
             this.kv('Current Address', ecourt.current_address),
             this.kv('Permanent Address', ecourt.permanent_address),
+            this.kv('Applicant Legal Name', ecourt.applicant_legal_name),
+            this.kv("Father's Name", ecourt.father_name),
+            this.kv('Current and Permanent Same', this.yesNo(ecourt.same_as_current)),
             this.kv('From Date', ecourt.period_from_date),
             this.kv('To Date', ecourt.period_to_date),
             this.kv('Duration (Years)', ecourt.period_duration_years),
@@ -433,7 +448,8 @@ class Review {
 
         const contact = data?.contact || null;
         if (contact) {
-            addDoc('contact', 'Address Proof', contact.proof_file || contact.address_proof_file, 'proof_file', 'Candidate', contact.created_at || '');
+            addDoc('contact', 'Current Address Proof', contact.current_proof_file || contact.proof_file || contact.address_proof_file, 'proof_file', 'Candidate', contact.created_at || '');
+            addDoc('contact', 'Permanent Address Proof', contact.permanent_proof_file, 'proof_file', 'Candidate', contact.created_at || '');
         }
 
         const identification = Array.isArray(data?.identification) ? data.identification : [];
@@ -444,8 +460,15 @@ class Review {
         const education = Array.isArray(data?.education) ? data.education : [];
         education.forEach((row) => {
             const q = String(row?.qualification || 'Education').trim();
-            addDoc('education', `${q} Marksheet`, row?.marksheet_file, 'marksheet_file', 'Candidate', row?.created_at || '');
+            const marksheetDocs = Array.isArray(row?.marksheet_documents) ? row.marksheet_documents : [];
+            if (marksheetDocs.length) {
+                marksheetDocs.forEach((doc) => addDoc('education', `${q} Marksheet`, doc?.file_name, 'marksheet_file', 'Candidate', doc?.created_at || row?.created_at || '', ''));
+            } else {
+                addDoc('education', `${q} Marksheet`, row?.marksheet_file, 'marksheet_file', 'Candidate', row?.created_at || '');
+            }
             addDoc('education', `${q} Degree`, row?.degree_file, 'degree_file', 'Candidate', row?.created_at || '');
+            const docs = Array.isArray(row?.supporting_documents) ? row.supporting_documents : [];
+            docs.forEach((doc) => addDoc('education', `${q} Supporting Document`, doc?.file_name, 'supporting_document', 'Candidate', doc?.created_at || '', ''));
         });
 
         const employment = Array.isArray(data?.employment) ? data.employment : [];
@@ -462,6 +485,10 @@ class Review {
         const authorization = data?.authorization || null;
         if (authorization) {
             addDoc('reports', 'Authorization Document', authorization.file_name || authorization.authorization_file_name || authorization.auth_file_name, 'authorization_file', 'Candidate', authorization.uploaded_at || authorization.created_at || '');
+        }
+        const basic = data?.basic || null;
+        if (basic) {
+            addDoc('basic', basic?.resume_original_name || 'Resume', basic?.resume_file, 'resume', 'Candidate', basic?.updated_at || basic?.created_at || '');
         }
 
         const uploadedDocs = Array.isArray(data?.uploaded_docs) ? data.uploaded_docs : [];
@@ -569,6 +596,28 @@ class Review {
         return `<button type="button" class="btn btn-sm btn-outline-secondary" data-preview-url="${this.escape(link)}">${this.escape(label.replace(/^Download/i, 'View'))}</button>`;
     }
 
+    static renderSupportingDocs(docs) {
+        const items = Array.isArray(docs) ? docs : [];
+        if (!items.length) return '<span class="review-empty">Not uploaded</span>';
+        return items.map((doc) => {
+            const url = doc?.url || this.resolveDocUrl(doc?.file_name, 'supporting_document', 'education');
+            const label = doc?.original_name || doc?.file_name || 'Supporting Document';
+            return this.renderFile(url, label);
+        }).join('<br>');
+    }
+
+    static renderMarksheetDocs(row) {
+        const docs = Array.isArray(row?.marksheet_documents) ? row.marksheet_documents : [];
+        if (docs.length) {
+            return docs.map((doc) => {
+                const url = doc?.url || this.resolveDocUrl(doc?.file_name, 'marksheet_file', 'education');
+                const label = doc?.original_name || doc?.file_name || 'Marksheet';
+                return this.renderFile(url, label);
+            }).join('<br>');
+        }
+        return this.renderFile(row?.marksheet_url || this.resolveDocUrl(row?.marksheet_file, 'marksheet_file', 'education'), 'Download Marksheet');
+    }
+
     static displayValue(value) {
         if (value === null || value === undefined) return 'Not provided';
         const text = String(value).trim();
@@ -594,6 +643,7 @@ class Review {
         if (field === 'proof_file' || comp === 'contact' || comp === 'address') return '/uploads/address/';
         if (field === 'marksheet_file' || field === 'degree_file' || comp === 'education') return '/uploads/education/';
         if (field === 'employment_doc' || comp === 'employment') return '/uploads/employment/';
+        if (field === 'resume') return '/uploads/resume/';
         if (field === 'photo_path' || comp === 'basic') return '/uploads/candidate_photos/';
         if (field === 'evidence_document' || comp === 'ecourt') return '/uploads/ecourt/';
         if (field === 'authorization_file' || comp === 'reports' || comp === 'authorization') return '/uploads/verification/';

@@ -592,7 +592,7 @@ function send_component_action_email(PDO $pdo, string $applicationId, string $co
             $uid = resolve_user_id();
             $uname = trim((string)($_SESSION['auth_user_name'] ?? ''));
             $requestId = 'comp-mail-' . $applicationId . '-' . $componentKey . '-' . $action . '-' . md5($subject . '|' . $reason . '|' . $role);
-            $ins = $pdo->prepare("INSERT IGNORE INTO workflow_communications
+            $ins = $pdo->prepare("INSERT IGNORE INTO Vati_Payfiller_Workflow_Communications
                 (application_id, case_id, component_key, role_key, action_key, subject, body, notes, sent_by_user_id, sent_by_name, sent_at, delivery_status, communication_type, direction, actor_role, actor_name, workflow_stage, request_id, message_id, thread_id, thread_owner_role, thread_scope, root_outgoing_communication_id)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'sent', ?, 'outgoing', ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             $ins->execute([
@@ -619,7 +619,7 @@ function send_component_action_email(PDO $pdo, string $applicationId, string $co
             ]);
             $canonicalCommunicationId = (int)$pdo->lastInsertId();
             if ($canonicalCommunicationId > 0) {
-                $up = $pdo->prepare('UPDATE workflow_communications
+                $up = $pdo->prepare('UPDATE Vati_Payfiller_Workflow_Communications
                                         SET root_outgoing_communication_id = ?
                                       WHERE communication_id = ?
                                         AND COALESCE(root_outgoing_communication_id, 0) = 0');
@@ -878,6 +878,23 @@ try {
 
     // Enforce assignment (QA/Team Lead can bypass)
    if (!in_array($role, ['qa', 'team_lead', 'validator'], true)) {
+        if ($role === 'verifier') {
+            $routingState = verifier_routing_case_state($pdo, $caseId, $userId);
+            $ownedActive = array_flip(array_map('strval', $routingState['owned_active_components'] ?? []));
+            if (!isset($ownedActive[$componentKey])) {
+                http_response_code(403);
+                echo json_encode([
+                    'status' => 0,
+                    'message' => 'Component is not active for your current routing tier',
+                    'data' => [
+                        'component_state' => $routingState['components'][$componentKey]['state'] ?? 'hidden_unrelated',
+                        'reason' => $routingState['components'][$componentKey]['reason'] ?? 'Not assigned to this component'
+                    ]
+                ]);
+                exit;
+            }
+        }
+
         $as = $pdo->prepare(
             'SELECT assigned_role, assigned_user_id '
             . 'FROM Vati_Payfiller_Case_Components '

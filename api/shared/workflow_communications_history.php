@@ -27,7 +27,7 @@ try {
     }
     wc_ingest_incoming_replies($pdo, $applicationId);
     $sql = 'SELECT communication_id, application_id, case_id, component_key, role_key, action_key, template_id, subject, notes, deadline_label, sent_by_name, sent_at, delivery_status, communication_type, direction, actor_role, actor_name, workflow_stage
-            FROM workflow_communications WHERE application_id = ?';
+            FROM Vati_Payfiller_Workflow_Communications WHERE application_id = ?';
     $params = [$applicationId];
     if ($component !== '') {
         $sql .= ' AND component_key = ?';

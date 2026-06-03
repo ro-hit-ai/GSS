@@ -976,35 +976,6 @@ final class WorkflowRepository
             // Keep seeding resilient across envs that may not have assignment-rule table.
         }
 
-        $assignedUserId = $this->loadVerifierGroupAssignedUserId($caseId, $g);
-        if ($assignedUserId > 0) {
-            return;
-        }
-
-        $autoUserId = $dedicatedUserId > 0 ? $dedicatedUserId : $this->pickAutoAssignedVerifierUserId($clientId > 0 ? $clientId : null, $g);
-        if ($autoUserId <= 0) {
-            return;
-        }
-
-        $assign = $this->pdo->prepare(
-            "UPDATE Vati_Payfiller_Verifier_Group_Queue
-             SET assigned_user_id = COALESCE(assigned_user_id, ?),
-                 dedicated_user_id = CASE
-                     WHEN ? > 0 THEN COALESCE(dedicated_user_id, ?)
-                     ELSE dedicated_user_id
-                 END,
-                 claimed_at = COALESCE(claimed_at, NOW()),
-                 status = CASE
-                     WHEN COALESCE(LOWER(TRIM(status)), '') = 'followup' THEN status
-                     WHEN completed_at IS NULL THEN 'in_progress'
-                     ELSE status
-                 END
-             WHERE case_id = ?
-               AND UPPER(TRIM(group_key)) = ?
-               AND completed_at IS NULL
-               AND COALESCE(assigned_user_id, 0) = 0"
-        );
-        $assign->execute([$autoUserId, $dedicatedUserId, $dedicatedUserId, $caseId, $g]);
     }
 
     private function pickAutoAssignedVerifierUserId(?int $clientId, string $groupKey): int
@@ -1014,9 +985,9 @@ final class WorkflowRepository
 
         $st = $this->pdo->query(
             "SELECT user_id, allowed_sections
-               FROM Vati_Payfiller_Users
+              FROM Vati_Payfiller_Users
               WHERE is_active = 1
-                AND LOWER(TRIM(role)) IN ('verifier','db_verifier')
+                AND LOWER(TRIM(role)) = 'verifier'
               ORDER BY user_id ASC"
         );
         $users = $st ? ($st->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];

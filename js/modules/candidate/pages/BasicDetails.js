@@ -1,6 +1,7 @@
 class BasicDetails {
     static _initialized = false;
     static _listeners = [];
+    static _mobilePhotoPoll = null;
 
     /* ================= ENTRY ================= */
 
@@ -15,6 +16,9 @@ class BasicDetails {
 
         this.initForm();
         this.initPhotoUpload();
+        this.initMobilePhotoCapture();
+        this.initResumeUpload();
+        this.initFullNameSync();
         this.initInputConstraints();
 
         console.log(" BasicDetails ready");
@@ -25,6 +29,10 @@ class BasicDetails {
             el.removeEventListener(type, fn)
         );
         this._listeners = [];
+        if (this._mobilePhotoPoll) {
+            clearInterval(this._mobilePhotoPoll);
+            this._mobilePhotoPoll = null;
+        }
         this._initialized = false;
     }
 
@@ -79,10 +87,12 @@ class BasicDetails {
 
         if (!trigger || !input) return;
 
-        // OPEN FILE PICKER
+        // Open mobile capture by default; desktop upload is still available via button.
         this.on(trigger, "click", (e) => {
             if (e.target.closest(".photo-remove-btn")) return;
-            input.click();
+            if (e.target.closest("#desktopPhotoUploadBtn")) return;
+            e.preventDefault();
+            this.openMobilePhotoModal();
         });
 
         // HANDLE FILE SELECTION (preview only)
@@ -128,7 +138,6 @@ class BasicDetails {
             reader.readAsDataURL(file);
         });
 
-        // REMOVE PHOTO
         this.on(trigger, "click", (e) => {
             const removeBtn = e.target.closest(".photo-remove-btn");
             if (!removeBtn) return;
@@ -138,23 +147,303 @@ class BasicDetails {
 
             if (!confirm("Remove photo?")) return;
 
-            // Reset input
             input.value = "";
 
-            // Remove preview
             const preview = trigger.querySelector(".photo-preview");
             if (preview) preview.remove();
 
-            // Show upload box
             const uploadBox = trigger.querySelector(".photo-upload-box");
             if (uploadBox) uploadBox.style.display = "block";
 
-            // Remove existing photo reference
             const existing = this.form.querySelector('input[name="existing_photo"]');
             if (existing) existing.remove();
 
             console.log(" Photo removed");
         });
+    }
+
+    static initMobilePhotoCapture() {
+        const mobileBtn = document.getElementById("mobilePhotoCaptureBtn");
+        const desktopBtn = document.getElementById("desktopPhotoUploadBtn");
+        const closeBtn = document.getElementById("mobilePhotoCloseBtn");
+        const modal = document.getElementById("mobilePhotoModal");
+        const input = document.getElementById("photoInput");
+
+        this.on(mobileBtn, "click", (e) => {
+            e.preventDefault();
+            this.openMobilePhotoModal();
+        });
+
+        this.on(desktopBtn, "click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            input?.click();
+        });
+
+        this.on(closeBtn, "click", (e) => {
+            e.preventDefault();
+            this.closeMobilePhotoModal();
+        });
+
+        this.on(modal, "click", (e) => {
+            if (e.target === modal) this.closeMobilePhotoModal();
+        });
+    }
+
+    static async openMobilePhotoModal() {
+        const modal = document.getElementById("mobilePhotoModal");
+        const qrBox = document.getElementById("mobilePhotoQrBox");
+        const status = document.getElementById("mobilePhotoStatus");
+        const urlEl = document.getElementById("mobilePhotoUrl");
+        if (!modal || !qrBox || !status) return;
+
+        modal.classList.add("is-open");
+        modal.setAttribute("aria-hidden", "false");
+        qrBox.innerHTML = "<span>Preparing secure QR...</span>";
+        if (urlEl) {
+            urlEl.style.display = "none";
+            urlEl.removeAttribute("href");
+            urlEl.textContent = "";
+        }
+        status.className = "mobile-photo-status";
+        status.textContent = "Secure upload session expires in 10 minutes.";
+
+        if (this._mobilePhotoPoll) {
+            clearInterval(this._mobilePhotoPoll);
+            this._mobilePhotoPoll = null;
+        }
+
+        try {
+            const base = (window.APP_BASE_URL || "").replace(/\/$/, "");
+            const res = await fetch(`${base}/api/candidate/mobile_photo_session_create.php`, {
+                method: "POST",
+                credentials: "same-origin"
+            });
+            const data = await res.json().catch(() => null);
+            if (!res.ok || !data || data.status !== 1) {
+                throw new Error((data && data.message) ? data.message : "Unable to create QR session");
+            }
+            const info = data.data || {};
+            qrBox.innerHTML = `<img src="${info.qr_data_uri || info.qr_url}" alt="Mobile photo capture QR">`;
+            if (urlEl && info.upload_url) {
+                urlEl.href = info.upload_url;
+                urlEl.textContent = info.upload_url;
+                urlEl.style.display = "block";
+            }
+            if (info.security_hint) {
+                status.className = "mobile-photo-status is-error";
+                status.textContent = info.security_hint;
+            } else {
+                status.textContent = "Scan the QR with your mobile camera. Waiting for upload...";
+            }
+            this.startMobilePhotoPolling(info.token);
+        } catch (e) {
+            qrBox.innerHTML = "<span>QR unavailable</span>";
+            status.className = "mobile-photo-status is-error";
+            status.textContent = (e && e.message) ? e.message : "Unable to start mobile capture.";
+        }
+    }
+
+    static closeMobilePhotoModal() {
+        const modal = document.getElementById("mobilePhotoModal");
+        if (modal) {
+            modal.classList.remove("is-open");
+            modal.setAttribute("aria-hidden", "true");
+        }
+        if (this._mobilePhotoPoll) {
+            clearInterval(this._mobilePhotoPoll);
+            this._mobilePhotoPoll = null;
+        }
+    }
+
+    static startMobilePhotoPolling(token) {
+        if (!token) return;
+        const base = (window.APP_BASE_URL || "").replace(/\/$/, "");
+        const status = document.getElementById("mobilePhotoStatus");
+        let attempts = 0;
+        const poll = async () => {
+            attempts++;
+            try {
+                const res = await fetch(`${base}/api/candidate/mobile_photo_status.php?token=${encodeURIComponent(token)}`, {
+                    credentials: "same-origin"
+                });
+                const data = await res.json().catch(() => null);
+                if (!res.ok || !data || data.status !== 1) {
+                    throw new Error((data && data.message) ? data.message : "Unable to check upload status");
+                }
+                const info = data.data || {};
+                if (info.upload_status === "uploaded" && info.photo_url) {
+                    this.applyMobilePhoto(info.photo_url, info.photo_path);
+                    if (status) {
+                        status.className = "mobile-photo-status is-success";
+                        status.textContent = "Photo received. Updating desktop preview...";
+                    }
+                    setTimeout(() => this.closeMobilePhotoModal(), 900);
+                    return;
+                }
+                if (info.upload_status === "expired") {
+                    if (status) {
+                        status.className = "mobile-photo-status is-error";
+                        status.textContent = "QR session expired. Please generate a new QR.";
+                    }
+                    clearInterval(this._mobilePhotoPoll);
+                    this._mobilePhotoPoll = null;
+                }
+            } catch (e) {
+                if (attempts > 3 && status) {
+                    status.className = "mobile-photo-status is-error";
+                    status.textContent = "Still waiting for mobile upload...";
+                }
+            }
+            if (attempts >= 150 && this._mobilePhotoPoll) {
+                clearInterval(this._mobilePhotoPoll);
+                this._mobilePhotoPoll = null;
+            }
+        };
+        this._mobilePhotoPoll = setInterval(poll, 2000);
+        poll();
+    }
+
+    static applyMobilePhoto(photoUrl, photoPath) {
+        const trigger = document.getElementById("photoUploadTrigger");
+        const input = document.getElementById("photoInput");
+        if (!trigger) return;
+        if (input) input.value = "";
+
+        let uploadBox = trigger.querySelector(".photo-upload-box");
+        if (uploadBox) uploadBox.style.display = "none";
+
+        let preview = trigger.querySelector(".photo-preview");
+        if (!preview) {
+            preview = document.createElement("div");
+            preview.className = "photo-preview has-image";
+            preview.innerHTML = `
+                <img src="" alt="Profile Photo" />
+                <button type="button" class="photo-remove-btn compact-btn">
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
+            trigger.appendChild(preview);
+        }
+        preview.classList.add("has-image");
+        preview.style.display = "block";
+        const img = preview.querySelector("img");
+        if (img) img.src = `${photoUrl}${photoUrl.includes("?") ? "&" : "?"}t=${Date.now()}`;
+
+        let existing = this.form?.querySelector('input[name="existing_photo"]');
+        if (!existing && this.form) {
+            existing = document.createElement("input");
+            existing.type = "hidden";
+            existing.name = "existing_photo";
+            this.form.appendChild(existing);
+        }
+        if (existing) existing.value = photoPath || "";
+    }
+
+    static initResumeUpload() {
+        const input = document.getElementById("resumeInput");
+        if (!input) return;
+
+        const chooseBtn = document.querySelector('[data-file-target="resumeInput"]');
+        const box = chooseBtn ? chooseBtn.closest('[data-file-upload]') : null;
+        const nameBtn = box ? box.querySelector('[data-file-name]') : null;
+        const removeBtn = box ? box.querySelector('[data-file-remove]') : null;
+        const errorEl = box ? box.querySelector('[data-file-error]') : null;
+
+        if (chooseBtn) {
+            this.on(chooseBtn, "click", (e) => {
+                e.preventDefault();
+                input.click();
+            });
+        }
+
+        this.on(input, "change", () => {
+            const file = input.files && input.files[0] ? input.files[0] : null;
+            if (!file) return;
+
+            const lower = String(file.name || '').toLowerCase();
+            const valid = lower.endsWith('.pdf') && (!file.type || file.type === 'application/pdf');
+            if (!valid) {
+                if (errorEl) errorEl.textContent = 'Only PDF resumes are allowed.';
+                input.value = '';
+                return;
+            }
+            if (file.size > 8 * 1024 * 1024) {
+                if (errorEl) errorEl.textContent = 'Resume must be under 8MB.';
+                input.value = '';
+                return;
+            }
+
+            if (errorEl) errorEl.textContent = '';
+            if (nameBtn) {
+                nameBtn.textContent = file.name;
+                nameBtn.disabled = false;
+                nameBtn.classList.add('preview-btn');
+            }
+            if (removeBtn) {
+                removeBtn.style.display = '';
+                removeBtn.disabled = false;
+                removeBtn.setAttribute('aria-hidden', 'false');
+            }
+        });
+
+        if (removeBtn) {
+            this.on(removeBtn, "click", (e) => {
+                e.preventDefault();
+                input.value = "";
+                if (nameBtn) {
+                    nameBtn.textContent = "No file chosen";
+                    nameBtn.disabled = true;
+                    nameBtn.classList.remove("preview-btn");
+                }
+                removeBtn.style.display = "none";
+                removeBtn.disabled = true;
+                removeBtn.setAttribute("aria-hidden", "true");
+                this.form?.querySelector('[name="existing_resume"]')?.remove();
+                this.form?.querySelector('[name="existing_resume_name"]')?.remove();
+                if (errorEl) errorEl.textContent = "";
+            });
+        }
+    }
+
+    static initFullNameSync() {
+        const display = document.getElementById("applicantFullNameDisplay");
+        const form = this.form;
+        if (!display || !form) return;
+
+        const fields = [
+            form.querySelector('[name="first_name"]'),
+            form.querySelector('[name="middle_name"]'),
+            form.querySelector('[name="last_name"]')
+        ].filter(Boolean);
+
+        let lastAutoValue = String(display.dataset.autoFullName || '').trim();
+        let manuallyEdited = String(display.value || '').trim() !== '' && String(display.value || '').trim() !== lastAutoValue;
+
+        this.on(display, "input", () => {
+            manuallyEdited = String(display.value || '').trim() !== lastAutoValue;
+        });
+
+        const update = () => {
+            const fullName = fields
+                .map(field => String(field.value || '').trim())
+                .filter(Boolean)
+                .join(' ');
+            if (manuallyEdited && String(display.value || '').trim() !== '') {
+                lastAutoValue = fullName;
+                display.dataset.autoFullName = fullName;
+                return;
+            }
+            if ('value' in display) {
+                display.value = fullName;
+                display.placeholder = 'Will auto-build from name fields';
+            } else {
+                display.textContent = fullName || 'Will auto-build from name fields';
+            }
+        };
+
+        fields.forEach(field => this.on(field, "input", update));
+        update();
     }
 
     /* ================= VALIDATION ================= */
@@ -308,15 +597,11 @@ static validate(final = true) {
     static prepareFormData() {
         const form = this.form;
         const fd = new FormData(form);
-        
-        // Fix mobile field - combine country code and number
-        const mobileCountryCode = form.querySelector('select[name="mobile_country_code"]').value;
-        const mobileNumber = form.querySelector('input[name="mobile"]').value;
-        
-        // Remove individual fields and add combined mobile field
-        fd.delete('mobile_country_code');
-        fd.delete('mobile');
-        fd.append('mobile', mobileCountryCode  + mobileNumber);
+        const mobileCountryCode = form.querySelector('select[name="mobile_country_code"]')?.value || '+91';
+        const mobileNumber = form.querySelector('input[name="mobile"]')?.value || '';
+
+        fd.set('mobile_country_code', mobileCountryCode.trim());
+        fd.set('mobile', mobileNumber.trim());
         
         return fd;
     }

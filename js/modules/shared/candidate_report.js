@@ -47,15 +47,18 @@
     var CURRENT_MODAL_REASON_TYPE = '';
     var TL_CACHE = [];
     var EMAIL_REPLIES_CACHE = [];
-    var EMAIL_REPLIES_SIDEBAR_CACHE = [];
+    var EMAIL_REPLIES_META = {};
     var EMAIL_REPLIES_LAST_SYNC_AT = 0;
     var EMAIL_REPLIES_LAST_SYNC_APP_ID = '';
+    var EMAIL_REPLIES_LAST_SCOPE_KEY = '';
     var EMAIL_REPLIES_INFLIGHT = null;
     var EMAIL_REPLIES_INFLIGHT_KEY = '';
     var EMAIL_REPLIES_LAST_RENDER_KEY = '';
     var EMAIL_REPLIES_CACHE_READY = false;
     var EMAIL_REPLIES_AUTO_REFRESH_TIMER = null;
     var EMAIL_REPLIES_AUTO_REFRESH_MS = 15000;
+    var EMAIL_REPLIES_STALE_SYNC_MS = 60000;
+    var EMAIL_REPLIES_FORCE_SYNC_ONCE = false;
     var TL_ACTIVE_FILTER = 'all';
     var COMPONENT_TABLE_ROWS = { id: [], education: [], employment: [] };
     var COMPONENT_TABLE_RENDERED = { id: false, education: false, employment: false };
@@ -88,7 +91,7 @@
 var PDF_VIEWER_STATE = {
     open: false,
     context: null,
-    mode: 'view', // NEW
+    mode: 'view',
     uploadFile: null,
     uploadUrl: ''
 };
@@ -174,13 +177,11 @@ function closeBsModal(id) {
         var el = document.getElementById(id);
         if (!el) return;
 
-        // Get Bootstrap modal instance
         if (window.bootstrap && window.bootstrap.Modal) {
             var modal = window.bootstrap.Modal.getInstance(el);
             if (modal) {
                 modal.hide();
             } else {
-                // Manual hide if instance doesn't exist
                 el.classList.remove('show');
                 el.style.display = 'none';
                 el.setAttribute('aria-hidden', 'true');
@@ -191,36 +192,6 @@ function closeBsModal(id) {
             el.setAttribute('aria-hidden', 'true');
         }
 
-        // Aggressive cleanup of all modal artifacts
-        // setTimeout(function () {
-        //     // Remove all backdrops
-        //     document.querySelectorAll('.modal-backdrop').forEach(function (b) {
-        //         if (b && b.parentNode) {
-        //             b.parentNode.removeChild(b);
-        //         }
-        //     });
-            
-        //     // Reset body and html classes/styles
-        //     document.body.classList.remove('modal-open');
-        //     document.documentElement.classList.remove('modal-open');
-        //     document.body.style.removeProperty('padding-right');
-        //     document.body.style.removeProperty('overflow');
-        //     document.documentElement.style.removeProperty('overflow');
-        //     document.documentElement.style.removeProperty('padding-right');
-            
-        //     // Ensure no modals are still visible
-        //     document.querySelectorAll('.modal.show').forEach(function (m) {
-        //         m.classList.remove('show');
-        //         m.style.display = 'none';
-        //         m.setAttribute('aria-hidden', 'true');
-        //     });
-
-        //     // Restore validator overflow lock if needed
-        //     if (document.querySelector('.cr-report-root.cr-validator-workspace') &&
-        //         String(qs('print') || '') !== '1') {
-        //         document.body.style.overflow = 'hidden';
-        //     }
-        // }, 100);
     } catch (e) {
         try { console.warn('Error closing modal:', e); } catch (_e2) {}
     }
@@ -374,6 +345,31 @@ function closeBsModal(id) {
         });
     }
 
+    async function createCandidateCorrectionSession(options) {
+        options = options || {};
+        var baseUrl = (window.APP_BASE_URL || '').replace(/\/$/, '');
+        var applicationId = String(options.applicationId || '').trim();
+        var caseId = parseInt(String(options.caseId || '0'), 10) || 0;
+        var requestId = String(options.requestId || '').trim();
+        if (requestId === '') {
+            requestId = 'corr-' + String(applicationId || caseId || 'case') + '-' + String(Date.now());
+        }
+        var res = await fetch(baseUrl + '/api/shared/correction_session_create.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                case_id: caseId || null,
+                application_id: applicationId || null,
+                components: Array.isArray(options.components) ? options.components : [],
+                reason: String(options.reason || '').trim(),
+                request_id: requestId
+            })
+        });
+        var payload = await res.json().catch(function () { return null; });
+        return { res: res, payload: payload };
+    }
+
     function initCandidateCorrectionRequest(getPayload) {
         var openBtn = document.getElementById('cvOpenCorrectionModal');
         var sendBtn = document.getElementById('cvCorrectionSendBtn');
@@ -455,19 +451,15 @@ function closeBsModal(id) {
             sendBtn.textContent = 'Sending...';
             try {
                 var reqId = 'corr-' + String(applicationId || caseId) + '-' + String(Date.now());
-                var res = await fetch(base + '/api/shared/correction_session_create.php', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'same-origin',
-                    body: JSON.stringify({
-                        case_id: caseId || null,
-                        application_id: applicationId || null,
-                        components: components,
-                        reason: reasonEl ? String(reasonEl.value || '').trim() : '',
-                        request_id: reqId
-                    })
+                var out = await createCandidateCorrectionSession({
+                    caseId: caseId,
+                    applicationId: applicationId,
+                    components: components,
+                    reason: reasonEl ? String(reasonEl.value || '').trim() : '',
+                    requestId: reqId
                 });
-                var data = await res.json().catch(function () { return null; });
+                var res = out.res;
+                var data = out.payload;
                 if (!res.ok || !data || data.status !== 1) {
                     throw new Error((data && data.message) ? data.message : 'Failed to create correction session');
                 }
@@ -1734,20 +1726,19 @@ if (uploadInput) {
                         component_key: componentKey
                     };
                     EMAIL_REPLIES_CACHE = [optimisticRow].concat(Array.isArray(EMAIL_REPLIES_CACHE) ? EMAIL_REPLIES_CACHE : []);
-                    if (componentKey && componentKey === currentRepliesScopeComponent()) {
-                        EMAIL_REPLIES_SIDEBAR_CACHE = [optimisticRow].concat(Array.isArray(EMAIL_REPLIES_SIDEBAR_CACHE) ? EMAIL_REPLIES_SIDEBAR_CACHE : []);
-                    }
+                    EMAIL_REPLIES_META = Object.assign({}, EMAIL_REPLIES_META || {}, { pending_local_send: true });
                     var hostModal = document.getElementById('cvEmailReplies');
                     var hostSidebar = document.getElementById('emailReplies');
                     var countEl = document.getElementById('cvEmailRepliesCount');
-                    if (hostModal) hostModal.innerHTML = emailRepliesHtml(EMAIL_REPLIES_CACHE);
-                    if (hostSidebar) hostSidebar.innerHTML = emailRepliesHtml(EMAIL_REPLIES_SIDEBAR_CACHE.slice(0, 8));
-                    if (countEl) countEl.textContent = String(EMAIL_REPLIES_SIDEBAR_CACHE.length);
+                    if (hostModal) hostModal.innerHTML = emailRepliesHtml(EMAIL_REPLIES_CACHE, { role: role, componentKey: componentKey, meta: EMAIL_REPLIES_META });
+                    if (hostSidebar) hostSidebar.innerHTML = emailRepliesHtml(EMAIL_REPLIES_CACHE.slice(0, 8), { role: role, componentKey: componentKey, meta: EMAIL_REPLIES_META });
+                    if (countEl) countEl.textContent = String(EMAIL_REPLIES_CACHE.length);
                 }
                 setBoxMessage('cvMailMessage', mode === 'draft' ? 'Draft saved.' : 'Sent successfully.', 'success');
                 lastHistory = await loadHistory();
                 renderHistory(lastHistory);
-                loadEmailReplies(ctx.application_id || '', { componentKey: componentKey, sync: false }).catch(function () {});
+                EMAIL_REPLIES_FORCE_SYNC_ONCE = true;
+                loadEmailReplies(ctx.application_id || '', { componentKey: componentKey, sync: true }).catch(function () {});
                 loadTimeline(ctx.application_id || '', { sync: false }).catch(function () {});
             } catch (e) {
                 setBoxMessage('cvMailMessage', (e && e.message) ? e.message : 'Communication failed', 'danger');
@@ -2143,6 +2134,8 @@ if (uploadInput) {
                     if (b) b.textContent = b.getAttribute('data-mail-label-resend') || 'Resend Mail';
                     setTimeout(function () { closeBsModal(modalId); }, 150);
                 }
+                EMAIL_REPLIES_FORCE_SYNC_ONCE = true;
+                loadEmailReplies(appId || '', { componentKey: lockedComponent, sync: true }).catch(function () {});
                 loadTimeline(appId || '', { sync: false }).catch(function () {});
             } catch (e) {
                 setBoxMessage('cvVerificationMailMessage', (e && e.message) ? e.message : 'Failed to send verification mail.', 'danger');
@@ -2399,7 +2392,6 @@ if (uploadInput) {
         if (!section || section === 'timeline') return false;
         var role = getRole();
         if (!canTakeActionRole(role)) return false;
-        // Only for real components (skip reports/contact if you later remove them)
         return true;
     }
 
@@ -2488,7 +2480,6 @@ if (uploadInput) {
         var panel = document.getElementById('section-' + String(section));
         if (!panel) return;
         if (panel.dataset.compToolsBound === '1') {
-            // refresh docs list when switching
             var docsHost = panel.querySelector('[data-comp-docs]');
             if (docsHost) {
                 loadUploadedDocsForComponent(CURRENT_APP_ID, section, docsHost);
@@ -2501,7 +2492,6 @@ if (uploadInput) {
         wrap.innerHTML = componentToolbarHtml(section);
         var toolsEl = wrap.firstElementChild || wrap;
 
-        // Insert the evidence/upload block inside the main section card instead of below it.
         var leftCol = panel.querySelector('.cr-comp-left');
         var hostForInsert = leftCol || panel;
         var inserted = false;
@@ -2863,7 +2853,8 @@ if (uploadInput) {
         opts = opts || {};
         var role = String(opts.role || getRole() || '').toLowerCase().trim();
         var componentKey = normSection(String(opts.componentKey || currentRepliesScopeComponent() || ''));
-        var hasOtherThread = !!opts.hasOtherThread;
+        var meta = opts.meta && typeof opts.meta === 'object' ? opts.meta : {};
+        var hasOtherThread = !!opts.hasOtherThread || (!!meta.scope_has_thread && !meta.viewer_thread_exists);
 
         var roleLabel = 'this role';
         if (role === 'validator') roleLabel = 'validator';
@@ -2871,8 +2862,17 @@ if (uploadInput) {
         else if (role === 'qa' || role === 'team_lead') roleLabel = 'QA';
 
         var componentLabel = componentKey ? sectionTitle(componentKey) : 'this component';
+        if (meta.sync_failed) {
+            return '<div style="color:#6b7280; font-size:13px;">No replies available yet for ' + esc(componentLabel) + '.</div>';
+        }
+        if (meta.no_thread) {
+            return '<div style="color:#6b7280; font-size:13px;">No mail thread has been sent for ' + esc(componentLabel) + ' yet.</div>';
+        }
         if (hasOtherThread && role !== 'qa' && role !== 'team_lead') {
             return '<div style="color:#6b7280; font-size:13px;">Replies exist for ' + esc(componentLabel) + ', but no ' + esc(roleLabel) + ' mail thread is linked to this component yet.</div>';
+        }
+        if (meta.viewer_thread_exists) {
+            return '<div style="color:#6b7280; font-size:13px;">No replies yet for the ' + esc(roleLabel) + ' thread on ' + esc(componentLabel) + '.</div>';
         }
         return '<div style="color:#6b7280; font-size:13px;">No ' + esc(roleLabel) + ' replies yet for ' + esc(componentLabel) + '.</div>';
     }
@@ -3033,6 +3033,71 @@ if (uploadInput) {
         ].join('|');
     }
 
+    function repliesScopeKey(applicationId, componentKey, viewerRole) {
+        return [
+            String(applicationId || '').trim(),
+            String(componentKey || '').trim(),
+            String(viewerRole || '').trim()
+        ].join('|');
+    }
+
+    function formatRepliesSyncStamp(value) {
+        if (!value) return '';
+        try {
+            if (typeof value === 'number') {
+                return window.GSS_DATE.formatDbDateTime(new Date(value).toISOString().slice(0, 19).replace('T', ' '));
+            }
+            return window.GSS_DATE.formatDbDateTime(String(value));
+        } catch (_e) {
+            return String(value || '');
+        }
+    }
+
+    function setRepliesSyncMeta(meta, isBusy) {
+        var el = document.getElementById('cvRepliesSyncMeta');
+        if (!el) return;
+        var m = meta && typeof meta === 'object' ? meta : {};
+        if (isBusy) {
+            el.textContent = 'Syncing replies...';
+            el.style.color = '#2563eb';
+            return;
+        }
+        if (m.sync_failed) {
+            el.textContent = 'Replies are up to date with current data.';
+            el.style.color = '#92400e';
+            return;
+        }
+        if (m.sync_warning) {
+            el.textContent = 'Replies are up to date with current data.';
+            el.style.color = '#64748b';
+            return;
+        }
+        var parts = [];
+        if (m.used_fallback) {
+            parts.push('Fallback data shown');
+        } else {
+            parts.push('Canonical replies');
+        }
+        var stamp = formatRepliesSyncStamp(m.last_synced_at || EMAIL_REPLIES_LAST_SYNC_AT || '');
+        if (stamp) {
+            parts.push('Last synced ' + stamp);
+        }
+        el.textContent = parts.join(' | ') || 'Not synced yet.';
+        el.style.color = m.used_fallback ? '#92400e' : '#64748b';
+    }
+
+    function renderRepliesState(roleNow, componentKey) {
+        var hostModal = document.getElementById('cvEmailReplies');
+        var hostSidebar = document.getElementById('emailReplies');
+        var countEl = document.getElementById('cvEmailRepliesCount');
+        var rows = Array.isArray(EMAIL_REPLIES_CACHE) ? EMAIL_REPLIES_CACHE : [];
+        var meta = EMAIL_REPLIES_META && typeof EMAIL_REPLIES_META === 'object' ? EMAIL_REPLIES_META : {};
+        if (hostModal) hostModal.innerHTML = emailRepliesHtml(rows, { role: roleNow, componentKey: componentKey, meta: meta });
+        if (hostSidebar) hostSidebar.innerHTML = emailRepliesHtml(rows.slice(0, 8), { role: roleNow, componentKey: componentKey, meta: meta });
+        if (countEl) countEl.textContent = String(rows.length);
+        setRepliesSyncMeta(meta, false);
+    }
+
     function normalizeNodeWorkflowRole(value) {
         var role = String(value || '').toLowerCase().trim();
         if (role === 'team_lead') return 'qa';
@@ -3050,8 +3115,53 @@ if (uploadInput) {
         if (!nodePayload || typeof nodePayload !== 'object') return true;
         if (nodePayload.success === false) return true;
         var meta = nodePayload.meta && typeof nodePayload.meta === 'object' ? nodePayload.meta : {};
+        var fallbackReason = String(meta.fallbackReason || '').toUpperCase().trim();
+        if (nodePayload.hasThread === false && nodePayload.hasMessages === false && fallbackReason === 'THREAD_NOT_FOUND') {
+            return false;
+        }
         if (meta.fallbackRecommended === true) return true;
         return false;
+    }
+
+    function nodeRowsAreSafeForScopedReplies(rows, roleNow, componentKey) {
+        if (!Array.isArray(rows) || rows.length === 0) return false;
+        var wantedComponent = normSection(componentKey || '');
+        var allowedMsgIds = {};
+        var outgoingForRole = 0;
+        for (var i = 0; i < rows.length; i += 1) {
+            var row = rows[i] || {};
+            var rowRole = normalizeNodeWorkflowRole(String(row.actor_role || ''));
+            var direction = String(row.direction || '').toLowerCase().trim();
+            var rowComponent = normSection(String(row.component_key || ''));
+            if (wantedComponent && rowComponent !== wantedComponent) {
+                return false;
+            }
+            if (direction === 'outgoing' && rowRole === roleNow) {
+                outgoingForRole += 1;
+                var msgId = normMsgIdLocal(row.message_id || '');
+                if (msgId) {
+                    allowedMsgIds[msgId] = true;
+                }
+            }
+        }
+        if ((roleNow === 'validator' || roleNow === 'verifier' || roleNow === 'qa') && outgoingForRole <= 0) {
+            return false;
+        }
+        for (var j = 0; j < rows.length; j += 1) {
+            var current = rows[j] || {};
+            var currentDirection = String(current.direction || '').toLowerCase().trim();
+            if (currentDirection !== 'incoming') continue;
+            var inReplyTo = normMsgIdLocal(current.in_reply_to || '');
+            var refs = extractMsgIdsLocal(current.references_header || '');
+            var linked = (!!inReplyTo && !!allowedMsgIds[inReplyTo]);
+            if (!linked && refs.length) {
+                linked = refs.some(function (id) { return !!allowedMsgIds[id]; });
+            }
+            if (!linked) {
+                return false;
+            }
+        }
+        return true;
     }
 
     function nodePayloadHasMixedOutboundRoles(nodePayload) {
@@ -3273,6 +3383,7 @@ if (uploadInput) {
             style.textContent = '@keyframes cvRepliesSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}';
             document.head.appendChild(style);
         }
+        setRepliesSyncMeta(EMAIL_REPLIES_META, !!isBusy);
     }
 
     function bindRepliesSyncButton() {
@@ -3285,6 +3396,7 @@ if (uploadInput) {
             EMAIL_REPLIES_INFLIGHT = null;
             EMAIL_REPLIES_INFLIGHT_KEY = '';
             EMAIL_REPLIES_CACHE_READY = false;
+            EMAIL_REPLIES_FORCE_SYNC_ONCE = true;
             setRepliesSyncButtonState(true);
             loadEmailReplies(CURRENT_APP_ID, {
                 componentKey: currentRepliesScopeComponent(),
@@ -3303,9 +3415,19 @@ if (uploadInput) {
                 if (document.hidden) return;
                 if (!CURRENT_APP_ID) return;
                 if (EMAIL_REPLIES_INFLIGHT) return;
+                var roleNow = getReplyViewerRole();
+                var componentKey = currentRepliesScopeComponent();
+                var now = Date.now();
+                var scopeKey = repliesScopeKey(CURRENT_APP_ID, componentKey, roleNow);
+                var sameScope = scopeKey === EMAIL_REPLIES_LAST_SCOPE_KEY;
+                var stale = !EMAIL_REPLIES_LAST_SYNC_AT || (now - EMAIL_REPLIES_LAST_SYNC_AT) >= EMAIL_REPLIES_STALE_SYNC_MS;
+                var shouldHeavySync = EMAIL_REPLIES_FORCE_SYNC_ONCE
+                    || !sameScope
+                    || stale
+                    || !!(EMAIL_REPLIES_META && (EMAIL_REPLIES_META.viewer_thread_exists || EMAIL_REPLIES_META.scope_has_thread) && !(Array.isArray(EMAIL_REPLIES_CACHE) && EMAIL_REPLIES_CACHE.length));
                 loadEmailReplies(CURRENT_APP_ID, {
-                    componentKey: currentRepliesScopeComponent(),
-                    sync: true
+                    componentKey: componentKey,
+                    sync: shouldHeavySync
                 }).catch(function () {});
             } catch (_e) {}
         }, Math.max(5000, parseInt(String(EMAIL_REPLIES_AUTO_REFRESH_MS || 15000), 10) || 15000));
@@ -3320,19 +3442,57 @@ if (uploadInput) {
         var componentKey = normSection(opts.componentKey || currentRepliesScopeComponent() || '');
         var roleNow = getReplyViewerRole();
         var shouldSync = !!opts.sync;
+        var scopeKey = repliesScopeKey(applicationId, componentKey, roleNow);
+        var sameScope = scopeKey === EMAIL_REPLIES_LAST_SCOPE_KEY;
         var requestKey = emailRepliesRequestKey(applicationId, componentKey, shouldSync, roleNow);
 
         function renderTarget(el, html) {
             if (el) el.innerHTML = html;
         }
 
-        function parseRows(data) {
-            if (Array.isArray(data)) return data;
-            if (data && data.status === 1 && Array.isArray(data.data)) return data.data;
-            return null;
+        function parsePhpPayload(data) {
+            if (!data || typeof data !== 'object' || data.status !== 1 || !Array.isArray(data.data)) {
+                return null;
+            }
+            return {
+                rows: data.data,
+                meta: data.debug && typeof data.debug === 'object' ? data.debug : {}
+            };
         }
 
-        async function fetchNodeReplies(baseUrl, signal) {
+        async function fetchJson(url, timeoutMs) {
+            var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+            var tm = null;
+            if (ctrl && timeoutMs > 0) {
+                tm = setTimeout(function () {
+                    try { ctrl.abort(); } catch (_e0) {}
+                }, timeoutMs);
+            }
+            try {
+                var response = await fetch(url, {
+                    credentials: 'same-origin',
+                    signal: ctrl ? ctrl.signal : undefined
+                });
+                var data = await response.json().catch(function () { return null; });
+                return {
+                    response: response,
+                    data: data,
+                    error: null,
+                    timedOut: false
+                };
+            } catch (e) {
+                return {
+                    response: null,
+                    data: null,
+                    error: e,
+                    timedOut: !!(e && e.name === 'AbortError')
+                };
+            } finally {
+                if (tm) clearTimeout(tm);
+            }
+        }
+
+        async function fetchNodeReplies(baseUrl) {
             var nodeUrl = baseUrl + '/api/shared/node_replies_proxy.php?application_id=' + encodeURIComponent(applicationId);
             if (componentKey) {
                 nodeUrl += '&component_key=' + encodeURIComponent(componentKey);
@@ -3340,8 +3500,19 @@ if (uploadInput) {
             if (shouldSync) {
                 nodeUrl += (nodeUrl.indexOf('?') >= 0 ? '&' : '?') + '_ts=' + String(Date.now());
             }
-            var response = await fetch(nodeUrl, { credentials: 'same-origin', signal: signal || undefined });
-            var nodeData = await response.json().catch(function () { return null; });
+            var out = await fetchJson(nodeUrl, shouldSync ? 12000 : 8000);
+            var response = out.response;
+            var nodeData = out.data;
+            if (out.error) {
+                return {
+                    ok: false,
+                    payload: null,
+                    rows: [],
+                    useFallback: true,
+                    error: out.error,
+                    timedOut: out.timedOut
+                };
+            }
             if (!response.ok) {
                 return {
                     ok: false,
@@ -3363,17 +3534,8 @@ if (uploadInput) {
             var roleNow = getReplyViewerRole();
             var adaptedRows = adaptNodeReplies(payload, componentKey);
             adaptedRows = pickConversationRowsForRole(adaptedRows, roleNow);
-            var reviewerRole = (roleNow === 'validator' || roleNow === 'verifier' || roleNow === 'qa');
-            if (!useFallback && reviewerRole && componentKey) {
-                // If Node can't prove component tagging, prefer PHP scoped replies
-                // instead of leaking one component's conversation into all components.
-                var hasAnyTag = nodePayloadHasAnyComponentTag(payload);
-                if (!hasAnyTag) {
-                    useFallback = true;
-                }
-            }
             if (!useFallback && componentKey && (roleNow === 'validator' || roleNow === 'verifier' || roleNow === 'qa')) {
-                if (nodePayloadHasMixedOutboundRoles(payload)) {
+                if (nodePayloadHasMixedOutboundRoles(payload) || !nodePayloadHasAnyComponentTag(payload) || !nodeRowsAreSafeForScopedReplies(adaptedRows, roleNow, componentKey)) {
                     useFallback = true;
                 }
             }
@@ -3385,7 +3547,7 @@ if (uploadInput) {
             };
         }
 
-        async function fetchPhpReplies(baseUrl, signal) {
+        async function fetchPhpReplies(baseUrl) {
             var phpSync = shouldSync;
             var caseUrl = baseUrl + '/api/get_replies.php?application_id=' + encodeURIComponent(applicationId) + '&scope=case&sync=' + (phpSync ? '1' : '0');
             if (componentKey) {
@@ -3395,16 +3557,17 @@ if (uploadInput) {
             if (shouldSync) {
                 caseUrl += '&_ts=' + String(Date.now());
             }
-            var response = await fetch(caseUrl, { credentials: 'same-origin', signal: signal || undefined });
-            var caseData = await response.json().catch(function () { return null; });
-            return parseRows(caseData);
+            var out = await fetchJson(caseUrl, shouldSync ? 60000 : 15000);
+            if (out.error) return null;
+            return parsePhpPayload(out.data);
         }
 
         if (!applicationId) {
             EMAIL_REPLIES_CACHE = [];
-            EMAIL_REPLIES_SIDEBAR_CACHE = [];
+            EMAIL_REPLIES_META = { sync_failed: false };
             EMAIL_REPLIES_LAST_SYNC_AT = 0;
             EMAIL_REPLIES_LAST_SYNC_APP_ID = '';
+            EMAIL_REPLIES_LAST_SCOPE_KEY = '';
             EMAIL_REPLIES_CACHE_READY = false;
             renderTarget(hostModal, '<div style="color:#6b7280; font-size:13px;">application_id not found.</div>');
             renderTarget(hostSidebar, '<div style="color:#6b7280; font-size:13px;">application_id not found.</div>');
@@ -3412,10 +3575,8 @@ if (uploadInput) {
             return;
         }
 
-        if (!shouldSync && EMAIL_REPLIES_CACHE_READY && EMAIL_REPLIES_LAST_RENDER_KEY === requestKey) {
-            renderTarget(hostModal, emailRepliesHtml(EMAIL_REPLIES_CACHE, { role: roleNow, componentKey: componentKey }));
-            renderTarget(hostSidebar, emailRepliesHtml(EMAIL_REPLIES_SIDEBAR_CACHE.slice(0, 8), { role: roleNow, componentKey: componentKey }));
-            if (countEl) countEl.textContent = String(EMAIL_REPLIES_SIDEBAR_CACHE.length);
+        if (!shouldSync && sameScope && EMAIL_REPLIES_CACHE_READY && EMAIL_REPLIES_LAST_RENDER_KEY === requestKey) {
+            renderRepliesState(roleNow, componentKey);
             return;
         }
 
@@ -3423,62 +3584,114 @@ if (uploadInput) {
             return EMAIL_REPLIES_INFLIGHT;
         }
 
-        renderTarget(hostModal, '<div style="color:#6b7280; font-size:13px;">Loading email replies...</div>');
-        renderTarget(hostSidebar, '<div style="color:#6b7280; font-size:13px;">Loading email replies...</div>');
+        if (!shouldSync && !EMAIL_REPLIES_CACHE_READY) {
+            renderTarget(hostModal, '<div style="color:#6b7280; font-size:13px;">Loading email replies...</div>');
+            renderTarget(hostSidebar, '<div style="color:#6b7280; font-size:13px;">Loading email replies...</div>');
+        } else {
+            var steadyRows = sameScope && Array.isArray(EMAIL_REPLIES_CACHE) ? EMAIL_REPLIES_CACHE : [];
+            var steadyMeta = sameScope && EMAIL_REPLIES_META && typeof EMAIL_REPLIES_META === 'object'
+                ? EMAIL_REPLIES_META
+                : { sync_failed: false };
+            renderTarget(hostModal, emailRepliesHtml(steadyRows, { role: roleNow, componentKey: componentKey, meta: steadyMeta }));
+            renderTarget(hostSidebar, emailRepliesHtml(steadyRows.slice(0, 8), { role: roleNow, componentKey: componentKey, meta: steadyMeta }));
+            if (countEl) countEl.textContent = String(steadyRows.length);
+        }
         setRepliesSyncButtonState(true);
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
 
         EMAIL_REPLIES_INFLIGHT_KEY = requestKey;
         EMAIL_REPLIES_INFLIGHT = (async function () {
             try {
-                var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-                var tm = null;
-                var replyTimeoutMs = (roleNow === 'validator' || roleNow === 'verifier' || roleNow === 'qa' || roleNow === 'team_lead') ? 15000 : 8000;
-                if (ctrl) {
-                    tm = setTimeout(function () {
-                        try { ctrl.abort(); } catch (_e0) {}
-                    }, replyTimeoutMs);
-                }
-                var nodeAttempt = await fetchNodeReplies(base, ctrl ? ctrl.signal : undefined);
+                var nodeAttempt = await fetchNodeReplies(base);
                 var finalRows = nodeAttempt.rows;
-                var usedFallback = false;
+                var finalMeta = {
+                    resolved_source: 'node_proxy',
+                    resolved_component_key: componentKey,
+                    resolved_thread_owner_role: roleNow,
+                    used_fallback: false,
+                    no_thread: !!(nodeAttempt.payload && nodeAttempt.payload.hasThread === false && nodeAttempt.payload.hasMessages === false),
+                    sync_mode: shouldSync ? 'canonical_sync' : 'read_only_refresh',
+                    last_synced_at: new Date().toISOString().slice(0, 19).replace('T', ' ')
+                };
                 var reviewerRole = (roleNow === 'validator' || roleNow === 'verifier' || roleNow === 'qa');
                 if (!nodeAttempt.useFallback && reviewerRole && componentKey && (!Array.isArray(finalRows) || finalRows.length === 0)) {
                     nodeAttempt.useFallback = true;
                 }
 
                 if (nodeAttempt.useFallback) {
-                    usedFallback = true;
-                    finalRows = await fetchPhpReplies(base, ctrl ? ctrl.signal : undefined);
-                    if (!finalRows) {
-                        renderTarget(hostModal, '<div style="color:#b91c1c; font-size:13px;">Failed to load email replies.</div>');
-                        renderTarget(hostSidebar, '<div style="color:#b91c1c; font-size:13px;">Failed to load email replies.</div>');
-                        if (countEl) countEl.textContent = '0';
+                    var phpPayload = await fetchPhpReplies(base);
+                    if (!phpPayload) {
+                        finalRows = [];
+                        finalMeta = {
+                            sync_failed: false,
+                            sync_warning: true,
+                            resolved_source: 'unavailable',
+                            used_fallback: true,
+                            sync_mode: shouldSync ? 'canonical_sync' : 'read_only_refresh',
+                            last_synced_at: EMAIL_REPLIES_LAST_SYNC_AT
+                                ? new Date(EMAIL_REPLIES_LAST_SYNC_AT).toISOString().slice(0, 19).replace('T', ' ')
+                                : ''
+                        };
+                        if (EMAIL_REPLIES_CACHE_READY && sameScope && Array.isArray(EMAIL_REPLIES_CACHE)) {
+                            finalRows = EMAIL_REPLIES_CACHE;
+                        }
+                    } else {
+                        finalRows = phpPayload.rows;
+                        finalMeta = Object.assign({}, phpPayload.meta || {}, {
+                            resolved_source: (phpPayload.meta && phpPayload.meta.resolved_source) || 'canonical',
+                            used_fallback: !!(phpPayload.meta && phpPayload.meta.used_fallback),
+                            sync_mode: (phpPayload.meta && phpPayload.meta.sync_mode) || (shouldSync ? 'canonical_sync' : 'read_only_refresh'),
+                            last_synced_at: (phpPayload.meta && phpPayload.meta.last_synced_at) || new Date().toISOString().slice(0, 19).replace('T', ' ')
+                        });
+                    }
+                    if (!phpPayload && !EMAIL_REPLIES_CACHE_READY) {
+                        EMAIL_REPLIES_CACHE = finalRows;
+                        EMAIL_REPLIES_META = finalMeta;
+                        EMAIL_REPLIES_LAST_RENDER_KEY = requestKey;
+                        EMAIL_REPLIES_LAST_SCOPE_KEY = scopeKey;
+                        EMAIL_REPLIES_CACHE_READY = true;
+                        renderRepliesState(roleNow, componentKey);
                         return;
                     }
                 }
-                if (tm) clearTimeout(tm);
 
                 EMAIL_REPLIES_CACHE = finalRows;
-                EMAIL_REPLIES_SIDEBAR_CACHE = finalRows;
+                EMAIL_REPLIES_META = finalMeta || {};
                 EMAIL_REPLIES_LAST_RENDER_KEY = requestKey;
+                EMAIL_REPLIES_LAST_SCOPE_KEY = scopeKey;
                 EMAIL_REPLIES_CACHE_READY = true;
                 if (shouldSync) {
                     EMAIL_REPLIES_LAST_SYNC_AT = Date.now();
                     EMAIL_REPLIES_LAST_SYNC_APP_ID = String(applicationId || '');
                 }
-                renderTarget(hostModal, emailRepliesHtml(EMAIL_REPLIES_CACHE, { role: roleNow, componentKey: componentKey }));
-                renderTarget(hostSidebar, emailRepliesHtml(EMAIL_REPLIES_SIDEBAR_CACHE.slice(0, 8), {
-                    role: roleNow,
-                    componentKey: componentKey
-                }));
-                if (countEl) countEl.textContent = String(EMAIL_REPLIES_SIDEBAR_CACHE.length);
+                EMAIL_REPLIES_FORCE_SYNC_ONCE = false;
+                renderRepliesState(roleNow, componentKey);
             } catch (_e) {
-                renderTarget(hostModal, emailRepliesHtml([], { role: roleNow, componentKey: componentKey }));
-                renderTarget(hostSidebar, emailRepliesHtml([], { role: roleNow, componentKey: componentKey }));
+                EMAIL_REPLIES_CACHE = [];
+                EMAIL_REPLIES_META = {
+                    sync_failed: false,
+                    sync_warning: true,
+                    sync_mode: shouldSync ? 'canonical_sync' : 'read_only_refresh'
+                };
+                renderTarget(hostModal, emailRepliesHtml([], { role: roleNow, componentKey: componentKey, meta: EMAIL_REPLIES_META }));
+                renderTarget(hostSidebar, emailRepliesHtml([], { role: roleNow, componentKey: componentKey, meta: EMAIL_REPLIES_META }));
                 if (countEl) countEl.textContent = '0';
+                setRepliesSyncMeta(EMAIL_REPLIES_META, false);
             } finally {
                 setRepliesSyncButtonState(false);
+                try {
+                    var fallbackRows = Array.isArray(EMAIL_REPLIES_CACHE) ? EMAIL_REPLIES_CACHE : [];
+                    var fallbackMeta = EMAIL_REPLIES_META && typeof EMAIL_REPLIES_META === 'object' ? EMAIL_REPLIES_META : {};
+                    var loadingText = /Loading email replies/i;
+                    if (hostModal && loadingText.test(String(hostModal.textContent || ''))) {
+                        hostModal.innerHTML = emailRepliesHtml(fallbackRows, { role: roleNow, componentKey: componentKey, meta: fallbackMeta });
+                    }
+                    if (hostSidebar && loadingText.test(String(hostSidebar.textContent || ''))) {
+                        hostSidebar.innerHTML = emailRepliesHtml(fallbackRows.slice(0, 8), { role: roleNow, componentKey: componentKey, meta: fallbackMeta });
+                    }
+                    if (countEl) countEl.textContent = String(fallbackRows.length);
+                    setRepliesSyncMeta(fallbackMeta, false);
+                } catch (_e2) {}
                 if (EMAIL_REPLIES_INFLIGHT_KEY === requestKey) {
                     EMAIL_REPLIES_INFLIGHT = null;
                     EMAIL_REPLIES_INFLIGHT_KEY = '';
@@ -3868,19 +4081,16 @@ if (uploadInput) {
         if (!canTakeActionRole(role)) return;
         if (String(qs('print') || '') === '1') return;
 
-        // Create right-side chat column once
         if (panel.dataset.chatBound !== '1') {
             panel.dataset.chatBound = '1';
 
             var secbar = panel.querySelector('.cr-secbar');
             if (!secbar) return;
 
-            // Wrap all content after secbar into a two-column layout
             var after = [];
             var n = secbar.nextSibling;
             while (n) {
                 var next = n.nextSibling;
-                // skip empty text nodes
                 if (!(n.nodeType === 3 && String(n.textContent || '').trim() === '')) {
                     after.push(n);
                 }
@@ -3927,7 +4137,6 @@ if (uploadInput) {
                     '</div>' +
                 '</div>';
 
-            // Move all existing nodes into left column
             after.forEach(function (node) {
                 left.appendChild(node);
             });
@@ -3997,7 +4206,6 @@ if (uploadInput) {
             });
         }
 
-        // Refresh chat list for this section
         var listHost = panel.querySelector('[data-chat-list]');
         if (listHost) {
             listHost.innerHTML = remarksChatHtml(section);
@@ -5565,7 +5773,6 @@ if (uploadInput) {
 
         if (s === 'id') {
             renderTabbedTable('cv_identification_table', COMPONENT_TABLE_ROWS.id || [], [
-                // { key: 'document_index', label: '#' },
                 { key: 'documentId_type', label: 'Document Type' },
                 { key: 'id_number', label: 'ID Number' },
                 { key: 'name', label: 'Name on ID' },
@@ -5573,7 +5780,6 @@ if (uploadInput) {
             ], 'ID');
         } else if (s === 'education') {
             renderTabbedTable('cv_education_table', COMPONENT_TABLE_ROWS.education || [], [
-                // { key: 'education_index', label: '#' },
                 { key: 'qualification', label: 'Qualification' },
                 { key: 'college_name', label: 'College' },
                 { key: 'university_board', label: 'University/Board' },
@@ -5585,7 +5791,6 @@ if (uploadInput) {
             ], 'Education');
         } else if (s === 'employment') {
             renderTabbedTable('cv_employment_table', COMPONENT_TABLE_ROWS.employment || [], [
-                // { key: 'employment_index', label: '#' },
                 { key: 'employer_name', label: 'Employer' },
                 { key: 'job_title', label: 'Job Title' },
                 { key: 'employee_id', label: 'Employee ID' },
@@ -6278,7 +6483,6 @@ function askActionConfirm(label) {
         var yesBtn = document.getElementById('cvActionConfirmYes');
         var noBtn = document.getElementById('cvActionConfirmNo');
 
-        // Fallback if modal not available
         if (!modalEl || !yesBtn || !window.bootstrap) {
             resolve(window.confirm('Confirm: ' + label + '?'));
             return;
@@ -6286,14 +6490,12 @@ function askActionConfirm(label) {
 
         var done = false;
         
-        // Force remove any existing backdrops before showing modal
         document.querySelectorAll('.modal-backdrop').forEach(function(backdrop) {
             if (backdrop && backdrop.parentNode) {
                 backdrop.parentNode.removeChild(backdrop);
             }
         });
         
-        // Reset all modal-related classes and styles
         document.body.classList.remove('modal-open');
         document.documentElement.classList.remove('modal-open');
         document.body.style.removeProperty('padding-right');
@@ -6301,31 +6503,25 @@ function askActionConfirm(label) {
         document.documentElement.style.removeProperty('overflow');
         document.documentElement.style.removeProperty('padding-right');
 
-        // Get fresh modal instance
         var modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
 
         function cleanupAndResolve(result) {
             if (done) return;
             done = true;
 
-            // Remove event listeners
             modalEl.removeEventListener('hidden.bs.modal', onHidden);
             yesBtn.removeEventListener('click', onYes);
             if (noBtn) noBtn.removeEventListener('click', onNo);
 
-            // Hide the modal
             modal.hide();
 
-            // Aggressive cleanup after modal hide animation
             setTimeout(function () {
-                // Remove all backdrop elements
                 document.querySelectorAll('.modal-backdrop').forEach(function (backdrop) {
                     if (backdrop && backdrop.parentNode) {
                         backdrop.parentNode.removeChild(backdrop);
                     }
                 });
                 
-                // Reset all body and html classes/styles
                 document.body.classList.remove('modal-open');
                 document.documentElement.classList.remove('modal-open');
                 document.body.style.removeProperty('padding-right');
@@ -6333,14 +6529,12 @@ function askActionConfirm(label) {
                 document.documentElement.style.removeProperty('overflow');
                 document.documentElement.style.removeProperty('padding-right');
                 
-                // Force hide any visible modals
                 document.querySelectorAll('.modal.show').forEach(function (m) {
                     m.classList.remove('show');
                     m.style.display = 'none';
                     m.setAttribute('aria-hidden', 'true');
                 });
 
-                // Restore validator-specific overflow if needed
                 if (document.querySelector('.cr-report-root.cr-validator-workspace') &&
                     String(qs('print') || '') !== '1') {
                     document.body.style.overflow = 'hidden';
@@ -6362,24 +6556,20 @@ function askActionConfirm(label) {
             cleanupAndResolve(false);
         }
 
-        // Set modal content
         if (titleEl) titleEl.textContent = 'Confirm Action';
         if (textEl) {
             textEl.textContent = 'Are you sure you want to ' +
                 String(label || 'continue').toLowerCase() + '?';
         }
 
-        // Remove any existing event listeners to prevent duplicates
         yesBtn.removeEventListener('click', onYes);
         if (noBtn) noBtn.removeEventListener('click', onNo);
         modalEl.removeEventListener('hidden.bs.modal', onHidden);
 
-        // Bind fresh event listeners
         modalEl.addEventListener('hidden.bs.modal', onHidden);
         yesBtn.addEventListener('click', onYes);
         if (noBtn) noBtn.addEventListener('click', onNo);
 
-        // Show modal
         modal.show();
     });
 }
@@ -6512,7 +6702,7 @@ function askActionConfirm(label) {
                     }
                     if (!canValidatorActOnComponent(componentKey, action, 'top')) return;
                     itemKey = getActiveItemKeyForSection(componentKey);
-                    if (communicationMode === 'workflow' && !fromUnifiedModal) {
+                    if (communicationMode === 'workflow' && action !== 'insufficient_documents' && !fromUnifiedModal) {
                         if (typeof window.__CR_OPEN_UNIFIED_COMM === 'function') {
                             window.__CR_OPEN_UNIFIED_COMM({
                                 mode: 'workflow',
@@ -6609,6 +6799,88 @@ function askActionConfirm(label) {
                 } catch (_dbg1) {}
 
                 var out;
+                if (isComponentRole && action === 'insufficient_documents') {
+                    var correctionRequestId = [
+                        'need-docs',
+                        String(applicationId || '').trim(),
+                        String(caseId || '0').trim(),
+                        String(componentKey || '').trim(),
+                        String(role || '').trim(),
+                        String(Date.now())
+                    ].join('-');
+                    out = await createCandidateCorrectionSession({
+                        applicationId: applicationId,
+                        caseId: caseId || null,
+                        components: [componentKey],
+                        reason: overrideReason,
+                        requestId: correctionRequestId
+                    });
+                    if (!out.res.ok || !out.payload || out.payload.status !== 1) {
+                        var correctionMsg = (out.payload && out.payload.message) ? out.payload.message : 'Failed to send correction request.';
+                        if (out.res && out.res.status === 409) {
+                            setBoxMessage('cvTopMessage', correctionMsg, 'warning');
+                            try { loadTimeline(applicationId || '', { sync: false }).catch(function () {}); } catch (_eConflictTl) {}
+                            try { loadCorrectionHistory(applicationId || '', caseId || 0).catch(function () {}); } catch (_eConflictHist) {}
+                            try { loadReport({ preserveUi: true, section: componentKey }).catch(function () {}); } catch (_eConflictLoad) {}
+                            return false;
+                        }
+                        setBoxMessage('cvTopMessage', correctionMsg, 'danger');
+                        return false;
+                    }
+
+                    var correctionData = out.payload.data || {};
+                    var correctionComponent = normSection(componentKey || currentSectionKey());
+                    var correctionStage = roleToStage(role);
+                    var correctionStatus = 'waiting_candidate';
+                    var correctionItemKey = String(itemKey || getActiveItemKeyForSection(correctionComponent) || '').toLowerCase().trim();
+                    var correctionRow = getAssignedRowForComponent(REPORT_PAYLOAD || {}, correctionComponent);
+                    if (correctionRow) {
+                        if (!correctionRow.workflow || typeof correctionRow.workflow !== 'object') correctionRow.workflow = {};
+                        correctionRow.workflow[correctionStage] = correctionStatus;
+                        correctionRow.current_stage = computeComponentStageLabel(correctionRow.workflow);
+                    }
+                    if (REPORT_PAYLOAD) {
+                        if (!REPORT_PAYLOAD.component_workflow || typeof REPORT_PAYLOAD.component_workflow !== 'object') {
+                            REPORT_PAYLOAD.component_workflow = {};
+                        }
+                        if (!REPORT_PAYLOAD.component_workflow[correctionComponent] || typeof REPORT_PAYLOAD.component_workflow[correctionComponent] !== 'object') {
+                            REPORT_PAYLOAD.component_workflow[correctionComponent] = {};
+                        }
+                        REPORT_PAYLOAD.component_workflow[correctionComponent][correctionStage] = { status: correctionStatus };
+                        if (correctionItemKey) {
+                            if (!REPORT_PAYLOAD.component_item_workflow || typeof REPORT_PAYLOAD.component_item_workflow !== 'object') {
+                                REPORT_PAYLOAD.component_item_workflow = {};
+                            }
+                            if (!REPORT_PAYLOAD.component_item_workflow[correctionComponent] || typeof REPORT_PAYLOAD.component_item_workflow[correctionComponent] !== 'object') {
+                                REPORT_PAYLOAD.component_item_workflow[correctionComponent] = {};
+                            }
+                            if (!REPORT_PAYLOAD.component_item_workflow[correctionComponent][correctionItemKey] || typeof REPORT_PAYLOAD.component_item_workflow[correctionComponent][correctionItemKey] !== 'object') {
+                                REPORT_PAYLOAD.component_item_workflow[correctionComponent][correctionItemKey] = {};
+                            }
+                            REPORT_PAYLOAD.component_item_workflow[correctionComponent][correctionItemKey][correctionStage] = { status: correctionStatus };
+                        }
+                    }
+                    CURRENT_SECTION_KEY = correctionComponent;
+                    LAST_COMPONENT_SECTION_KEY = correctionComponent;
+                    try { updateSectionBadges(REPORT_PAYLOAD || {}); } catch (_eBadge) {}
+                    try { applyComponentActionLock(); } catch (_eLock) {}
+                    try { updateValidatorWorkspace(correctionComponent); } catch (_eWs) {}
+                    setBoxMessage('cvTopMessage', (out.payload.message || 'Correction request sent.'), 'success');
+                    try { loadTimeline(applicationId || '', { sync: false }).catch(function () {}); } catch (_eTl) {}
+                    try { loadCorrectionHistory(applicationId || '', caseId || 0).catch(function () {}); } catch (_eHist) {}
+                    try { loadReport({ preserveUi: true, section: correctionComponent }).catch(function () {}); } catch (_eLoad) {}
+                    try {
+                        if (window.WF_STATUS_DEBUG_LOGS === 1 || window.WF_STATUS_DEBUG_LOGS === '1') {
+                            console.debug('[Need Docs correction access]', {
+                                component: correctionComponent,
+                                session_id: correctionData.correction_session_id || null,
+                                mail_sent: correctionData.mail_sent || 0,
+                                workflow_rows_changed: correctionData.workflow_rows_changed || 0
+                            });
+                        }
+                    } catch (_eDbg) {}
+                    return true;
+                }
                 if (isWorkflowMutation && isComponentRole && (action === 'hold' || action === 'reject' || action === 'approve' || action === 'insufficient_documents')) {
                     var group2 = null;
                     if (role === 'verifier') {
@@ -6787,7 +7059,6 @@ function askActionConfirm(label) {
             return true;
         }
 
-        // expose for per-component toolbars
         window.__CR_RUN_ACTION = run;
 
         var insufficientBtn = document.getElementById('cvActionInsufficient');
@@ -6837,7 +7108,6 @@ function askActionConfirm(label) {
             validatorApproveBtn.addEventListener('click', function () { run('approve', 'Approve'); });
         }
 
-        // Initial lock based on current component + stage status
         bindSectionChangeLock();
         updateReviewActionbarTitle(currentSectionKey());
         syncSectionActionVisibility();
@@ -6862,7 +7132,6 @@ function askActionConfirm(label) {
             hasBackendVisibleSections = Array.isArray(REPORT_PAYLOAD.visible_sections) || Array.isArray(REPORT_PAYLOAD.visibleSections);
             assignedKeys = getAssignedComponentKeys(REPORT_PAYLOAD);
 
-            // Hide nav items and panels not assigned
             if (assignedKeys.length || hasBackendVisibleSections) {
                 items.forEach(function (btn) {
                     var s = (btn.getAttribute('data-section') || '').toLowerCase();
@@ -6986,8 +7255,6 @@ function askActionConfirm(label) {
             });
         }
 
-        // Hide sidebar items for disallowed sections.
-        // Snapshot visible_sections is authoritative whenever present.
         var allowSet = allowedSectionsSet();
         if (!(assignedKeys.length || hasBackendVisibleSections)) {
             items.forEach(function (btn) {
@@ -7464,7 +7731,6 @@ function askActionConfirm(label) {
             }
         }
 
-        // Note: role/client_id already appended above; do not duplicate query params.
 
         var holidaysPromise = loadHolidaysOnce();
         function hasSnapshotContract(data) {
@@ -7485,7 +7751,6 @@ function askActionConfirm(label) {
             return;
         }
 
-        // QA/TL audit: opening the report
         if (!document.body.dataset.qaAuditOpenLogged) {
             document.body.dataset.qaAuditOpenLogged = '1';
             qaAudit('open', { source: 'candidate_report', embed: String(qs('embed') || '') === '1' ? 1 : 0 });
@@ -7504,7 +7769,6 @@ function askActionConfirm(label) {
         resetComponentTableRenderState(d);
         applyCaseActionCardVisibility();
 
-        // Re-apply section filtering once assigned components are known
         initSectionNav();
         renderComponentNav(REPORT_PAYLOAD);
         var basic = d.basic || {};
@@ -7531,7 +7795,6 @@ function askActionConfirm(label) {
 
         var isPrint = String(qs('print') || '') === '1';
         if (isPrint) {
-            // QA/TL audit: print view opened
             if (!document.body.dataset.qaAuditPrintLogged) {
                 document.body.dataset.qaAuditPrintLogged = '1';
                 qaAudit('print', { source: 'candidate_report', print: 1 });
@@ -7582,7 +7845,6 @@ function askActionConfirm(label) {
 
             renderDocsForPrint('cvPrintAllDocs', d.uploaded_docs || []);
 
-            // Summary grid
             var summary = [];
             summary.push(kvBox('Candidate', coverName));
             summary.push(kvBox('Email', (basic.email || cs.candidate_email || '') + ''));
@@ -7593,7 +7855,6 @@ function askActionConfirm(label) {
             summary.push(kvBox('Status', (displayCaseStatus(app.status, cs.case_status) || '') + ''));
             setHtml('cvPdfSummaryGrid', summary.join(''));
 
-            // Executive summary + checklist + grouped docs
             renderExecutive('cvPdfExecutive', d);
             renderChecklist('cvPdfChecklist', d.uploaded_docs || []);
             renderDocsGrouped('cvPdfDocsGrouped', d.uploaded_docs || []);
@@ -7813,7 +8074,6 @@ function askActionConfirm(label) {
             });
         }
 
-        // Initial section (usually Basic) renders before app id is ready; re-apply section UI after data load.
         try {
             var activeBtn = document.querySelector('.list-group-item[data-section].active');
             var activeSection = activeBtn ? String(activeBtn.getAttribute('data-section') || '').toLowerCase() : 'basic';
@@ -7861,7 +8121,7 @@ function askActionConfirm(label) {
         bindRepliesSyncButton();
         bindRepliesAutoRefresh();
         window.addEventListener('resize', function () {
-            updateReviewActionbarTitle(currentSectionKey());
+            updateReviewActionbarTitle(activeComponentSectionKey());
         });
         if (document.querySelector('.cr-report-root.cr-validator-workspace') && String(qs('print') || '') !== '1') {
             document.body.style.overflow = 'hidden';
@@ -7875,7 +8135,6 @@ function askActionConfirm(label) {
         });
     });
 
-// DRAG & DROP UPLOAD
 setTimeout(function () {
     if (!isLegacyPdfViewerEnabled()) return;
 

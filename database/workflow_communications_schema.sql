@@ -1,5 +1,5 @@
 -- Workflow communication operational tables
-CREATE TABLE IF NOT EXISTS workflow_communications (
+CREATE TABLE IF NOT EXISTS Vati_Payfiller_Workflow_Communications (
   communication_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   application_id VARCHAR(64) NOT NULL,
   case_id BIGINT NULL,
@@ -32,6 +32,6 @@ CREATE TABLE IF NOT EXISTS workflow_communication_events (
   created_at DATETIME NOT NULL,
   PRIMARY KEY (event_id),
   KEY idx_wce_comm (communication_id),
-  CONSTRAINT fk_wce_comm FOREIGN KEY (communication_id) REFERENCES workflow_communications(communication_id)
+  CONSTRAINT fk_wce_comm FOREIGN KEY (communication_id) REFERENCES Vati_Payfiller_Workflow_Communications(communication_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

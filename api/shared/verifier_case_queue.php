@@ -1,10 +1,11 @@
 <?php
 
 require_once __DIR__ . '/workflow_semantics.php';
+require_once __DIR__ . '/verifier_routing.php';
 
 function verifier_case_queue_registered_components(): array
 {
-    return ['basic', 'id', 'contact', 'education', 'employment', 'reference', 'socialmedia', 'ecourt', 'reports'];
+    return ['basic', 'id', 'contact', 'education', 'education_reference', 'employment', 'employment_reference', 'reference', 'socialmedia', 'ecourt', 'reports'];
 }
 
 function verifier_case_queue_norm_component(string $componentKey): string
@@ -12,6 +13,8 @@ function verifier_case_queue_norm_component(string $componentKey): string
     $k = strtolower(trim($componentKey));
     if ($k === 'identification') return 'id';
     if ($k === 'social_media' || $k === 'social-media') return 'socialmedia';
+    if ($k === 'educationreference') return 'education_reference';
+    if ($k === 'employmentreference') return 'employment_reference';
     return $k;
 }
 
@@ -103,7 +106,9 @@ function verifier_case_queue_component_summary(PDO $pdo, int $caseId): array
         'id' => 'ID',
         'contact' => 'Contact',
         'education' => 'Education',
+        'education_reference' => 'Education Reference',
         'employment' => 'Employment',
+        'employment_reference' => 'Employment Reference',
         'reference' => 'Reference',
         'socialmedia' => 'Social Media',
         'ecourt' => 'E-Court',
@@ -124,7 +129,7 @@ function verifier_case_queue_family_key(string $componentKey): string
 {
     $k = verifier_case_queue_norm_component($componentKey);
     if (in_array($k, ['basic', 'id', 'contact'], true)) return 'basic';
-    if (in_array($k, ['education', 'employment', 'reference'], true)) return 'education';
+    if (in_array($k, ['education', 'education_reference', 'employment', 'employment_reference', 'reference'], true)) return 'education';
     if (in_array($k, ['ecourt', 'socialmedia', 'reports'], true)) return 'additional';
     return 'all';
 }
@@ -161,6 +166,50 @@ function verifier_case_queue_status_is_waiting_candidate(string $status): bool
 {
     $s = strtolower(trim($status));
     return in_array($s, ['waiting_candidate', 'insufficient_documents'], true);
+}
+
+function verifier_case_queue_clear_db_verifier_owners(PDO $pdo, int $caseId = 0): void
+{
+    $caseFilter = $caseId > 0 ? ' AND q.case_id = ?' : '';
+    $params = $caseId > 0 ? [$caseId] : [];
+
+    try {
+        $st = $pdo->prepare(
+            "UPDATE Vati_Payfiller_Verifier_Group_Queue q
+              JOIN Vati_Payfiller_Users u ON u.user_id = q.assigned_user_id
+               SET q.assigned_user_id = NULL,
+                   q.claimed_at = NULL,
+                   q.status = CASE
+                       WHEN q.completed_at IS NULL
+                        AND COALESCE(LOWER(TRIM(q.status)), '') = 'in_progress' THEN 'pending'
+                       ELSE q.status
+                   END
+             WHERE q.completed_at IS NULL
+               AND LOWER(TRIM(COALESCE(u.role, ''))) = 'db_verifier'" . $caseFilter
+        );
+        $st->execute($params);
+    } catch (Throwable $e) {
+    }
+
+    try {
+        verifier_case_queue_ensure_table($pdo);
+        $st = $pdo->prepare(
+            "UPDATE Vati_Payfiller_Verifier_Case_Queue q
+              JOIN Vati_Payfiller_Users u ON u.user_id = q.assigned_user_id
+               SET q.assigned_user_id = NULL,
+                   q.claimed_at = NULL,
+                   q.status = CASE
+                       WHEN q.completed_at IS NULL
+                        AND COALESCE(LOWER(TRIM(q.status)), '') = 'in_progress' THEN 'pending'
+                       ELSE q.status
+                   END,
+                   q.updated_at = NOW()
+             WHERE q.completed_at IS NULL
+               AND LOWER(TRIM(COALESCE(u.role, ''))) = 'db_verifier'" . $caseFilter
+        );
+        $st->execute($params);
+    } catch (Throwable $e) {
+    }
 }
 
 function verifier_case_queue_compute_status(PDO $pdo, int $caseId): string
@@ -301,10 +350,14 @@ function verifier_case_queue_load_row(PDO $pdo, int $caseId): ?array
     return $row ?: null;
 }
 
-function verifier_case_queue_assign_components(PDO $pdo, int $caseId, int $assignedUserId): void
+function verifier_case_queue_assign_components(PDO $pdo, int $caseId, int $assignedUserId, ?array $componentKeys = null): void
 {
     if ($caseId <= 0) return;
-    $components = verifier_case_queue_required_components($pdo, $caseId);
+    $components = $componentKeys === null ? verifier_case_queue_required_components($pdo, $caseId) : $componentKeys;
+    $components = array_values(array_filter(array_map(static function ($key) {
+        $key = verifier_routing_normalize_component((string)$key);
+        return verifier_routing_is_routeable($key) ? $key : '';
+    }, $components)));
     if (!$components) return;
     $ph = implode(',', array_fill(0, count($components), '?'));
     $params = array_merge([$assignedUserId > 0 ? $assignedUserId : null, $caseId], $components);
@@ -343,7 +396,7 @@ function verifier_case_queue_sync_legacy_group_rows(PDO $pdo, int $caseId, int $
             $st = $pdo->prepare(
                 "UPDATE Vati_Payfiller_Verifier_Group_Queue
                     SET status = 'done',
-                        completed_at = COALESCE(completed_at, NOW()),
+.                        completed_at = COALESCE(completed_at, NOW()),
                         claimed_at = COALESCE(claimed_at, NOW()),
                         assigned_user_id = COALESCE(?, assigned_user_id)
                   WHERE case_id = ?
@@ -357,65 +410,28 @@ function verifier_case_queue_sync_legacy_group_rows(PDO $pdo, int $caseId, int $
 
 function verifier_case_queue_pick_auto_user_id(PDO $pdo): int
 {
-    try {
-        $users = $pdo->query(
-            "SELECT user_id
-               FROM Vati_Payfiller_Users
-              WHERE is_active = 1
-                AND LOWER(TRIM(role)) IN ('verifier','db_verifier')
-              ORDER BY user_id ASC"
-        );
-        $rows = $users ? ($users->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
-        if (!$rows) return 0;
-        $eligible = [];
-        foreach ($rows as $row) {
-            $uid = (int)($row['user_id'] ?? 0);
-            if ($uid > 0) {
-                $eligible[] = $uid;
-            }
-        }
-        if (!$eligible) return 0;
-
-        $ph = implode(',', array_fill(0, count($eligible), '?'));
-        $st = $pdo->prepare(
-            "SELECT assigned_user_id AS user_id, COUNT(*) AS open_count
-               FROM Vati_Payfiller_Verifier_Case_Queue
-              WHERE completed_at IS NULL
-                AND assigned_user_id IN ($ph)
-              GROUP BY assigned_user_id"
-        );
-        $st->execute($eligible);
-        $loads = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
-        $byUser = [];
-        foreach ($loads as $loadRow) {
-            $uid = (int)($loadRow['user_id'] ?? 0);
-            if ($uid > 0) {
-                $byUser[$uid] = (int)($loadRow['open_count'] ?? 0);
-            }
-        }
-        usort($eligible, static function (int $a, int $b) use ($byUser): int {
-            $ca = $byUser[$a] ?? 0;
-            $cb = $byUser[$b] ?? 0;
-            if ($ca !== $cb) {
-                return $ca <=> $cb;
-            }
-            return $a <=> $b;
-        });
-        return (int)($eligible[0] ?? 0);
-    } catch (Throwable $e) {
-        return 0;
-    }
+    return 0;
 }
 
 function verifier_case_queue_claim(PDO $pdo, int $caseId, int $userId, bool $forceAssign = false): array
 {
     verifier_case_queue_ensure_row($pdo, $caseId);
+    verifier_case_queue_clear_db_verifier_owners($pdo, $caseId);
     $row = verifier_case_queue_load_row($pdo, $caseId);
     if (!$row) {
         return ['ok' => false, 'message' => 'Verifier case queue row not found'];
     }
     if (trim((string)($row['completed_at'] ?? '')) !== '') {
         return ['ok' => false, 'message' => 'Case already completed'];
+    }
+
+    $matchingComponents = $forceAssign
+        ? array_values(array_filter(verifier_case_queue_required_components($pdo, $caseId), static function ($key) {
+            return verifier_routing_is_routeable((string)$key);
+        }))
+        : verifier_routing_claimable_components_for_case($pdo, $caseId, $userId);
+    if (!$matchingComponents) {
+        return ['ok' => false, 'message' => 'No currently claimable verifier components for this case'];
     }
 
     if ($forceAssign) {
@@ -432,38 +448,45 @@ function verifier_case_queue_claim(PDO $pdo, int $caseId, int $userId, bool $for
                 AND completed_at IS NULL"
         );
         $st->execute([$userId, $caseId]);
-        verifier_case_queue_assign_components($pdo, $caseId, $userId);
+        verifier_case_queue_assign_components($pdo, $caseId, $userId, $matchingComponents);
         verifier_case_queue_sync_legacy_group_rows($pdo, $caseId, $userId);
         verifier_case_queue_sync($pdo, $caseId, $userId);
-        return ['ok' => true, 'message' => 'claimed'];
+        return ['ok' => true, 'message' => 'claimed', 'components' => $matchingComponents];
     }
 
-    $st = $pdo->prepare(
-        "UPDATE Vati_Payfiller_Verifier_Case_Queue
-            SET assigned_user_id = ?,
-                claimed_at = COALESCE(claimed_at, NOW()),
-                status = CASE
-                    WHEN LOWER(TRIM(COALESCE(status,''))) IN ('followup','waiting_candidate') THEN status
-                    ELSE 'in_progress'
-                END,
-                updated_at = NOW()
-          WHERE case_id = ?
-            AND completed_at IS NULL
-            AND COALESCE(assigned_user_id, 0) = 0"
-    );
-    $st->execute([$userId, $caseId]);
-    if ($st->rowCount() <= 0) {
-        $row = verifier_case_queue_load_row($pdo, $caseId);
-        if ($row && (int)($row['assigned_user_id'] ?? 0) === $userId) {
-            return ['ok' => true, 'message' => 'claimed'];
-        }
-        return ['ok' => false, 'message' => 'Already claimed by someone else or already completed'];
+    $assignedUserId = (int)($row['assigned_user_id'] ?? 0);
+    if ($assignedUserId <= 0 || $assignedUserId === $userId) {
+        $st = $pdo->prepare(
+            "UPDATE Vati_Payfiller_Verifier_Case_Queue
+                SET assigned_user_id = COALESCE(NULLIF(assigned_user_id, 0), ?),
+                    claimed_at = COALESCE(claimed_at, NOW()),
+                    status = CASE
+                        WHEN LOWER(TRIM(COALESCE(status,''))) IN ('followup','waiting_candidate') THEN status
+                        ELSE 'in_progress'
+                    END,
+                    updated_at = NOW()
+              WHERE case_id = ?
+                AND completed_at IS NULL"
+        );
+        $st->execute([$userId, $caseId]);
+    } else {
+        $st = $pdo->prepare(
+            "UPDATE Vati_Payfiller_Verifier_Case_Queue
+                SET status = CASE
+                        WHEN LOWER(TRIM(COALESCE(status,''))) IN ('followup','waiting_candidate') THEN status
+                        ELSE 'in_progress'
+                    END,
+                    updated_at = NOW()
+              WHERE case_id = ?
+                AND completed_at IS NULL"
+        );
+        $st->execute([$caseId]);
     }
 
-    verifier_case_queue_assign_components($pdo, $caseId, $userId);
-    verifier_case_queue_sync_legacy_group_rows($pdo, $caseId, $userId);
-    verifier_case_queue_sync($pdo, $caseId, $userId);
-    return ['ok' => true, 'message' => 'claimed'];
+    verifier_case_queue_assign_components($pdo, $caseId, $userId, $matchingComponents);
+    verifier_case_queue_sync_legacy_group_rows($pdo, $caseId, $assignedUserId > 0 ? $assignedUserId : $userId);
+    verifier_case_queue_sync($pdo, $caseId, $assignedUserId > 0 ? $assignedUserId : $userId);
+    return ['ok' => true, 'message' => 'claimed', 'components' => $matchingComponents];
 }
 
 function verifier_case_queue_sync(PDO $pdo, int $caseId, int $userId = 0): ?array
@@ -526,12 +549,22 @@ function verifier_case_queue_sync(PDO $pdo, int $caseId, int $userId = 0): ?arra
 function verifier_case_queue_can_open(PDO $pdo, int $caseId, int $userId): bool
 {
     if ($caseId <= 0 || $userId <= 0) return false;
+    try {
+        $st = $pdo->prepare(
+            "SELECT 1
+               FROM Vati_Payfiller_Case_Components
+              WHERE case_id = ?
+                AND LOWER(TRIM(COALESCE(assigned_role,''))) = 'verifier'
+                AND assigned_user_id = ?
+              LIMIT 1"
+        );
+        $st->execute([$caseId, $userId]);
+        if ($st->fetchColumn()) return true;
+    } catch (Throwable $e) {
+    }
+
     $row = verifier_case_queue_load_row($pdo, $caseId);
     if (!$row) return false;
-    $assignedUserId = (int)($row['assigned_user_id'] ?? 0);
-    if ($assignedUserId > 0 && $assignedUserId === $userId) {
-        return true;
-    }
     if (trim((string)($row['completed_at'] ?? '')) !== '') {
         try {
             $st = $pdo->prepare(
@@ -556,6 +589,7 @@ function verifier_case_queue_sync_from_group_rows(PDO $pdo, int $caseId): ?array
 {
     if ($caseId <= 0) return null;
     verifier_case_queue_ensure_table($pdo);
+    verifier_case_queue_clear_db_verifier_owners($pdo, $caseId);
 
     $case = verifier_case_queue_load_case($pdo, $caseId);
     if (!$case) return null;

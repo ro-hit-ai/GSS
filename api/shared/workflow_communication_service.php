@@ -187,7 +187,7 @@ function wc_format_html(string $body): string {
 }
 
 function wc_ensure_tables(PDO $pdo): void {
-    $pdo->exec("CREATE TABLE IF NOT EXISTS workflow_communications (
+    $pdo->exec("CREATE TABLE IF NOT EXISTS Vati_Payfiller_Workflow_Communications (
         communication_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
         application_id VARCHAR(64) NOT NULL,
         case_id BIGINT NULL,
@@ -223,7 +223,7 @@ function wc_ensure_tables(PDO $pdo): void {
         KEY idx_wc_req (request_id),
         UNIQUE KEY uq_wc_src (application_id, direction, source_table, source_message_key)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    $pdo->exec("CREATE TABLE IF NOT EXISTS workflow_mail_threads (
+    $pdo->exec("CREATE TABLE IF NOT EXISTS Vati_Payfiller_Workflow_Mail_Threads (
         id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
         application_id VARCHAR(64) NOT NULL,
         case_id BIGINT NULL,
@@ -237,7 +237,7 @@ function wc_ensure_tables(PDO $pdo): void {
         KEY idx_wmt_root_msg (root_message_id),
         KEY idx_wmt_latest_msg (latest_message_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    $pdo->exec("CREATE TABLE IF NOT EXISTS workflow_mail_ingest_events (
+    $pdo->exec("CREATE TABLE IF NOT EXISTS Vati_Payfiller_Workflow_Mail_Ingest_Events (
         ingest_event_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
         source_key VARCHAR(64) NOT NULL,
         application_id VARCHAR(64) NULL,
@@ -253,7 +253,7 @@ function wc_ensure_tables(PDO $pdo): void {
         KEY idx_wmie_source_time (source_key, created_at),
         KEY idx_wmie_app_time (application_id, created_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    $pdo->exec("CREATE TABLE IF NOT EXISTS workflow_mail_runtime_state (
+    $pdo->exec("CREATE TABLE IF NOT EXISTS Vati_Payfiller_Workflow_Mail_Runtime_State (
         source_key VARCHAR(64) NOT NULL,
         application_id VARCHAR(64) NULL,
         case_id BIGINT NULL,
@@ -270,25 +270,25 @@ function wc_ensure_tables(PDO $pdo): void {
 }
 
 function wc_ensure_columns(PDO $pdo): void {
-    $table = 'workflow_communications';
+    $table = 'Vati_Payfiller_Workflow_Communications';
     $need = [
-        'communication_type' => "ALTER TABLE workflow_communications ADD COLUMN communication_type VARCHAR(64) NULL AFTER workflow_version",
-        'direction' => "ALTER TABLE workflow_communications ADD COLUMN direction VARCHAR(16) NOT NULL DEFAULT 'outgoing' AFTER communication_type",
-        'actor_role' => "ALTER TABLE workflow_communications ADD COLUMN actor_role VARCHAR(64) NULL AFTER direction",
-        'actor_name' => "ALTER TABLE workflow_communications ADD COLUMN actor_name VARCHAR(255) NULL AFTER actor_role",
-        'workflow_stage' => "ALTER TABLE workflow_communications ADD COLUMN workflow_stage VARCHAR(32) NULL AFTER actor_name",
-        'request_id' => "ALTER TABLE workflow_communications ADD COLUMN request_id VARCHAR(128) NULL AFTER workflow_stage",
-        'parent_communication_id' => "ALTER TABLE workflow_communications ADD COLUMN parent_communication_id BIGINT NULL AFTER request_id",
-        'source_table' => "ALTER TABLE workflow_communications ADD COLUMN source_table VARCHAR(64) NULL AFTER parent_communication_id",
-        'source_message_key' => "ALTER TABLE workflow_communications ADD COLUMN source_message_key VARCHAR(191) NULL AFTER source_table",
-        'message_id' => "ALTER TABLE workflow_communications ADD COLUMN message_id VARCHAR(255) NULL AFTER source_message_key",
-        'in_reply_to' => "ALTER TABLE workflow_communications ADD COLUMN in_reply_to VARCHAR(255) NULL AFTER message_id",
-        'references_header' => "ALTER TABLE workflow_communications ADD COLUMN references_header TEXT NULL AFTER in_reply_to",
-        'thread_id' => "ALTER TABLE workflow_communications ADD COLUMN thread_id VARCHAR(128) NULL AFTER references_header",
-        'thread_owner_role' => "ALTER TABLE workflow_communications ADD COLUMN thread_owner_role VARCHAR(32) NULL AFTER thread_id",
-        'thread_scope' => "ALTER TABLE workflow_communications ADD COLUMN thread_scope VARCHAR(32) NULL AFTER thread_owner_role",
-        'root_outgoing_communication_id' => "ALTER TABLE workflow_communications ADD COLUMN root_outgoing_communication_id BIGINT NULL AFTER thread_scope",
-        'mailbox_uid' => "ALTER TABLE workflow_communications ADD COLUMN mailbox_uid VARCHAR(128) NULL AFTER thread_id",
+        'communication_type' => "ALTER TABLE Vati_Payfiller_Workflow_Communications ADD COLUMN communication_type VARCHAR(64) NULL AFTER workflow_version",
+        'direction' => "ALTER TABLE Vati_Payfiller_Workflow_Communications ADD COLUMN direction VARCHAR(16) NOT NULL DEFAULT 'outgoing' AFTER communication_type",
+        'actor_role' => "ALTER TABLE Vati_Payfiller_Workflow_Communications ADD COLUMN actor_role VARCHAR(64) NULL AFTER direction",
+        'actor_name' => "ALTER TABLE Vati_Payfiller_Workflow_Communications ADD COLUMN actor_name VARCHAR(255) NULL AFTER actor_role",
+        'workflow_stage' => "ALTER TABLE Vati_Payfiller_Workflow_Communications ADD COLUMN workflow_stage VARCHAR(32) NULL AFTER actor_name",
+        'request_id' => "ALTER TABLE Vati_Payfiller_Workflow_Communications ADD COLUMN request_id VARCHAR(128) NULL AFTER workflow_stage",
+        'parent_communication_id' => "ALTER TABLE Vati_Payfiller_Workflow_Communications ADD COLUMN parent_communication_id BIGINT NULL AFTER request_id",
+        'source_table' => "ALTER TABLE Vati_Payfiller_Workflow_Communications ADD COLUMN source_table VARCHAR(64) NULL AFTER parent_communication_id",
+        'source_message_key' => "ALTER TABLE Vati_Payfiller_Workflow_Communications ADD COLUMN source_message_key VARCHAR(191) NULL AFTER source_table",
+        'message_id' => "ALTER TABLE Vati_Payfiller_Workflow_Communications ADD COLUMN message_id VARCHAR(255) NULL AFTER source_message_key",
+        'in_reply_to' => "ALTER TABLE Vati_Payfiller_Workflow_Communications ADD COLUMN in_reply_to VARCHAR(255) NULL AFTER message_id",
+        'references_header' => "ALTER TABLE Vati_Payfiller_Workflow_Communications ADD COLUMN references_header TEXT NULL AFTER in_reply_to",
+        'thread_id' => "ALTER TABLE Vati_Payfiller_Workflow_Communications ADD COLUMN thread_id VARCHAR(128) NULL AFTER references_header",
+        'thread_owner_role' => "ALTER TABLE Vati_Payfiller_Workflow_Communications ADD COLUMN thread_owner_role VARCHAR(32) NULL AFTER thread_id",
+        'thread_scope' => "ALTER TABLE Vati_Payfiller_Workflow_Communications ADD COLUMN thread_scope VARCHAR(32) NULL AFTER thread_owner_role",
+        'root_outgoing_communication_id' => "ALTER TABLE Vati_Payfiller_Workflow_Communications ADD COLUMN root_outgoing_communication_id BIGINT NULL AFTER thread_scope",
+        'mailbox_uid' => "ALTER TABLE Vati_Payfiller_Workflow_Communications ADD COLUMN mailbox_uid VARCHAR(128) NULL AFTER thread_id",
     ];
     $st = $pdo->prepare('SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ? LIMIT 1');
     foreach ($need as $col => $sql) {
@@ -300,18 +300,18 @@ function wc_ensure_columns(PDO $pdo): void {
         } catch (Throwable $e) {
         }
     }
-    try { $pdo->exec('CREATE INDEX idx_wc_dir ON workflow_communications(direction)'); } catch (Throwable $e) {}
-    try { $pdo->exec('CREATE INDEX idx_wc_req ON workflow_communications(request_id)'); } catch (Throwable $e) {}
-    try { $pdo->exec('CREATE INDEX idx_wc_mid ON workflow_communications(message_id)'); } catch (Throwable $e) {}
-    try { $pdo->exec('CREATE INDEX idx_wc_tid ON workflow_communications(thread_id)'); } catch (Throwable $e) {}
-    try { $pdo->exec('CREATE INDEX idx_wc_tor ON workflow_communications(thread_owner_role)'); } catch (Throwable $e) {}
-    try { $pdo->exec('CREATE INDEX idx_wc_uid ON workflow_communications(mailbox_uid)'); } catch (Throwable $e) {}
-    try { $pdo->exec('CREATE UNIQUE INDEX uq_wc_src ON workflow_communications(application_id, direction, source_table, source_message_key)'); } catch (Throwable $e) {}
-    try { $pdo->exec('CREATE UNIQUE INDEX uq_wc_msgid ON workflow_communications(message_id)'); } catch (Throwable $e) {}
+    try { $pdo->exec('CREATE INDEX idx_wc_dir ON Vati_Payfiller_Workflow_Communications(direction)'); } catch (Throwable $e) {}
+    try { $pdo->exec('CREATE INDEX idx_wc_req ON Vati_Payfiller_Workflow_Communications(request_id)'); } catch (Throwable $e) {}
+    try { $pdo->exec('CREATE INDEX idx_wc_mid ON Vati_Payfiller_Workflow_Communications(message_id)'); } catch (Throwable $e) {}
+    try { $pdo->exec('CREATE INDEX idx_wc_tid ON Vati_Payfiller_Workflow_Communications(thread_id)'); } catch (Throwable $e) {}
+    try { $pdo->exec('CREATE INDEX idx_wc_tor ON Vati_Payfiller_Workflow_Communications(thread_owner_role)'); } catch (Throwable $e) {}
+    try { $pdo->exec('CREATE INDEX idx_wc_uid ON Vati_Payfiller_Workflow_Communications(mailbox_uid)'); } catch (Throwable $e) {}
+    try { $pdo->exec('CREATE UNIQUE INDEX uq_wc_src ON Vati_Payfiller_Workflow_Communications(application_id, direction, source_table, source_message_key)'); } catch (Throwable $e) {}
+    try { $pdo->exec('CREATE UNIQUE INDEX uq_wc_msgid ON Vati_Payfiller_Workflow_Communications(message_id)'); } catch (Throwable $e) {}
 }
 
 function wc_resolve_replies_table(PDO $pdo): string {
-    $candidates = ['GSS_Email_Replies', 'email_replies'];
+    $candidates = ['Vati_Payfiller_GSS_Email_Replies', 'email_replies'];
     $stmt = $pdo->prepare(
         'SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ? LIMIT 1'
     );
@@ -414,23 +414,42 @@ function wc_try_thread_by_headers(PDO $pdo, string $inReplyTo, string $reference
     if (!$ids) return ['application_id' => '', 'case_id' => 0, 'thread_id' => '', 'component_key' => '', 'thread_owner_role' => '', 'root_outgoing_communication_id' => 0];
 
     $ph = implode(',', array_fill(0, count($ids), '?'));
-    $sql = 'SELECT application_id, case_id, thread_id, component_key, thread_owner_role, root_outgoing_communication_id
-              FROM workflow_communications
-             WHERE message_id IN (' . $ph . ')
-             ORDER BY communication_id DESC
-             LIMIT 1';
-    $st = $pdo->prepare($sql);
-    $st->execute($ids);
-    $row = $st->fetch(PDO::FETCH_ASSOC) ?: null;
-    if (!$row) return ['application_id' => '', 'case_id' => 0, 'thread_id' => '', 'component_key' => '', 'thread_owner_role' => '', 'root_outgoing_communication_id' => 0];
-    return [
-        'application_id' => trim((string)($row['application_id'] ?? '')),
-        'case_id' => (int)($row['case_id'] ?? 0),
-        'thread_id' => trim((string)($row['thread_id'] ?? '')),
-        'component_key' => strtolower(trim((string)($row['component_key'] ?? ''))),
-        'thread_owner_role' => wc_norm_thread_owner_role((string)($row['thread_owner_role'] ?? '')),
-        'root_outgoing_communication_id' => (int)($row['root_outgoing_communication_id'] ?? 0),
+    $attempts = [
+        "SELECT application_id, case_id, thread_id, component_key, thread_owner_role, root_outgoing_communication_id
+           FROM Vati_Payfiller_Workflow_Communications
+          WHERE message_id IN ($ph)
+            AND direction = 'outgoing'
+          ORDER BY communication_id DESC
+          LIMIT 1",
+        "SELECT application_id, case_id, thread_id, component_key, thread_owner_role, root_outgoing_communication_id
+           FROM Vati_Payfiller_Workflow_Communications
+          WHERE message_id IN ($ph)
+            AND COALESCE(thread_owner_role, '') <> ''
+          ORDER BY communication_id DESC
+          LIMIT 1",
+        "SELECT application_id, case_id, thread_id, component_key, thread_owner_role, root_outgoing_communication_id
+           FROM Vati_Payfiller_Workflow_Communications
+          WHERE message_id IN ($ph)
+          ORDER BY communication_id DESC
+          LIMIT 1",
     ];
+    foreach ($attempts as $sql) {
+        $st = $pdo->prepare($sql);
+        $st->execute($ids);
+        $row = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+        if (!$row) {
+            continue;
+        }
+        return [
+            'application_id' => trim((string)($row['application_id'] ?? '')),
+            'case_id' => (int)($row['case_id'] ?? 0),
+            'thread_id' => trim((string)($row['thread_id'] ?? '')),
+            'component_key' => strtolower(trim((string)($row['component_key'] ?? ''))),
+            'thread_owner_role' => wc_norm_thread_owner_role((string)($row['thread_owner_role'] ?? '')),
+            'root_outgoing_communication_id' => (int)($row['root_outgoing_communication_id'] ?? 0),
+        ];
+    }
+    return ['application_id' => '', 'case_id' => 0, 'thread_id' => '', 'component_key' => '', 'thread_owner_role' => '', 'root_outgoing_communication_id' => 0];
 }
 
 function wc_normalize_delivery_status(string $value): string
@@ -479,14 +498,17 @@ function wc_try_thread_by_subject(PDO $pdo, string $applicationId, string $subje
     if ($normalizedSubject !== '') {
         $st = $pdo->prepare(
             "SELECT application_id, case_id, thread_id, component_key, thread_owner_role, root_outgoing_communication_id
-               FROM workflow_communications
+               FROM Vati_Payfiller_Workflow_Communications
               WHERE application_id = ?
                 AND direction = 'outgoing'
-                AND LOWER(TRIM(COALESCE(subject, ''))) = ?
+                AND (
+                    LOWER(TRIM(COALESCE(subject, ''))) = ?
+                    OR LOWER(TRIM(COALESCE(subject, ''))) = CONCAT('re: ', ?)
+                )
               ORDER BY communication_id DESC
               LIMIT 1"
         );
-        $st->execute([$applicationId, $normalizedSubject]);
+        $st->execute([$applicationId, $normalizedSubject, $normalizedSubject]);
         $row = $st->fetch(PDO::FETCH_ASSOC) ?: null;
         if ($row) {
             return [
@@ -507,7 +529,7 @@ function wc_try_thread_by_subject(PDO $pdo, string $applicationId, string $subje
 
     $st = $pdo->prepare(
         "SELECT application_id, case_id, thread_id, component_key, thread_owner_role, root_outgoing_communication_id
-           FROM workflow_communications
+           FROM Vati_Payfiller_Workflow_Communications
           WHERE application_id = ?
             AND LOWER(TRIM(COALESCE(component_key, ''))) = ?
             AND direction = 'outgoing'
@@ -537,6 +559,13 @@ function wc_try_thread_by_subject(PDO $pdo, string $applicationId, string $subje
     ];
 }
 
+function wc_is_strong_thread_match(array $match): bool
+{
+    return trim((string)($match['thread_id'] ?? '')) !== ''
+        && trim((string)($match['component_key'] ?? '')) !== ''
+        && wc_norm_thread_owner_role((string)($match['thread_owner_role'] ?? '')) !== '';
+}
+
 function wc_try_thread_by_existing_thread(PDO $pdo, string $applicationId, string $componentKey, string $threadId): array
 {
     $applicationId = trim($applicationId);
@@ -548,7 +577,7 @@ function wc_try_thread_by_existing_thread(PDO $pdo, string $applicationId, strin
 
     $st = $pdo->prepare(
         "SELECT case_id, thread_owner_role, root_outgoing_communication_id
-           FROM workflow_communications
+           FROM Vati_Payfiller_Workflow_Communications
           WHERE application_id = ?
             AND LOWER(TRIM(COALESCE(component_key, ''))) = ?
             AND COALESCE(thread_id, '') = ?
@@ -593,7 +622,7 @@ function wc_thread_upsert(PDO $pdo, string $applicationId, int $caseId, string $
     if ($applicationId === '') return;
     $threadId = trim($threadId);
     if ($threadId === '') $threadId = wc_build_thread_id($applicationId, 'timeline', 'system');
-    $sql = 'INSERT INTO workflow_mail_threads (application_id, case_id, workflow_thread_id, root_message_id, latest_message_id, created_at, updated_at)
+    $sql = 'INSERT INTO Vati_Payfiller_Workflow_Mail_Threads (application_id, case_id, workflow_thread_id, root_message_id, latest_message_id, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, NOW(), NOW())
             ON DUPLICATE KEY UPDATE
               case_id = COALESCE(VALUES(case_id), case_id),
@@ -625,7 +654,7 @@ function wc_log_ingest_event(
     try {
         wc_ensure_tables($pdo);
         $ins = $pdo->prepare(
-            'INSERT INTO workflow_mail_ingest_events
+            'INSERT INTO Vati_Payfiller_Workflow_Mail_Ingest_Events
              (source_key, application_id, case_id, event_status, inserted_count, duplicate_count, skipped_count, unmatched_count, note, created_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())'
         );
@@ -642,7 +671,7 @@ function wc_log_ingest_event(
         ]);
 
         $up = $pdo->prepare(
-            'INSERT INTO workflow_mail_runtime_state
+            'INSERT INTO Vati_Payfiller_Workflow_Mail_Runtime_State
              (source_key, application_id, case_id, last_status, last_run_at, inserted_count, duplicate_count, skipped_count, unmatched_count, note)
              VALUES (?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE
@@ -688,7 +717,7 @@ function wc_backfill_thread_metadata(PDO $pdo, string $applicationId = ''): void
             OR direction = 'incoming'
         )";
         $sql = 'SELECT communication_id, application_id, case_id, component_key, role_key, direction, actor_role, message_id, in_reply_to, references_header, thread_id, thread_owner_role, root_outgoing_communication_id, subject, body
-                  FROM workflow_communications';
+                  FROM Vati_Payfiller_Workflow_Communications';
         if ($where) {
             $sql .= ' WHERE ' . implode(' AND ', $where);
         }
@@ -698,7 +727,7 @@ function wc_backfill_thread_metadata(PDO $pdo, string $applicationId = ''): void
         $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
         if (!$rows) return;
 
-        $up = $pdo->prepare('UPDATE workflow_communications
+        $up = $pdo->prepare('UPDATE Vati_Payfiller_Workflow_Communications
                                 SET thread_id = ?, thread_owner_role = ?, thread_scope = ?, root_outgoing_communication_id = ?
                               WHERE communication_id = ?');
 
@@ -736,7 +765,12 @@ function wc_backfill_thread_metadata(PDO $pdo, string $applicationId = ''): void
                     $threadMatch = wc_try_thread_by_existing_thread($pdo, $resolvedApp, $componentKey, $threadId);
                 }
                 $ambiguousThread = ($threadId !== '' && !empty($threadMatch['thread_id']) && empty($threadMatch['thread_owner_role']));
-                if (!$ambiguousThread && ($threadOwnerRole === '' || $threadId === '' || $rootOutgoingCommunicationId <= 0)) {
+                if (
+                    !$ambiguousThread
+                    && !wc_is_strong_thread_match($hdrMatch)
+                    && !wc_is_strong_thread_match($threadMatch)
+                    && ($threadOwnerRole === '' || $threadId === '' || $rootOutgoingCommunicationId <= 0)
+                ) {
                     $subjectMatch = wc_try_thread_by_subject(
                         $pdo,
                         $resolvedApp,
@@ -805,9 +839,9 @@ function wc_sync_verification_communications(PDO $pdo, string $applicationId): i
                 AND table_name = ?
               LIMIT 1'
         );
-        $exists->execute(['verification_communications']);
+        $exists->execute(['Vati_Payfiller_Verification_Communications']);
         if (!$exists->fetchColumn()) {
-            wc_log_ingest_event($pdo, 'verification_sync', $applicationId, 0, 'skipped', 0, 0, 0, 0, 'verification_communications table missing');
+            wc_log_ingest_event($pdo, 'verification_sync', $applicationId, 0, 'skipped', 0, 0, 0, 0, 'Vati_Payfiller_Verification_Communications table missing');
             return 0;
         }
 
@@ -816,7 +850,7 @@ function wc_sync_verification_communications(PDO $pdo, string $applicationId): i
                     vc.node_thread_id, vc.node_conversation_id, vc.communication_status, vc.subject_snapshot,
                     vc.body_snapshot, vc.last_message_at, vc.created_by, vc.created_at,
                     u.first_name, u.last_name, u.username, LOWER(TRIM(COALESCE(u.role, \'\'))) AS sender_role
-               FROM verification_communications vc
+               FROM Vati_Payfiller_Verification_Communications vc
                LEFT JOIN Vati_Payfiller_Users u ON u.user_id = vc.created_by
               WHERE vc.application_id = ?
               ORDER BY vc.id ASC'
@@ -829,7 +863,7 @@ function wc_sync_verification_communications(PDO $pdo, string $applicationId): i
         }
 
         $ins = $pdo->prepare(
-            'INSERT IGNORE INTO workflow_communications
+            'INSERT IGNORE INTO Vati_Payfiller_Workflow_Communications
              (application_id, case_id, component_key, role_key, action_key, subject, body, sent_by_user_id, sent_by_name, sent_at,
               delivery_status, communication_type, direction, actor_role, actor_name, workflow_stage, source_table, source_message_key,
               thread_id, thread_owner_role, thread_scope, root_outgoing_communication_id, message_id)
@@ -870,7 +904,7 @@ function wc_sync_verification_communications(PDO $pdo, string $applicationId): i
                 $senderRole,
                 $senderName !== '' ? $senderName : null,
                 $senderRole,
-                'verification_communications',
+                'Vati_Payfiller_Verification_Communications',
                 $sourceKey,
                 $threadId,
                 $threadOwnerRole,
@@ -884,7 +918,7 @@ function wc_sync_verification_communications(PDO $pdo, string $applicationId): i
                 wc_thread_upsert($pdo, $applicationId, $caseId, $threadId, trim($messageId, '<> '), trim($messageId, '<> '));
                 $communicationId = (int)$pdo->lastInsertId();
                 if ($communicationId > 0) {
-                    $up = $pdo->prepare('UPDATE workflow_communications
+                    $up = $pdo->prepare('UPDATE Vati_Payfiller_Workflow_Communications
                                             SET root_outgoing_communication_id = ?
                                           WHERE communication_id = ?
                                             AND COALESCE(root_outgoing_communication_id, 0) = 0');
@@ -937,7 +971,7 @@ function wc_ingest_incoming_replies(PDO $pdo, string $applicationId): int {
     // recover candidate replies by threading headers against known outgoing workflow Message-IDs.
     if (!$rows && ($cols['in_reply_to'] !== '' || $cols['references_header'] !== '')) {
         $knownStmt = $pdo->prepare("SELECT LOWER(TRIM(COALESCE(message_id,''))) AS message_id
-                                      FROM workflow_communications
+                                      FROM Vati_Payfiller_Workflow_Communications
                                      WHERE application_id = ?
                                        AND direction = 'outgoing'
                                        AND COALESCE(message_id,'') <> ''
@@ -979,7 +1013,7 @@ function wc_ingest_incoming_replies(PDO $pdo, string $applicationId): int {
         return 0;
     }
 
-    $ins = $pdo->prepare('INSERT IGNORE INTO workflow_communications
+    $ins = $pdo->prepare('INSERT IGNORE INTO Vati_Payfiller_Workflow_Communications
         (application_id, case_id, component_key, role_key, action_key, subject, body, sent_by_name, sent_at, delivery_status, communication_type, direction, actor_role, actor_name, workflow_stage, source_table, source_message_key, message_id, in_reply_to, references_header, thread_id, thread_owner_role, thread_scope, root_outgoing_communication_id, mailbox_uid)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
 
@@ -1011,7 +1045,11 @@ function wc_ingest_incoming_replies(PDO $pdo, string $applicationId): int {
         if ($threadId !== '' && $resolvedComponentKey !== '') {
             $threadMatch = wc_try_thread_by_existing_thread($pdo, $resolvedApp !== '' ? $resolvedApp : $applicationId, $resolvedComponentKey, $threadId);
         }
-        if ($resolvedComponentKey === '' || $threadId === '') {
+        if (
+            !wc_is_strong_thread_match($hdrMatch)
+            && !wc_is_strong_thread_match($threadMatch)
+            && ($resolvedComponentKey === '' || $threadId === '' || $resolvedOwnerRole === '' || $rootOutgoingCommunicationId <= 0)
+        ) {
             $subjectMatch = wc_try_thread_by_subject($pdo, $resolvedApp !== '' ? $resolvedApp : $applicationId, $subject, $message);
             if ($resolvedCaseId <= 0) {
                 $resolvedCaseId = (int)($subjectMatch['case_id'] ?? 0);
@@ -1037,16 +1075,15 @@ function wc_ingest_incoming_replies(PDO $pdo, string $applicationId): int {
                 )
             );
         }
-        if ($resolvedOwnerRole === '') {
-            $resolvedOwnerRole = 'candidate';
-        }
         if ($rootOutgoingCommunicationId <= 0) {
             $rootOutgoingCommunicationId = wc_first_positive_int(
                 $threadMatch['root_outgoing_communication_id'] ?? 0,
                 $subjectMatch['root_outgoing_communication_id'] ?? 0
             );
         }
-        if ($threadId === '') $threadId = wc_build_thread_id($resolvedApp, $resolvedComponentKey !== '' ? $resolvedComponentKey : 'timeline', $resolvedOwnerRole);
+        if ($threadId === '' && $resolvedOwnerRole !== '') {
+            $threadId = wc_build_thread_id($resolvedApp, $resolvedComponentKey !== '' ? $resolvedComponentKey : 'timeline', $resolvedOwnerRole);
+        }
         if ($resolvedCaseId <= 0) $unmatched++;
         $srcKey = $messageId !== '' ? ('msgid:' . $messageId) : ($mailboxUid !== '' ? ('uid:' . $mailboxUid) : sha1($sender . '|' . $message . '|' . $createdAt));
         $ins->execute([
@@ -1101,7 +1138,7 @@ function wc_ingest_incoming_replies(PDO $pdo, string $applicationId): int {
         $duplicates,
         max(0, count($rows) - $count - $duplicates),
         $unmatched,
-        'legacy replies ingested into workflow_communications'
+        'legacy replies ingested into Vati_Payfiller_Workflow_Communications'
     );
     return $count;
 }

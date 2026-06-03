@@ -23,7 +23,7 @@ function car_new_token(): string {
 }
 
 function car_ensure_resend_table(PDO $pdo): void {
-    $pdo->exec("CREATE TABLE IF NOT EXISTS candidate_access_resend_events (
+    $pdo->exec("CREATE TABLE IF NOT EXISTS Vati_Payfiller_Candidate_Access_Resend_Events (
         resend_event_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
         request_id VARCHAR(128) NOT NULL,
         case_id BIGINT NOT NULL,
@@ -105,7 +105,7 @@ function car_log_workflow_communication(PDO $pdo, int $caseId, string $applicati
         $subject = 'Background Verification - Candidate Access Resent';
         $body = 'Candidate access resent.' . ($reason !== '' ? (' | reason: ' . $reason) : '') . ' | invite_url: ' . $inviteUrl;
         $requestId = 'car-wc-' . $applicationId . '-' . $caseId . '-' . md5($role . '|' . $reason . '|' . $inviteUrl);
-        $st = $pdo->prepare("INSERT IGNORE INTO workflow_communications
+        $st = $pdo->prepare("INSERT IGNORE INTO Vati_Payfiller_Workflow_Communications
             (application_id, case_id, component_key, role_key, action_key, subject, body, notes, sent_by_user_id, sent_by_name, sent_at, delivery_status, communication_type, direction, actor_role, actor_name, workflow_stage, request_id, message_id, thread_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'sent', ?, 'outgoing', ?, ?, ?, ?, ?, ?)");
         $st->execute([
@@ -147,7 +147,7 @@ function car_run_resend(PDO $pdo, array $in, string $sessionRole, int $sessionUs
         $requestId = 'car-' . ($caseId > 0 ? $caseId : $applicationId) . '-' . $sessionUserId . '-' . time();
     }
 
-    $dup = $pdo->prepare('SELECT resend_event_id, invite_url, email_sent FROM candidate_access_resend_events WHERE request_id = ? LIMIT 1');
+    $dup = $pdo->prepare('SELECT resend_event_id, invite_url, email_sent FROM Vati_Payfiller_Candidate_Access_Resend_Events WHERE request_id = ? LIMIT 1');
     $dup->execute([$requestId]);
     $old = $dup->fetch(PDO::FETCH_ASSOC) ?: null;
     if ($old) {
@@ -195,7 +195,7 @@ function car_run_resend(PDO $pdo, array $in, string $sessionRole, int $sessionUs
     }
 
     // Cooldown: prevent rapid duplicates for same case/actor (30 seconds)
-    $cool = $pdo->prepare('SELECT 1 FROM candidate_access_resend_events WHERE case_id = ? AND resent_by_user_id <=> ? AND created_at >= (NOW() - INTERVAL 30 SECOND) LIMIT 1');
+    $cool = $pdo->prepare('SELECT 1 FROM Vati_Payfiller_Candidate_Access_Resend_Events WHERE case_id = ? AND resent_by_user_id <=> ? AND created_at >= (NOW() - INTERVAL 30 SECOND) LIMIT 1');
     $cool->execute([$caseId, $sessionUserId > 0 ? $sessionUserId : null]);
     if ($cool->fetchColumn()) {
         return ['http' => 429, 'status' => 0, 'message' => 'Please wait before resending again'];
@@ -237,14 +237,14 @@ function car_run_resend(PDO $pdo, array $in, string $sessionRole, int $sessionUs
         app_mail_clear_log_meta();
     }
 
-    $ins = $pdo->prepare('INSERT INTO candidate_access_resend_events (request_id, case_id, application_id, resent_by_user_id, resent_by_role, reason, invite_token, invite_url, email_sent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
+    $ins = $pdo->prepare('INSERT INTO Vati_Payfiller_Candidate_Access_Resend_Events (request_id, case_id, application_id, resent_by_user_id, resent_by_role, reason, invite_token, invite_url, email_sent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
     $ins->execute([
         $requestId, $caseId, $applicationId, $sessionUserId > 0 ? $sessionUserId : null, $role, ($reason !== '' ? $reason : null),
         $token, $inviteUrl, $sent ? 1 : 0
     ]);
     $eventId = (int)$pdo->lastInsertId();
 
-    $cntQ = $pdo->prepare('SELECT COUNT(*) FROM candidate_access_resend_events WHERE case_id = ?');
+    $cntQ = $pdo->prepare('SELECT COUNT(*) FROM Vati_Payfiller_Candidate_Access_Resend_Events WHERE case_id = ?');
     $cntQ->execute([$caseId]);
     $resendCount = (int)$cntQ->fetchColumn();
     car_log_timeline($pdo, $applicationId, $sessionUserId, $role, 'Candidate Access Resent | role: ' . strtoupper($role) . ($reason !== '' ? (' | reason: ' . $reason) : ''));

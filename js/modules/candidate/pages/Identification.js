@@ -12,6 +12,7 @@ class IdentificationManager extends TabManager {
         this.country = 'India';
         this.savedRows = [];
         this.isSubmitting = false;
+        this.requirements = [];
     }
 
     async init() {
@@ -68,7 +69,20 @@ class IdentificationManager extends TabManager {
     }
 
     getTabLabel(index) {
-        return `Document ${index + 1}`;
+        return `ID ${index + 1}`;
+    }
+
+    getRequirementDocTypes() {
+        const combined = [];
+        this.requirements.forEach((group) => {
+            const types = Array.isArray(group.types) ? group.types : [];
+            types.forEach((type) => {
+                if (type && !combined.includes(type)) {
+                    combined.push(type);
+                }
+            });
+        });
+        return combined;
     }
 
     loadPageData() {
@@ -100,6 +114,17 @@ class IdentificationManager extends TabManager {
             
             // Get country from data element
             this.country = this.normalizeCountry(dataEl.dataset.country || 'India');
+            this.requirements = [];
+            const cfg = window.CANDIDATE_CASE_CONFIG || {};
+            const reqs = Array.isArray(cfg.identification_requirements) ? cfg.identification_requirements : [];
+            reqs.forEach((group) => {
+                const types = Array.isArray(group.types) ? group.types.filter(Boolean) : [];
+                this.requirements.push({
+                    group_key: group.group_key || '',
+                    group_label: group.group_label || '',
+                    types: types
+                });
+            });
             
         } catch (e) {
             console.error("❌ Failed to parse identification data", e);
@@ -107,138 +132,158 @@ class IdentificationManager extends TabManager {
             this.countries = [];
             this.savedRows = [];
             this.country = 'India';
+            this.requirements = [];
         }
     }
 
     populateCard(card, data = {}, index) {
         card.dataset.cardIndex = index;
-        console.log(`🆔 IdentificationManager.populateCard() for card ${index}`, data);
-        
-        // Set index
         const indexInput = this.findInput(card, 'document_index[]');
         if (indexInput) indexInput.value = index + 1;
 
-        // Set record ID
         if (data.id) {
             this.findOrCreateInput(card, `id[${index}]`, 'hidden').value = data.id;
-            console.log(`   Set record ID: ${data.id}`);
         }
 
-        // Handle document file
-        if (data.upload_document) {
-            const oldFileInput = this.findOrCreateInput(card, `old_upload_document[${index}]`, 'hidden');
-            oldFileInput.value = data.upload_document;
-            console.log(`   Set old file reference: ${data.upload_document}`);
-
-            if (data.upload_document !== 'INSUFFICIENT_DOCUMENTS') {
-                const input = card.querySelector('input[name="upload_document[]"]');
-                const box = this.getUploadBoxFromInput(input);
-                const base = window.APP_BASE_URL || '';
-                const url = `${base}/uploads/identification/${data.upload_document}`;
-                this.setUploadBox(box, data.upload_document, url, false);
-                console.log(`   Added document preview: ${data.upload_document}`);
-            }
+        const docNum = card.querySelector('.document-num');
+        if (docNum) {
+            docNum.textContent = `${index + 1}`;
         }
 
-        // Populate form fields
-        const idNum = card.querySelector('[name="id_number[]"]');
-        if (idNum && data.id_number) {
-            idNum.value = data.id_number;
-            console.log(`   Set ID number: ${data.id_number}`);
-        }
+        const requiredDocTypes = this.getRequirementDocTypes();
+        const docTypes = requiredDocTypes.length
+            ? requiredDocTypes
+            : (this.documentTypes[this.country] || this.documentTypes['Other'] || {});
 
-        const name = card.querySelector('[name="name[]"]');
-        if (name && data.name) {
-            name.value = data.name;
-            console.log(`   Set name: ${data.name}`);
-        }
-
-        // Set dates
-        const issue = card.querySelector('[name="issue_date[]"]');
-        if (issue && data.issue_date) {
-            const issueDate = data.issue_date.split(' ')[0];
-            issue.value = issueDate;
-            console.log(`   Set issue date: ${issueDate}`);
-        }
-
-        const expiry = card.querySelector('[name="expiry_date[]"]');
-        if (expiry && data.expiry_date) {
-            const expiryDate = data.expiry_date.split(' ')[0];
-            expiry.value = expiryDate;
-            console.log(`   Set expiry date: ${expiryDate}`);
-        }
-
-        // Get document types for current country
-        const docTypes = this.documentTypes[this.country] || this.documentTypes['Other'] || {};
-        console.log(`📋 Document types for ${this.country}:`, docTypes);
-        
-        // Update document type options with proper labels
         this.updateDocumentTypeOptions(card, docTypes);
 
-        // Set document type - handle both label and value
-        const typeSelect = card.querySelector('[name="documentId_type[]"]');
-        if (typeSelect && data.documentId_type) {
-            console.log(`   Setting document type: ${data.documentId_type}`);
-            
-            setTimeout(() => {
-                // First try to find by exact value
-                let optionFound = false;
-                for (const option of typeSelect.options) {
-                    if (option.value === data.documentId_type) {
-                        typeSelect.value = data.documentId_type;
-                        optionFound = true;
-                        break;
-                    }
-                }
-                
-                // If not found, try to find by label
-                if (!optionFound) {
-                    for (const option of typeSelect.options) {
-                        if (option.textContent === data.documentId_type) {
-                            typeSelect.value = option.value;
-                            optionFound = true;
-                            break;
-                        }
-                    }
-                }
-                
-                if (optionFound) {
-                    console.log(`   Document type set to: ${typeSelect.value}`);
-                    this.updateIdNumberHint(card);
-                    this.updateDateFieldsForCard(card);
-                    // Trigger change event to update UI
-                    typeSelect.dispatchEvent(new Event('change'));
-                } else {
-                    console.warn(`   Document type "${data.documentId_type}" not found in options`);
-                }
-            }, 100);
-        }
-
-        // Handle insufficient documents checkbox
-        const insufficientCheckbox = card.querySelector('input[name="insufficient_documents[]"]');
-        if (insufficientCheckbox) {
-            const isInsufficient = data.upload_document === 'INSUFFICIENT_DOCUMENTS' || 
-                                 data.insufficient_documents == 1 || 
-                                 data.insufficient_documents === true;
-            
-            insufficientCheckbox.checked = isInsufficient;
-            this.toggleDocumentFileInput(card, isInsufficient);
-            console.log(`   Set insufficient_documents for card ${index}: ${isInsufficient}`);
-        }
-
-        console.log(`✅ Card ${index} populated successfully`);
+        const groupedRows = this.normalizeGroupedRows(data);
+        this.populateProofGroup(card, 'primary', groupedRows.primary || {});
+        this.populateProofGroup(card, 'secondary', groupedRows.secondary || {});
     }
 
     toggleDocumentFileInput(card, isInsufficient) {
-        const documentFile = card.querySelector('input[name="upload_document[]"]');
-        
-        if (documentFile) {
+        const groupedFiles = card.querySelectorAll('[data-doc-file-input]');
+
+        groupedFiles.forEach((documentFile) => {
             documentFile.disabled = isInsufficient;
-            documentFile.required = !isInsufficient;
             if (isInsufficient) {
                 documentFile.value = '';
-                this.clearUploadBox(this.getUploadBoxFromInput(documentFile));
+                this.clearUploadBox(this.getGroupedUploadBox(card, documentFile.dataset.docGroup || 'primary'));
             }
+        });
+    }
+
+    getNormalizedDocTypes(docTypes) {
+        if (Array.isArray(docTypes)) {
+            return docTypes.filter(Boolean).map((item) => ({ label: item, value: item }));
+        }
+
+        if (docTypes && typeof docTypes === 'object') {
+            return Object.entries(docTypes).map(([label, value]) => ({
+                label,
+                value: value || label
+            }));
+        }
+
+        return [];
+    }
+
+    getDocGroupForType(type) {
+        const normalized = String(type || '').trim().toLowerCase();
+        if (!normalized) return 'primary';
+
+        const primaryTypes = [
+            'aadhaar',
+            'aadhar',
+            'driving licence',
+            'driving license',
+            'driver license',
+            'driver licence'
+        ];
+
+        return primaryTypes.includes(normalized) ? 'primary' : 'secondary';
+    }
+
+    getDocGroupSets(docTypes) {
+        const normalized = this.getNormalizedDocTypes(docTypes);
+        const groups = { primary: [], secondary: [] };
+
+        normalized.forEach((item) => {
+            const group = this.getDocGroupForType(item.value);
+            groups[group].push(item);
+        });
+
+        return groups;
+    }
+
+    getGroupedFileInput(card, group) {
+        return card
+            ? card.querySelector(`[data-doc-file-input][data-doc-group="${group}"]`)
+            : null;
+    }
+
+    getGroupedUploadBox(card, group) {
+        return card
+            ? card.querySelector(`[data-file-upload][data-doc-group="${group}"]`)
+            : null;
+    }
+
+    getProofFields(card, group) {
+        if (!card) return {};
+        return {
+            select: card.querySelector(`[name="${group}_document_type[]"]`),
+            name: card.querySelector(`[name="${group}_name[]"]`),
+            idNumber: card.querySelector(`[name="${group}_id_number[]"]`),
+            issueDate: card.querySelector(`[name="${group}_issue_date[]"]`),
+            expiryDate: card.querySelector(`[name="${group}_expiry_date[]"]`),
+            oldFile: card.querySelector(`[name="old_${group}_upload_document[]"]`),
+            dateRow: card.querySelector(`[data-proof-date-row="${group}"]`),
+            fileInput: this.getGroupedFileInput(card, group),
+            uploadBox: this.getGroupedUploadBox(card, group)
+        };
+    }
+
+    normalizeGroupedRows(data) {
+        const grouped = { primary: {}, secondary: {} };
+        if (data && data.grouped_rows && typeof data.grouped_rows === 'object') {
+            if (data.grouped_rows.primary) grouped.primary = data.grouped_rows.primary;
+            if (data.grouped_rows.secondary) grouped.secondary = data.grouped_rows.secondary;
+        } else if (data && data.documentId_type) {
+            const group = this.getDocGroupForType(data.documentId_type || '');
+            grouped[group] = {
+                document_type: data.documentId_type || '',
+                id_number: data.id_number || '',
+                name: data.name || '',
+                issue_date: data.issue_date || '',
+                expiry_date: data.expiry_date || '',
+                upload_document: data.upload_document || ''
+            };
+        }
+        return grouped;
+    }
+
+    populateProofGroup(card, group, rowData = {}) {
+        const fields = this.getProofFields(card, group);
+        if (!fields.select) return;
+
+        fields.select.value = rowData.document_type || '';
+        fields.name.value = rowData.name || '';
+        fields.idNumber.value = rowData.id_number || '';
+        fields.issueDate.value = rowData.issue_date ? String(rowData.issue_date).split(' ')[0] : '';
+        fields.expiryDate.value = rowData.expiry_date ? String(rowData.expiry_date).split(' ')[0] : '';
+        if (fields.oldFile) {
+            fields.oldFile.value = rowData.upload_document || '';
+        }
+
+        this.updateDateFieldsForGroup(card, group);
+
+        if (rowData.upload_document && rowData.upload_document !== 'INSUFFICIENT_DOCUMENTS' && fields.uploadBox) {
+            const base = window.APP_BASE_URL || '';
+            const url = `${base}/uploads/identification/${rowData.upload_document}`;
+            this.setUploadBox(fields.uploadBox, rowData.upload_document, url, false);
+        } else if (fields.uploadBox) {
+            this.clearUploadBox(fields.uploadBox);
         }
     }
 
@@ -251,16 +296,35 @@ class IdentificationManager extends TabManager {
             e.preventDefault();
             const box = trigger.closest('[data-file-upload]');
             const control = box ? box.closest('.form-control') : null;
-            const input = control ? control.querySelector('input[type="file"][data-file-input]') : null;
+            const input = control ? control.querySelector('input[type="file"][data-doc-file-input]') : null;
             if (input) input.click();
         });
 
+        this.addEventListener(document, 'click', (e) => {
+            const remove = e.target.closest('[data-file-remove]');
+            if (!remove) return;
+            const box = remove.closest('[data-file-upload]');
+            const card = box ? box.closest('.identification-card') : null;
+            const group = box ? (box.dataset.docGroup || 'primary') : 'primary';
+            const input = this.getGroupedFileInput(card, group);
+            const fields = this.getProofFields(card, group);
+            e.preventDefault();
+            if (input) input.value = '';
+            if (fields.oldFile) fields.oldFile.value = '';
+            this.clearUploadBox(box);
+            if (window.CandidateNotify && box) {
+                window.CandidateNotify.clearFieldError(box);
+            }
+            this.updateTabStatus();
+        });
+
         this.addEventListener(document, 'change', (e) => {
-            if (e.target.matches('input[name="upload_document[]"]')) {
+            if (e.target.matches('[data-doc-file-input]')) {
                 const input = e.target;
                 const card = input.closest('.identification-card');
+                const group = input.dataset.docGroup || 'primary';
                 const file = input.files && input.files[0] ? input.files[0] : null;
-                const box = this.getUploadBoxFromInput(input);
+                const box = this.getGroupedUploadBox(card, group);
                 if (box) {
                     const errEl = box.querySelector('[data-file-error]');
                     if (errEl) errEl.textContent = '';
@@ -288,19 +352,6 @@ class IdentificationManager extends TabManager {
                 }
 
                 if (card && input.files.length > 0) {
-                    console.log(`📄 Document file selected in card:`, input.files[0].name);
-                    const insufficientCheckbox =
-                        card.querySelector('input[name="insufficient_documents[]"]');
-                    if (insufficientCheckbox) {
-                        insufficientCheckbox.checked = false;
-                        this.toggleDocumentFileInput(card, false);
-                    }
-
-                    const oldFile = card.querySelector('[name^="old_upload_document"]');
-                    if (oldFile && oldFile.value === 'INSUFFICIENT_DOCUMENTS') {
-                        oldFile.value = '';
-                    }
-
                     if (file && box) {
                         const url = URL.createObjectURL(file);
                         this.setUploadBox(box, file.name, url, true, file.size);
@@ -310,7 +361,6 @@ class IdentificationManager extends TabManager {
             }
         });
     }
-
     setupInsufficientDocsHandlers() {
         console.log('🔧 Setting up insufficient documents handlers');
         
@@ -349,7 +399,6 @@ class IdentificationManager extends TabManager {
             hidden.value = this.country;
             console.log(`🌍 Country changed to: ${this.country}`);
             this.updateAllDocumentTypeOptions(this.country);
-            this.updateAllIdNumberHints();
             this.updateAllDateFields();
         });
     }
@@ -358,158 +407,80 @@ class IdentificationManager extends TabManager {
         console.log(`🔄 Updating document types for country: ${country}`);
         const docTypes = this.documentTypes[country] || this.documentTypes['Other'] || {};
         console.log('📋 Available document types:', docTypes);
-        
-        this.cards.forEach(card => {
-            if (card) this.updateDocumentTypeOptions(card, docTypes);
+
+        this.cards.forEach((card, index) => {
+            if (!card) return;
+            const requiredDocTypes = this.getRequirementDocTypes();
+            this.updateDocumentTypeOptions(card, requiredDocTypes.length ? requiredDocTypes : docTypes);
         });
     }
 
     updateDocumentTypeOptions(card, docTypes) {
-        const select = card.querySelector('.document-type-select');
-        if (!select) {
-            console.warn('❌ Document type select not found in card');
+        const primarySelect = card.querySelector('.primary-doc-select');
+        const secondarySelect = card.querySelector('.secondary-doc-select');
+        if (!primarySelect || !secondarySelect) {
+            console.warn('❌ Grouped document selects not found in card');
             return;
         }
 
-        const currentValue = select.value;
-        
-        // Clear existing options
-        select.innerHTML = '<option value="">Select Document Type</option>';
-        
-        // Check if docTypes is an array or object
-        if (Array.isArray(docTypes)) {
-            // If it's an array, use values as both label and value
-            docTypes.forEach(item => {
-                const opt = document.createElement('option');
-                opt.value = item;
-                opt.textContent = item;
-                select.appendChild(opt);
-            });
-        } else if (typeof docTypes === 'object') {
-            // If it's an object, iterate through key-value pairs
-            Object.entries(docTypes).forEach(([label, value]) => {
-                const opt = document.createElement('option');
-                opt.value = value || label; // Use value if provided, otherwise use label
-                opt.textContent = label;
-                select.appendChild(opt);
-            });
-        }
-        
-        // Restore previous value if it exists
-        if (currentValue) {
-            for (const option of select.options) {
-                if (option.value === currentValue) {
-                    select.value = currentValue;
-                    break;
-                }
-            }
-        }
-        
-        console.log(`📝 Updated document type options for card, total options: ${select.options.length}`);
-        
-        // Update hints
-        this.updateIdNumberHint(card);
-        this.updateDateFieldsForCard(card);
-    }
+        const groups = this.getDocGroupSets(docTypes);
 
-    updateAllIdNumberHints() {
-        this.cards.forEach(card => card && this.updateIdNumberHint(card));
+        const buildOptions = (select, items, placeholder) => {
+            const currentValue = select.value || '';
+            select.innerHTML = `<option value="">${placeholder}</option>`;
+            items.forEach((item) => {
+                const opt = document.createElement('option');
+                opt.value = item.value;
+                opt.textContent = item.label;
+                select.appendChild(opt);
+            });
+            if (currentValue) {
+                select.value = currentValue;
+            }
+        };
+
+        buildOptions(primarySelect, groups.primary, 'Select ID proof');
+        buildOptions(secondarySelect, groups.secondary, 'Select ID proof');
+
+        primarySelect.disabled = groups.primary.length === 0;
+        secondarySelect.disabled = groups.secondary.length === 0;
     }
 
     updateAllDateFields() {
-        this.cards.forEach(card => card && this.updateDateFieldsForCard(card));
+        this.cards.forEach(card => {
+            if (!card) return;
+            this.updateDateFieldsForGroup(card, 'primary');
+            this.updateDateFieldsForGroup(card, 'secondary');
+        });
     }
 
-    updateIdNumberHint(card) {
-        const select = card.querySelector('.document-type-select');
-        const hintElement = card.querySelector('.id-number-hint');
-        if (!select || !hintElement) return;
-
-        const value = select.value;
-        const text = select.options[select.selectedIndex]?.textContent || '';
-        
-        const hintMap = {
-            'Aadhaar': '12-digit Aadhaar number',
-            'PAN': '10-character PAN (ABCDE1234F)',
-            'SSN': '9-digit Social Security Number',
-            'SIN': '9-digit Social Insurance Number',
-            'NIN': 'National Insurance Number',
-            'NRIC': 'Singapore NRIC',
-            'Emirates ID': 'Emirates ID number',
-            'Passport': 'Passport number',
-            'Driving Licence': 'Driving license number',
-            'Driver License': 'Driver license number',
-            'Voter ID': 'Voter ID number',
-            'Ration Card': 'Ration card number',
-            'State ID': 'State ID number',
-            'Birth Certificate': 'Birth certificate number',
-            'Green Card': 'Green card number',
-            'BRP': 'Biometric Residence Permit number',
-            'National ID': 'National ID number'
-        };
-
-        // Try to find hint by select value or text
-        let hint = hintMap[value] || hintMap[text] || 'Enter the document number as shown';
-        hintElement.textContent = hint;
+    proofTypeUsesDates(type) {
+        const normalized = String(type || '').trim().toLowerCase();
+        return ['passport', 'driving licence', 'driving license', 'driver license', 'driver licence'].includes(normalized);
     }
 
-    updateDateFieldsForCard(card) {
-        const select = card.querySelector('.document-type-select');
-        const datesRow = card.querySelector('.identification-dates-row');
-        const issueField = card.querySelector('.issue-date-field');
-        const field = card.querySelector('.expiry-date-field');
-        const issueInput = card.querySelector('[name="issue_date[]"]');
-        const input = card.querySelector('.expiry-date-input');
-        const hintElement = card.querySelector('.expiry-date-hint');
-
-        if (!select || !datesRow || !issueField || !field || !issueInput || !input || !hintElement) return;
-
-        const value = select.value;
-        const text = select.options[select.selectedIndex]?.textContent || '';
-
-        const docsWithDates = ['Passport', 'Driving Licence', 'Driver License', 'Driving License'];
-        const showDates = docsWithDates.includes(value) || docsWithDates.includes(text);
-
+    updateDateFieldsForGroup(card, group) {
+        const fields = this.getProofFields(card, group);
+        if (!fields.select || !fields.dateRow || !fields.issueDate || !fields.expiryDate) return;
+        const showDates = this.proofTypeUsesDates(fields.select.value);
+        fields.dateRow.style.display = showDates ? 'grid' : 'none';
+        fields.issueDate.disabled = !showDates;
+        fields.expiryDate.disabled = !showDates;
         if (!showDates) {
-            datesRow.style.display = 'none';
-            issueField.style.display = 'none';
-            field.style.display = 'none';
-            issueInput.value = '';
-            issueInput.disabled = true;
-            input.value = '';
-            input.disabled = true;
-            hintElement.textContent = '';
-        } else {
-            datesRow.style.display = 'grid';
-            issueField.style.display = 'block';
-            field.style.display = 'block';
-            issueInput.disabled = false;
-            input.disabled = false;
-            hintElement.textContent = 'Enter expiry date if applicable';
+            fields.issueDate.value = '';
+            fields.expiryDate.value = '';
         }
-    }
-
-    cardRequiresDocumentDates(card) {
-        const select = card ? card.querySelector('.document-type-select') : null;
-        if (!select) return false;
-
-        const value = select.value;
-        const text = select.options[select.selectedIndex]?.textContent || '';
-        const docsWithDates = ['Passport', 'Driving Licence', 'Driver License', 'Driving License'];
-
-        return docsWithDates.includes(value) || docsWithDates.includes(text);
     }
 
     setupDocumentTypeHandlers() {
         this.addEventListener(document, 'change', (e) => {
-            if (!e.target.classList.contains('document-type-select')) return;
+            if (!e.target.classList.contains('grouped-doc-select')) return;
             const card = e.target.closest('.identification-card');
             if (!card) return;
-            this.updateIdNumberHint(card);
-            this.updateDateFieldsForCard(card);
+            const group = e.target.dataset.proofGroupSelect || e.target.dataset.docGroup || 'primary';
+            this.updateDateFieldsForGroup(card, group);
         });
     }
-
 setupFormHandlers() {
     console.log('🔧 Setting up form handlers');
 
@@ -572,12 +543,7 @@ setupFormHandlers() {
             const data = JSON.parse(raw);
             console.log('📥 Loading identification draft from localStorage');
 
-            const count = Math.max(
-                data['documentId_type[]']?.length || 0,
-                data['id_number[]']?.length || 0,
-                data['name[]']?.length || 0,
-                this.savedRows.length
-            );
+            const count = Math.max(this.savedRows.length, 0);
 
             if (!count) return;
 
@@ -594,16 +560,7 @@ setupFormHandlers() {
                         continue;
                     }
 
-                    const localStorageData = {
-                        documentId_type: data['documentId_type[]']?.[i] || '',
-                        id_number: data['id_number[]']?.[i] || '',
-                        name: data['name[]']?.[i] || '',
-                        issue_date: data['issue_date[]']?.[i] || '',
-                        expiry_date: data['expiry_date[]']?.[i] || '',
-                        upload_document: data['upload_document[]']?.[i] || '',
-                        insufficient_documents: data['insufficient_documents[]']?.[i] || false
-                    };
-
+                    const localStorageData = { grouped_rows: {} };
                     this.populateCard(card, localStorageData, i);
                 }
             }
@@ -679,7 +636,7 @@ validateForm(isFinalSubmit = false) {
     if (window.CandidateNotify && form) {
         window.CandidateNotify.clearValidation(form);
     }
-    
+
     let isValid = true;
     const errors = [];
     const addError = (field, message) => {
@@ -690,106 +647,62 @@ validateForm(isFinalSubmit = false) {
         }
         isValid = false;
     };
-    
+
     for (let i = 0; i < this.cards.length; i++) {
         const card = this.cards[i];
         if (!card) continue;
-        
-        const typeSelect = card.querySelector('[name="documentId_type[]"]');
-        const idInput = card.querySelector('[name="id_number[]"]');
-        const nameInput = card.querySelector('[name="name[]"]');
-        const fileInput = card.querySelector('[name="upload_document[]"]');
-        const oldFile = card.querySelector('[name^="old_upload_document"]');
-        const insufficientCheckbox = card.querySelector('input[name="insufficient_documents[]"]');
-        
-        const isInsufficient = !!(insufficientCheckbox && insufficientCheckbox.checked);
 
-        if (!typeSelect || !String(typeSelect.value || '').trim()) {
-            addError(typeSelect || card, `Document ${i + 1}: Document type is required`);
-        }
+        let selectedAny = false;
+        ['primary', 'secondary'].forEach((group) => {
+            const fields = this.getProofFields(card, group);
+            if (!fields.select) return;
 
-        if (!idInput || !String(idInput.value || '').trim()) {
-            addError(idInput || card, `Document ${i + 1}: ID number is required`);
-        }
+            const selectedType = String(fields.select.value || '').trim();
+            const oldFileValue = fields.oldFile ? String(fields.oldFile.value || '').trim() : '';
+            const hasNewFile = !!(fields.fileInput && fields.fileInput.files && fields.fileInput.files.length > 0);
+            const hasOldFile = oldFileValue !== '' && oldFileValue !== 'INSUFFICIENT_DOCUMENTS';
 
-        if (!nameInput || !String(nameInput.value || '').trim()) {
-            addError(nameInput || card, `Document ${i + 1}: Name on document is required`);
-        }
-
-        const issueDateInput = card.querySelector('[name="issue_date[]"]');
-        const expiryDateInput = card.querySelector('[name="expiry_date[]"]');
-        const requiresDates = this.cardRequiresDocumentDates(card);
-
-        if (requiresDates) {
-            if (!issueDateInput || !String(issueDateInput.value || '').trim()) {
-                addError(issueDateInput || card, `Document ${i + 1}: Issue date is required`);
+            if (!selectedType) {
+                return;
             }
 
-            if (!expiryDateInput || !String(expiryDateInput.value || '').trim()) {
-                addError(expiryDateInput || card, `Document ${i + 1}: Expiry date is required`);
+            selectedAny = true;
+
+            if (!String(fields.name.value || '').trim()) {
+                addError(fields.name || card, `ID ${i + 1}: Name is required for ${selectedType}`);
             }
 
-            if (
-                issueDateInput &&
-                expiryDateInput &&
-                issueDateInput.value &&
-                expiryDateInput.value
-            ) {
-                const issueDate = new Date(issueDateInput.value);
-                const expiryDate = new Date(expiryDateInput.value);
+            if (!String(fields.idNumber.value || '').trim()) {
+                addError(fields.idNumber || card, `ID ${i + 1}: ID number is required for ${selectedType}`);
+            }
 
-                if (
-                    !Number.isNaN(issueDate.getTime()) &&
-                    !Number.isNaN(expiryDate.getTime()) &&
-                    expiryDate <= issueDate
-                ) {
-                    addError(expiryDateInput, `Document ${i + 1}: Expiry date must be after issue date`);
+            if (isFinalSubmit && !hasNewFile && !hasOldFile) {
+                addError(fields.uploadBox || fields.fileInput || card, `ID ${i + 1}: Upload document is required for ${selectedType}`);
+            }
+
+            if (this.proofTypeUsesDates(selectedType)) {
+                if (!String(fields.issueDate.value || '').trim()) {
+                    addError(fields.issueDate || card, `ID ${i + 1}: From Date is required for ${selectedType}`);
+                }
+                if (!String(fields.expiryDate.value || '').trim()) {
+                    addError(fields.expiryDate || card, `ID ${i + 1}: To Date is required for ${selectedType}`);
+                }
+                if (fields.issueDate.value && fields.expiryDate.value) {
+                    const fromDate = new Date(fields.issueDate.value);
+                    const toDate = new Date(fields.expiryDate.value);
+                    if (!Number.isNaN(fromDate.getTime()) && !Number.isNaN(toDate.getTime()) && toDate <= fromDate) {
+                        addError(fields.expiryDate, `ID ${i + 1}: To Date must be after From Date for ${selectedType}`);
+                    }
                 }
             }
-        }
+        });
 
-if (isFinalSubmit) {
-
-    const insufficientCheckbox =
-        card.querySelector('input[name="insufficient_documents[]"]');
-
-    const isInsufficient =
-        !!(insufficientCheckbox && insufficientCheckbox.checked);
-
-    if (!isInsufficient) {
-
-        const fileInput =
-            card.querySelector('[name="upload_document[]"]');
-
-        const oldFile =
-            card.querySelector('[name^="old_upload_document"]');
-
-        const dbRow = this.savedRows?.[i] || {};
-
-        const hasNewFile =
-            fileInput &&
-            fileInput.files &&
-            fileInput.files.length > 0;
-
-        const hasOldFile =
-            oldFile &&
-            oldFile.value &&
-            oldFile.value !== 'INSUFFICIENT_DOCUMENTS';
-
-        const hasDbFile =
-            dbRow.upload_document &&
-            dbRow.upload_document !== 'INSUFFICIENT_DOCUMENTS';
-
-        if (!hasNewFile && !hasOldFile && !hasDbFile) {
-            const fileBox =
-                card.querySelector('[name="upload_document[]"]')?.closest('.form-control')?.querySelector('[data-file-upload]');
-            addError(fileBox || fileInput || card, `Document ${i + 1}: Identification document is required`);
+        if (isFinalSubmit && !selectedAny) {
+            const primarySelect = card.querySelector('[name="primary_document_type[]"]');
+            addError(primarySelect || card, `ID ${i + 1}: Select at least one ID proof`);
         }
     }
-}
 
-    }
-    
     if (errors.length > 0) {
         console.warn('Identification validation errors:', errors.map((error) => error.message || error));
         if (window.CandidateNotify && form) {
@@ -809,12 +722,10 @@ if (isFinalSubmit) {
         }
         return false;
     }
-    
+
     console.log(` Identification form validation passed`);
     return true;
 }
-
-
 async submitForm(isDraft = false) {
     console.log(`🆔 Identification submit initiated (draft: ${isDraft})`);
 
@@ -1011,4 +922,3 @@ if (typeof window !== 'undefined') {
 }
 
 console.log('✅ Identification.js module loaded');
-

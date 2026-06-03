@@ -3,6 +3,7 @@ header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../shared/verifier_routing.php';
 
 auth_require_login('gss_admin');
 
@@ -62,6 +63,8 @@ try {
         }
     } catch (Throwable $e) {
     }
+
+    $row['routing_capabilities'] = verifier_routing_fetch_user_capabilities($pdo, $userId);
 
     echo json_encode([
         'status' => 1,

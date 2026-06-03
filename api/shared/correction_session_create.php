@@ -55,14 +55,32 @@ try {
         $requestId = 'ccs-' . ($caseId > 0 ? $caseId : $applicationId) . '-' . $userId . '-' . time();
     }
 
-    $dup = $pdo->prepare('SELECT correction_session_id, token, status FROM candidate_correction_sessions WHERE request_id = ? LIMIT 1');
+    $dup = $pdo->prepare('SELECT correction_session_id, token, status FROM Vati_Payfiller_Candidate_Correction_Sessions WHERE request_id = ? LIMIT 1');
     $dup->execute([$requestId]);
     $old = $dup->fetch(PDO::FETCH_ASSOC) ?: null;
     if ($old) {
+        $oldFull = null;
+        try {
+            $oldQ = $pdo->prepare('SELECT * FROM Vati_Payfiller_Candidate_Correction_Sessions WHERE correction_session_id = ? LIMIT 1');
+            $oldQ->execute([(int)$old['correction_session_id']]);
+            $oldFull = $oldQ->fetch(PDO::FETCH_ASSOC) ?: null;
+        } catch (Throwable $e) {
+        }
+        $resend = ['attempted' => false, 'sent' => false, 'reason' => 'not_checked'];
+        if ($oldFull) {
+            $oldCase = ccs_get_case($pdo, (int)($oldFull['case_id'] ?? 0), (string)($oldFull['application_id'] ?? ''));
+            if ($oldCase) {
+                $resend = ccs_resend_existing_session_if_mail_missing($pdo, $oldFull, $oldCase);
+            }
+        }
         echo json_encode(['status' => 1, 'message' => 'Already processed', 'data' => [
             'correction_session_id' => (int)$old['correction_session_id'],
             'token' => (string)$old['token'],
-            'status' => (string)$old['status']
+            'status' => (string)$old['status'],
+            'invite_url' => ccs_candidate_correction_url((string)$old['token']),
+            'mail_sent' => !empty($resend['sent']) ? 1 : 0,
+            'mail_resend_attempted' => !empty($resend['attempted']) ? 1 : 0,
+            'mail_resend_reason' => (string)($resend['reason'] ?? '')
         ]]);
         exit;
     }
@@ -108,10 +126,36 @@ try {
         exit;
     }
 
-    $conflicts = ccs_active_session_conflicts($pdo, $caseId, $components);
-    if ($conflicts) {
+    $conflictSessions = ccs_active_conflict_sessions($pdo, $caseId, $components);
+    if ($conflictSessions) {
+        $conflicts = [];
+        $resendResults = [];
+        foreach ($conflictSessions as $conflictSession) {
+            foreach (($conflictSession['components'] ?? []) as $conflictComponent) {
+                $conflicts[$conflictComponent] = true;
+            }
+            $resendResults[] = ccs_resend_existing_session_if_mail_missing($pdo, $conflictSession, $case);
+        }
+        $mailResent = false;
+        $mailKnownSent = false;
+        foreach ($resendResults as $resendResult) {
+            if (!empty($resendResult['sent'])) $mailKnownSent = true;
+            if (!empty($resendResult['attempted']) && !empty($resendResult['sent'])) $mailResent = true;
+        }
         http_response_code(409);
-        echo json_encode(['status' => 0, 'message' => 'Active correction already exists for: ' . implode(', ', $conflicts), 'data' => ['conflicts' => $conflicts]]);
+        $conflictList = array_values(array_keys($conflicts));
+        $message = 'Active correction already exists for: ' . implode(', ', $conflictList);
+        if ($mailResent) {
+            $message .= '. Correction mail resent.';
+        } elseif (!$mailKnownSent) {
+            $message .= '. Mail could not be confirmed as sent.';
+        }
+        echo json_encode(['status' => 0, 'message' => $message, 'data' => [
+            'conflicts' => $conflictList,
+            'mail_sent' => $mailKnownSent ? 1 : 0,
+            'mail_resent' => $mailResent ? 1 : 0,
+            'resend_results' => $resendResults
+        ]]);
         exit;
     }
 
@@ -120,7 +164,7 @@ try {
     $componentsJson = json_encode($components, JSON_UNESCAPED_UNICODE);
     $expiresAt = date('Y-m-d H:i:s', time() + (72 * 3600));
     $ins = $pdo->prepare(
-        'INSERT INTO candidate_correction_sessions
+        'INSERT INTO Vati_Payfiller_Candidate_Correction_Sessions
         (request_id, case_id, application_id, requested_by_user_id, requested_by_name, requested_role, correction_reason, allowed_components_json, token, status, expires_at, workflow_snapshot_version, thread_id, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, \'active\', ?, ?, ?, NOW(), NOW())'
     );
@@ -173,7 +217,7 @@ try {
             'case_id' => $caseId,
             'application_id' => $applicationId,
             'components' => $components,
-            'invite_url' => app_url('/modules/candidate/candidate_correction.php?token=' . urlencode($token)),
+            'invite_url' => ccs_candidate_correction_url($token),
             'mail_sent' => $mailSent ? 1 : 0,
             'workflow_rows_changed' => $changedRows
         ]

@@ -5,6 +5,7 @@ header("Content-Type: application/json");
 require_once __DIR__ . '/../../config/env.php';
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../shared/candidate_correction_service.php';
+require_once __DIR__ . '/../../services/candidate/EmploymentService.php';
 
 class ValidationException extends Exception {}
 
@@ -78,20 +79,73 @@ function validateSingleEmployment(array $data, bool $isFresher, int $index, bool
     if (!empty($data['joining_date']) && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $data['joining_date'])) {
         throw new ValidationException("Invalid joining date format for employment record $index");
     }
+    if (!empty($data['joining_date'])) {
+        $joiningTs = strtotime((string)$data['joining_date']);
+        if (!$joiningTs || $joiningTs > strtotime('today')) {
+            throw new ValidationException("Joining date cannot be in the future for employment record $index");
+        }
+    }
 
-    if (!empty($data['relieving_date'])) {
+    $status = (string)($data['employment_status'] ?? '');
+    $currentLike = in_array($status, ['currently_employed', 'serving_notice'], true);
+
+    if (!$currentLike && !empty($data['relieving_date'])) {
         $isIsoDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', $data['relieving_date']) === 1;
         if (!$isIsoDate) {
             throw new ValidationException("Invalid relieving date format for employment record $index");
         }
+        $relievingTs = strtotime((string)$data['relieving_date']);
+        if (!$relievingTs || $relievingTs > strtotime('today')) {
+            throw new ValidationException("End date cannot be in the future for employment record $index");
+        }
     }
+
+    if ($currentLike && !empty($data['tentative_relieving_date'])) {
+        $tentative = strtotime((string)$data['tentative_relieving_date']);
+        if (!$tentative || $tentative <= strtotime('today')) {
+            throw new ValidationException("Tentative relieving date must be a future date for employment record $index");
+        }
+    }
+
 }
 
-function getAllowedEmploymentDocTypes(bool $isCurrentlyEmployed): array
+function getAllowedEmploymentDocTypes(string $employmentStatus): array
 {
-    return $isCurrentlyEmployed
-        ? ['payslip', 'appointment_letter', 'resignation_letter']
-        : ['experience_letter', 'service_letter', 'relieving_letter'];
+    return match ($employmentStatus) {
+        'currently_employed' => ['offer_letter', 'payslips', 'appointment_letter'],
+        'serving_notice' => ['resignation_acceptance', 'latest_payslip', 'payslips'],
+        'resigned' => ['relieving_letter', 'experience_letter', 'service_letter', 'appointment_letter'],
+        default => ['experience_letter', 'service_letter', 'appointment_letter', 'contract_letter'],
+    };
+}
+
+function validateEmploymentTimeline(array $rows): void
+{
+    if (count($rows) < 2) {
+        return;
+    }
+
+    for ($i = 0; $i < count($rows) - 1; $i++) {
+        $newer = $rows[$i];
+        $older = $rows[$i + 1];
+
+        if (empty($newer['joining_date']) || empty($older['relieving_date'])) {
+            continue;
+        }
+
+        $newerStart = strtotime((string)$newer['joining_date']);
+        $olderEnd = strtotime((string)$older['relieving_date']);
+        if (!$newerStart || !$olderEnd) {
+            continue;
+        }
+
+        if ($olderEnd > $newerStart) {
+            throw new ValidationException(
+                "Employment records must be in newest-to-oldest order. Employer {$older['index']} overlaps with Employer {$newer['index']} or is out of order."
+            );
+        }
+
+    }
 }
 
 function handleFileUpload(array $file, string $applicationId, int $index): string
@@ -189,6 +243,7 @@ try {
         :employee_id,
         :joining_date,
         :relieving_date,
+        :job_location,
         :reason_leaving,
         :hr_manager_name,
         :hr_manager_phone,
@@ -202,12 +257,20 @@ try {
     )");
 
     $processed = [];
+    $timelineRows = [];
 
     $employerNames = $_POST['employer_name'] ?? [];
     $jobTitles = $_POST['job_title'] ?? [];
     $employeeIds = $_POST['employee_id'] ?? [];
     $joiningDates = $_POST['joining_date'] ?? [];
     $relievingDates = $_POST['relieving_date'] ?? [];
+    $jobLocations = $_POST['job_location'] ?? [];
+    $employmentStatuses = $_POST['employment_status'] ?? [];
+    $tentativeRelievingDates = $_POST['tentative_relieving_date'] ?? [];
+    $tentativeRelievingNotes = $_POST['tentative_relieving_note'] ?? [];
+    $gapReasons = $_POST['gap_reason'] ?? [];
+    $gapExplanations = $_POST['gap_explanation'] ?? [];
+    $overlapExplanations = $_POST['overlap_explanation'] ?? [];
     $documentTypes = $_POST['employment_doc_type'] ?? [];
     $reasons = $_POST['reason_leaving'] ?? [];
     $hrNames = $_POST['hr_manager_name'] ?? [];
@@ -224,12 +287,19 @@ try {
         count($employeeIds),
         count($joiningDates),
         count($relievingDates),
+        count($jobLocations),
+        count($employmentStatuses),
         count($documentTypes),
         count($reasons),
         count($hrNames),
         count($mgrNames),
         count($uploadNames)
     );
+
+    $visibleEmploymentCount = (int)($_POST['visibleEmploymentCount'] ?? $count);
+    if ($visibleEmploymentCount > 0) {
+        $count = min($count, $visibleEmploymentCount);
+    }
 
     for ($i = 0; $i < $count; $i++) {
         $index = $i + 1;
@@ -244,6 +314,13 @@ try {
             'employee_id'        => trim($employeeIds[$i] ?? ''),
             'joining_date'       => normalizeInputDate($joiningDates[$i] ?? ''),
             'relieving_date'     => normalizeInputDate($relievingDates[$i] ?? null),
+            'job_location'       => trim($jobLocations[$i] ?? ''),
+            'employment_status'  => trim($employmentStatuses[$i] ?? ''),
+            'tentative_relieving_date' => normalizeInputDate($tentativeRelievingDates[$i] ?? null),
+            'tentative_relieving_note' => trim($tentativeRelievingNotes[$i] ?? ''),
+            'gap_reason'         => trim($gapReasons[$i] ?? ''),
+            'gap_explanation'    => trim($gapExplanations[$i] ?? ''),
+            'overlap_explanation'=> trim($overlapExplanations[$i] ?? ''),
             'employment_doc_type'=> trim($documentTypes[$i] ?? ''),
             'reason_leaving'     => trim($reasons[$i] ?? ''),
             'hr_manager_name'    => trim($hrNames[$i] ?? ''),
@@ -269,9 +346,13 @@ try {
             continue;
         }
 
+        $employmentStatus = ($index === 1 && $currentlyEmployed === 'yes')
+            ? 'currently_employed'
+            : ($data['employment_status'] ?: 'resigned');
+        $data['employment_status'] = $employmentStatus;
         validateSingleEmployment($data, $isFresher === 'yes', $index, $isDraft);
 
-        $isCurrentlyEmployedForRow = ($index === 1 && $currentlyEmployed === 'yes');
+        $isCurrentlyEmployedForRow = in_array($employmentStatus, ['currently_employed', 'serving_notice'], true);
         if (!$isDraft && !$isCurrentlyEmployedForRow && empty($data['relieving_date'])) {
             throw new ValidationException("Relieving date is required for employment record $index");
         }
@@ -279,7 +360,7 @@ try {
         $isInsufficient = isset($insufficientDocs[$i]) && in_array((string)$insufficientDocs[$i], ['on', '1', 'true'], true);
 
         if (!$isDraft && !$isInsufficient) {
-            $allowedDocTypes = getAllowedEmploymentDocTypes($isCurrentlyEmployedForRow);
+            $allowedDocTypes = getAllowedEmploymentDocTypes($employmentStatus);
             $selectedDocType = $data['employment_doc_type'];
 
             if ($selectedDocType === '') {
@@ -309,7 +390,8 @@ try {
             throw new ValidationException("Employment document is required for employment record $index");
         }
 
-        $relieving = $data['relieving_date'] ?: null;
+        $relieving = $isCurrentlyEmployedForRow ? null : ($data['relieving_date'] ?: null);
+        $tentativeRelieving = $isCurrentlyEmployedForRow ? ($data['tentative_relieving_date'] ?: null) : null;
 
         $stmt->execute([
             ':application_id'         => $applicationId,
@@ -322,6 +404,7 @@ try {
             ':employee_id'            => $data['employee_id'],
             ':joining_date'           => $data['joining_date'],
             ':relieving_date'         => $relieving,
+            ':job_location'           => $data['job_location'] ?: null,
             ':reason_leaving'         => $data['reason_leaving'] ?: null,
             ':hr_manager_name'        => $data['hr_manager_name'] ?: null,
             ':hr_manager_phone'       => $data['hr_manager_phone'] ?: null,
@@ -333,19 +416,33 @@ try {
             ':employment_doc_type'    => ($isInsufficient ? null : ($data['employment_doc_type'] ?: null)),
             ':insufficient_documents' => $isInsufficient ? 1 : 0
         ]);
+        $stmt->closeCursor();
+
+        EmploymentService::saveExtra($pdo, (string)$applicationId, $index, [
+            'employment_status' => $employmentStatus,
+            'tentative_relieving_date' => $tentativeRelieving,
+            'tentative_relieving_note' => $data['tentative_relieving_note'] ?: null,
+            'gap_reason' => $data['gap_reason'] ?: null,
+            'gap_explanation' => $data['gap_explanation'] ?: null,
+            'overlap_explanation' => $data['overlap_explanation'] ?: null,
+        ]);
 
         $processed[] = $index;
+        $timelineRows[] = [
+            'index' => $index,
+            'joining_date' => $data['joining_date'],
+            'relieving_date' => $relieving,
+            'gap_reason' => $data['gap_reason'],
+            'overlap_explanation' => $data['overlap_explanation'],
+        ];
+    }
+
+    if (!$isDraft) {
+        validateEmploymentTimeline($timelineRows);
     }
 
     if (!$isDraft && !empty($processed)) {
-        $placeholders = implode(',', array_fill(0, count($processed), '?'));
-        $deleteStmt = $pdo->prepare(
-            "DELETE FROM Vati_Payfiller_Candidate_Employment_details
-             WHERE application_id = ?
-             AND employment_index NOT IN ($placeholders)"
-        );
-        $params = array_merge([$applicationId], $processed);
-        $deleteStmt->execute($params);
+        EmploymentService::cleanupRows($pdo, (string)$applicationId, $processed);
     }
 
     ccs_progress_component_after_candidate_save($pdo, (string)$applicationId, 'employment', $isDraft);

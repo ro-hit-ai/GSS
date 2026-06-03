@@ -7,10 +7,22 @@ document.addEventListener('DOMContentLoaded', function () {
     var saveNextBtn = document.getElementById('staffUserSaveNextBtn');
     var finalSubmitBtn = document.getElementById('staffUserFinalSubmitBtn');
     var userIdField = document.getElementById('staffUserId');
+    var routingCapabilitiesField = document.getElementById('staffRoutingCapabilitiesJson');
     var tabButtons = document.querySelectorAll('.tab');
     var ALLOWED_SECTIONS_MASTER = [];
     var pendingAllowedSectionsValue = '';
+    var pendingRoutingCapabilities = [];
     var toastHost = null;
+    var ROUTING_COMPONENTS = [
+        { key: 'education', label: 'Education' },
+        { key: 'education_reference', label: 'Education Reference' },
+        { key: 'employment', label: 'Employment' },
+        { key: 'employment_reference', label: 'Employment Reference' },
+        { key: 'id', label: 'Identification' },
+        { key: 'contact', label: 'Address' },
+        { key: 'ecourt', label: 'E-Court' },
+        { key: 'socialmedia', label: 'Social Media' }
+    ];
 
     function ensureToastHost() {
         if (toastHost && document.body.contains(toastHost)) return toastHost;
@@ -195,6 +207,101 @@ document.addEventListener('DOMContentLoaded', function () {
         return Object.keys(out).join(',');
     }
 
+    function normalizeRoutingKey(key) {
+        var k = String(key || '').toLowerCase().trim().replace(/[-\s]+/g, '_');
+        if (k === 'identification') k = 'id';
+        if (k === 'address') k = 'contact';
+        if (k === 'social_media') k = 'socialmedia';
+        if (k === 'e_court') k = 'ecourt';
+        if (k === 'educationreference') k = 'education_reference';
+        if (k === 'employmentreference') k = 'employment_reference';
+        return k;
+    }
+
+    function routingEnabledForRole(role) {
+        var r = String(role || '').toLowerCase().trim();
+        return r === 'verifier' || r === 'db_verifier' || r === 'validator';
+    }
+
+    function bindRoutingPriorityExclusivity() {
+        var boxes = form.querySelectorAll('input[data-routing-component]');
+        Array.prototype.slice.call(boxes).forEach(function (cb) {
+            if (cb.dataset.boundRouting) return;
+            cb.dataset.boundRouting = '1';
+            cb.addEventListener('change', function () {
+                if (!cb.checked) return;
+                var key = cb.getAttribute('data-routing-component');
+                Array.prototype.slice.call(boxes).forEach(function (other) {
+                    if (other !== cb && other.getAttribute('data-routing-component') === key) {
+                        other.checked = false;
+                    }
+                });
+            });
+        });
+    }
+
+    function setRoutingCapabilities(rows) {
+        var set = {};
+        if (Array.isArray(rows)) {
+            rows.forEach(function (row) {
+                var key = normalizeRoutingKey(row && row.component_key);
+                var priority = parseInt(row && row.routing_priority, 10) || 1;
+                if (key) set[key] = Math.max(1, Math.min(3, priority));
+            });
+        }
+        var boxes = form.querySelectorAll('input[data-routing-component]');
+        Array.prototype.slice.call(boxes).forEach(function (cb) {
+            var key = normalizeRoutingKey(cb.getAttribute('data-routing-component'));
+            var priority = parseInt(cb.getAttribute('data-routing-priority') || '1', 10) || 1;
+            cb.checked = !!set[key] && set[key] === priority;
+        });
+        syncAllowedSectionsFromRouting(rows);
+    }
+
+    function collectRoutingCapabilities() {
+        var out = [];
+        var boxes = form.querySelectorAll('input[data-routing-component]');
+        Array.prototype.slice.call(boxes).forEach(function (cb) {
+            if (!cb || cb.disabled || !cb.checked) return;
+            out.push({
+                component_key: normalizeRoutingKey(cb.getAttribute('data-routing-component')),
+                routing_priority: parseInt(cb.getAttribute('data-routing-priority') || '1', 10) || 1,
+                is_enabled: 1
+            });
+        });
+        return out;
+    }
+
+    function routingCapabilitiesToAllowedSections(rows) {
+        var out = {};
+        if (Array.isArray(rows)) {
+            rows.forEach(function (row) {
+                var key = normalizeRoutingKey(row && row.component_key);
+                if (key) out[key] = true;
+            });
+        }
+        return Object.keys(out).join(',');
+    }
+
+    function syncAllowedSectionsFromRouting(rows) {
+        var csv = routingCapabilitiesToAllowedSections(rows);
+        if (csv) setAllowedSectionsFromString(csv);
+        return csv;
+    }
+
+    function syncRoutingEnabledForRole(role) {
+        var enabled = routingEnabledForRole(role);
+        var boxes = form.querySelectorAll('input[data-routing-component]');
+        Array.prototype.slice.call(boxes).forEach(function (cb) {
+            cb.disabled = !enabled;
+            if (!enabled) cb.checked = false;
+        });
+        var allowedCard = document.getElementById('staffAllowedSectionsCard');
+        if (allowedCard) {
+            allowedCard.style.display = enabled ? 'none' : '';
+        }
+    }
+
     function escapeHtml(str) {
         return String(str || '')
             .replace(/&/g, '&amp;')
@@ -234,6 +341,34 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    function renderRoutingPriorityHost() {
+        var host = document.getElementById('staffRoutingPriorityHost');
+        if (!host) return;
+        var roleSel = form ? form.querySelector('[name="role"]') : null;
+        var enabledNow = routingEnabledForRole(roleSel ? roleSel.value : '');
+        host.innerHTML = '';
+
+        for (var priority = 1; priority <= 3; priority++) {
+            var col = document.createElement('div');
+            col.style.cssText = 'border:1px solid #dbeafe;border-radius:12px;padding:10px;background:#f8fbff;';
+            col.innerHTML = '<div style="font-weight:800;font-size:13px;margin-bottom:8px;">Routing Priority ' + priority + '</div>';
+            ROUTING_COMPONENTS.forEach(function (item) {
+                var id = 'routing_' + priority + '_' + item.key;
+                var label = document.createElement('label');
+                label.setAttribute('for', id);
+                label.style.cssText = 'display:flex;align-items:center;gap:8px;margin:0 0 7px;font-size:13px;';
+                label.innerHTML =
+                    '<input type="checkbox" id="' + id + '" data-routing-component="' + escapeHtml(item.key) + '" data-routing-priority="' + priority + '"' + (enabledNow ? '' : ' disabled') + '> ' +
+                    escapeHtml(item.label);
+                col.appendChild(label);
+            });
+            host.appendChild(col);
+        }
+
+        setRoutingCapabilities(pendingRoutingCapabilities);
+        bindRoutingPriorityExclusivity();
+    }
+
     function loadAllowedSectionsForClient(clientId, selectedSections) {
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
         // GSS Admin create/update should always show full section catalog.
@@ -248,6 +383,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
                 ALLOWED_SECTIONS_MASTER = Array.isArray(data.data) ? data.data : [];
                 renderAllowedSectionsMaster(ALLOWED_SECTIONS_MASTER);
+                renderRoutingPriorityHost();
                 if (selectedSections) {
                     setAllowedSectionsFromString(selectedSections);
                 }
@@ -256,11 +392,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 var roleSel = form ? form.querySelector('[name="role"]') : null;
                 if (roleSel) {
                     syncAllowedSectionsEnabledForRole(roleSel.value || '');
+                    syncRoutingEnabledForRole(roleSel.value || '');
 
                     // Timing-safe: some browsers may not update disabled state if DOM is still batching.
                     setTimeout(function () {
                         try {
                             syncAllowedSectionsEnabledForRole(roleSel.value || '');
+                            syncRoutingEnabledForRole(roleSel.value || '');
                         } catch (e) {
                         }
                     }, 0);
@@ -282,6 +420,7 @@ document.addEventListener('DOMContentLoaded', function () {
             }
             if (!enabled) cb.checked = false;
         });
+        syncRoutingEnabledForRole(role);
 
     }
 
@@ -309,10 +448,15 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
 
                 pendingAllowedSectionsValue = String(u.allowed_sections || '');
+                pendingRoutingCapabilities = Array.isArray(u.routing_capabilities) ? u.routing_capabilities : [];
                 return loadAllowedSectionsForClient(getSelectedClientId(), pendingAllowedSectionsValue)
                     .then(function () {
                         syncAllowedSectionsEnabledForRole(u.role || '');
                         setAllowedSectionsFromString(pendingAllowedSectionsValue);
+                        setRoutingCapabilities(pendingRoutingCapabilities);
+                        if (routingEnabledForRole(u.role || '')) {
+                            syncAllowedSectionsFromRouting(pendingRoutingCapabilities);
+                        }
 
                         var selectedLocs = Array.isArray(u.locations) ? u.locations : (u.location ? [u.location] : []);
                         return loadLocationsForClient(String(getSelectedClientId()), selectedLocs);
@@ -342,12 +486,19 @@ document.addEventListener('DOMContentLoaded', function () {
         roleSelect.addEventListener('change', function () {
             // Re-render so disabled attribute is always correct for the selected role
             var prev = getAllowedSectionsStringFromUI();
+            var prevRouting = collectRoutingCapabilities();
             if (ALLOWED_SECTIONS_MASTER && ALLOWED_SECTIONS_MASTER.length) {
                 renderAllowedSectionsMaster(ALLOWED_SECTIONS_MASTER);
+                pendingRoutingCapabilities = prevRouting;
+                renderRoutingPriorityHost();
             }
             syncAllowedSectionsEnabledForRole(roleSelect.value || '');
             if (prev) {
                 setAllowedSectionsFromString(prev);
+            }
+            setRoutingCapabilities(prevRouting);
+            if (routingEnabledForRole(roleSelect.value || '')) {
+                syncAllowedSectionsFromRouting(prevRouting);
             }
         });
     }
@@ -428,6 +579,14 @@ document.addEventListener('DOMContentLoaded', function () {
             roleNow = '';
         }
         var fd = new FormData(form);
+        var routingRows = collectRoutingCapabilities();
+        if (routingCapabilitiesField) {
+            routingCapabilitiesField.value = JSON.stringify(routingRows);
+            fd.set('routing_capabilities_json', routingCapabilitiesField.value);
+        }
+        if (routingEnabledForRole(roleNow)) {
+            fd.set('allowed_sections', routingCapabilitiesToAllowedSections(routingRows));
+        }
 
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
         var apiUrl = userId > 0 ? (base + '/api/gssadmin/update_user.php') : (base + '/api/gssadmin/create_staff_user.php');

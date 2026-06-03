@@ -14,7 +14,7 @@ if ($token === '') {
 try {
     $pdo = getDB();
     ccs_ensure_table($pdo);
-    $st = $pdo->prepare('SELECT * FROM candidate_correction_sessions WHERE token = ? LIMIT 1');
+    $st = $pdo->prepare('SELECT * FROM Vati_Payfiller_Candidate_Correction_Sessions WHERE token = ? LIMIT 1');
     $st->execute([$token]);
     $row = $st->fetch(PDO::FETCH_ASSOC) ?: null;
     if (!$row) {
@@ -26,7 +26,7 @@ try {
     }
     $expiresAt = trim((string)($row['expires_at'] ?? ''));
     if ($expiresAt !== '' && strtotime($expiresAt) < time()) {
-        $u = $pdo->prepare("UPDATE candidate_correction_sessions SET status = 'expired', updated_at = NOW() WHERE correction_session_id = ?");
+        $u = $pdo->prepare("UPDATE Vati_Payfiller_Candidate_Correction_Sessions SET status = 'expired', updated_at = NOW() WHERE correction_session_id = ?");
         $u->execute([(int)$row['correction_session_id']]);
         throw new Exception('Correction session expired.');
     }
@@ -66,6 +66,11 @@ try {
     $_SESSION['candidate_correction_token'] = $token;
     $_SESSION['candidate_correction_allowed_components'] = json_encode(array_values($allowed), JSON_UNESCAPED_UNICODE);
     $_SESSION['candidate_correction_allowed_pages'] = json_encode($allowedPages, JSON_UNESCAPED_UNICODE);
+    try {
+        $_SESSION['candidate_login_marker'] = bin2hex(random_bytes(8));
+    } catch (Throwable $e) {
+        $_SESSION['candidate_login_marker'] = (string)time();
+    }
 
     $go = count($allowedPages) > 1 ? $allowedPages[1] : 'review-confirmation';
     header('Location: ' . app_url('/modules/candidate/index.php?page=' . urlencode($go)));
@@ -75,4 +80,3 @@ try {
     echo htmlspecialchars($e->getMessage());
     exit;
 }
-

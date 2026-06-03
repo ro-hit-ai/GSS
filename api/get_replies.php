@@ -226,6 +226,16 @@ function row_belongs_to_viewer_role(array $row, string $viewerRole, array $allow
     return false;
 }
 
+function has_incoming_rows(array $rows): bool
+{
+    foreach ($rows as $row) {
+        if (strtolower(trim((string)($row['direction'] ?? ''))) === 'incoming') {
+            return true;
+        }
+    }
+    return false;
+}
+
 function row_is_outgoing_for_viewer(array $row, string $viewerRole): bool
 {
     $direction = strtolower(trim((string)($row['direction'] ?? '')));
@@ -236,9 +246,9 @@ function row_is_outgoing_for_viewer(array $row, string $viewerRole): bool
 function canonical_verification_projection_exists(PDO $pdo, string $applicationId, string $componentKey = ''): bool
 {
     $sql = "SELECT 1
-              FROM workflow_communications
+              FROM Vati_Payfiller_Workflow_Communications
              WHERE application_id = ?
-               AND source_table = 'verification_communications'";
+               AND source_table = 'Vati_Payfiller_Verification_Communications'";
     $params = [$applicationId];
     if ($componentKey !== '') {
         $sql .= ' AND component_key = ?';
@@ -292,7 +302,7 @@ try {
         $canonicalIncomingInserted = wc_ingest_incoming_replies($pdo, $applicationId);
     }
 
-    $wcTable = 'workflow_communications';
+    $wcTable = 'Vati_Payfiller_Workflow_Communications';
     $hasDirection = table_has_column($pdo, $wcTable, 'direction');
     $hasActorRole = table_has_column($pdo, $wcTable, 'actor_role');
     $hasActorName = table_has_column($pdo, $wcTable, 'actor_name');
@@ -317,7 +327,7 @@ try {
         . ($hasThreadId ? ', thread_id' : ", '' AS thread_id")
         . ($hasThreadOwnerRole ? ', thread_owner_role' : ", '' AS thread_owner_role")
         . ($hasRootOutgoingCommunicationId ? ', root_outgoing_communication_id' : ", 0 AS root_outgoing_communication_id")
-        . ' FROM workflow_communications';
+        . ' FROM Vati_Payfiller_Workflow_Communications';
 
     $where = ['application_id = ?'];
     $params = [$applicationId];
@@ -402,86 +412,11 @@ try {
     }));
     $data = $strictData;
 
-    // If strict role matching yields only outgoing rows, allow additional incoming
-    // rows only when they still match viewer linkage (thread/message ownership).
-    // This prevents cross-role leakage (validator replies showing for verifier).
-    if (
-        $scope === 'component'
-        && $componentKey !== ''
-        && ($viewerRole === 'validator' || $viewerRole === 'verifier')
-        && count($data) > 0
-    ) {
-        $hasIncomingStrict = false;
-        foreach ($data as $row) {
-            if (strtolower(trim((string)($row['direction'] ?? ''))) === 'incoming') {
-                $hasIncomingStrict = true;
-                break;
-            }
-        }
-        if (!$hasIncomingStrict) {
-            $incomingScoped = array_values(array_filter($scopedData, static function (array $row) use ($viewerRole, $allowedThreadIds, $allowedMessageIds): bool {
-                $direction = strtolower(trim((string)($row['direction'] ?? '')));
-                if ($direction !== 'incoming') return false;
-                $actorRole = normalize_role_key((string)($row['actor_role'] ?? ''));
-                if (!($actorRole === 'candidate' || $actorRole === '')) return false;
-                return row_belongs_to_viewer_role($row, $viewerRole, $allowedThreadIds, $allowedMessageIds);
-            }));
-            if (!empty($incomingScoped)) {
-                $data = array_merge($data, $incomingScoped);
-                usort($data, static function (array $a, array $b): int {
-                    return strcmp((string)($b['created_at'] ?? ''), (string)($a['created_at'] ?? ''));
-                });
-                if (count($data) > 120) {
-                    $data = array_slice($data, 0, 120);
-                }
-            }
-        }
-    }
-
-    // Older validator/verifier communications may lack stable thread/message metadata.
-    // When the current role has definitely sent mail on this same component scope,
-    // allow those incoming rows back into the scoped view instead of rendering empty.
-    if (!$scopeHasExplicitOwnership && $scope === 'component' && $componentKey !== '' && $viewerOutgoingCount > 0) {
-        $strictIncomingCount = 0;
-        foreach ($strictData as $row) {
-            if (strtolower(trim((string)($row['direction'] ?? ''))) === 'incoming') {
-                $strictIncomingCount++;
-                break;
-            }
-        }
-        if ($strictIncomingCount === 0) {
-            $data = array_values(array_filter($scopedData, static function (array $row) use ($viewerRole): bool {
-                $direction = strtolower(trim((string)($row['direction'] ?? '')));
-                if ($direction === 'incoming') return true;
-                return row_is_outgoing_for_viewer($row, $viewerRole);
-            }));
-        }
-    }
-
-    // Final safety net for validator/verifier surfaces:
-    // older mail rows can be too weakly threaded to preserve perfect role lanes.
-    // If the role-specific filter still leaves the component reply pane empty,
-    // prefer showing the component conversation over a broken blank state.
-    if (
-        !$scopeHasExplicitOwnership
-        && ($viewerRole === 'validator' || $viewerRole === 'verifier')
-        && $scope === 'component'
-        && $componentKey !== ''
-        && count($data) === 0
-        && count($scopedData) > 0
-    ) {
-        $data = $scopedData;
-    }
-
     // Fallback: if canonical has no incoming rows, surface legacy mailbox replies directly.
-    $hasIncoming = false;
-    foreach ($data as $d0) {
-        if (strtolower(trim((string)($d0['direction'] ?? ''))) === 'incoming') {
-            $hasIncoming = true;
-            break;
-        }
-    }
-    if (!$hasIncoming) {
+    $hasIncoming = has_incoming_rows($data);
+    $usedFallback = false;
+    $fallbackReason = '';
+    if (!$hasIncoming && (!empty($allowedThreadIds) || !empty($allowedMessageIds))) {
         $legacy = load_legacy_incoming_replies($pdo, $applicationId, 120);
         if ($legacy) {
             if ($scope === 'component' && $componentKey !== '') {
@@ -492,12 +427,16 @@ try {
             $legacy = array_values(array_filter($legacy, static function (array $row) use ($viewerRole, $allowedThreadIds, $allowedMessageIds): bool {
                 return row_belongs_to_viewer_role($row, $viewerRole, $allowedThreadIds, $allowedMessageIds);
             }));
-            $data = array_merge($legacy, $data);
-            usort($data, static function (array $a, array $b): int {
-                return strcmp((string)($b['created_at'] ?? ''), (string)($a['created_at'] ?? ''));
-            });
-            if (count($data) > 120) {
-                $data = array_slice($data, 0, 120);
+            if (!empty($legacy)) {
+                $usedFallback = true;
+                $fallbackReason = 'legacy_thread_linked';
+                $data = array_merge($legacy, $data);
+                usort($data, static function (array $a, array $b): int {
+                    return strcmp((string)($b['created_at'] ?? ''), (string)($a['created_at'] ?? ''));
+                });
+                if (count($data) > 120) {
+                    $data = array_slice($data, 0, 120);
+                }
             }
         }
     }
@@ -505,10 +444,15 @@ try {
     // Keep backward compatibility for both response shapes consumed by UI.
     $canonicalCount = count($rows);
     $legacyCount = 0;
-    foreach ($data as $d) {
+    $resolvedOwnerRole = '';
+    foreach ($data as &$d) {
         if ((int)($d['communication_id'] ?? 0) === 0) $legacyCount++;
+        if ($resolvedOwnerRole === '') {
+            $resolvedOwnerRole = normalize_thread_owner_role((string)($d['thread_owner_role'] ?? ''));
+        }
         unset($d['subject']);
     }
+    unset($d);
     $lastIncoming = null;
     foreach ($data as $d) {
         if (strtolower(trim((string)($d['direction'] ?? ''))) === 'incoming') {
@@ -516,12 +460,20 @@ try {
             break;
         }
     }
+    $scopeHasThread = false;
+    foreach ($scopedData as $row) {
+        if (trim((string)($row['thread_id'] ?? '')) !== '' || normalize_thread_owner_role((string)($row['thread_owner_role'] ?? '')) !== '') {
+            $scopeHasThread = true;
+            break;
+        }
+    }
+    $viewerThreadExists = (!empty($allowedThreadIds) || !empty($allowedMessageIds));
     $runtimeRows = [];
     try {
-        if (table_exists($pdo, 'workflow_mail_runtime_state')) {
+        if (table_exists($pdo, 'Vati_Payfiller_Workflow_Mail_Runtime_State')) {
             $runtimeStmt = $pdo->prepare(
                 'SELECT source_key, last_status, last_run_at, inserted_count, duplicate_count, skipped_count, unmatched_count, note
-                   FROM workflow_mail_runtime_state
+                   FROM Vati_Payfiller_Workflow_Mail_Runtime_State
                   WHERE source_key IN (?, ?)
                   ORDER BY source_key ASC'
             );
@@ -545,6 +497,16 @@ try {
             'scope' => $scope,
             'viewer_role' => $viewerRole,
             'sync' => $shouldSync,
+            'sync_mode' => $shouldSync ? 'canonical_sync' : 'read_only_refresh',
+            'last_synced_at' => date('Y-m-d H:i:s'),
+            'resolved_source' => $usedFallback ? 'legacy_fallback' : 'canonical',
+            'resolved_component_key' => $componentKey,
+            'resolved_thread_owner_role' => $resolvedOwnerRole,
+            'used_fallback' => $usedFallback,
+            'fallback_reason' => $fallbackReason,
+            'scope_has_thread' => $scopeHasThread,
+            'viewer_thread_exists' => $viewerThreadExists,
+            'strict_count' => count($strictData),
             'matched_thread_id' => (string)($lastIncoming['thread_id'] ?? ''),
             'last_in_reply_to' => (string)($lastIncoming['in_reply_to'] ?? ''),
             'last_references' => (string)($lastIncoming['references_header'] ?? ''),

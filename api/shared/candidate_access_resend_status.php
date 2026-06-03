@@ -37,7 +37,7 @@ try {
 
     $st = $pdo->prepare(
         'SELECT COUNT(*) AS resend_count, MAX(created_at) AS last_resent_at
-         FROM candidate_access_resend_events
+         FROM Vati_Payfiller_Candidate_Access_Resend_Events
          WHERE case_id = ?'
     );
     $st->execute([$caseId]);

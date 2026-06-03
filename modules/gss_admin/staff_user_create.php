@@ -28,6 +28,7 @@ ob_start();
         <input type="hidden" name="user_id" id="staffUserId" value="">
         <input type="hidden" name="form_action" id="staffUserFormAction" value="save">
         <input type="hidden" name="client_id" id="staffUserClientId" value="<?php echo (int)$sessionClientId; ?>">
+        <input type="hidden" name="routing_capabilities_json" id="staffRoutingCapabilitiesJson" value="">
         <div id="tab-personal" class="tab-panel active">
             <div class="form-grid">
                 <div class="form-control">
@@ -75,10 +76,15 @@ ob_start();
                         <option value="">Select Location</option>
                     </select>
                 </div>
-                <div class="form-control">
+                <div class="form-control" id="staffAllowedSectionsCard">
                     <label>Allowed Authorization Sections</label>
                     <div id="staffAllowedSectionsHost" style="display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:8px; margin-top:6px;"></div>
-                    <div style="font-size:11px; color:#6b7280; margin-top:6px;">Applies to Validator / Verifier / DB Verifier. QA/TL always has full access.</div>
+                    <div style="font-size:11px; color:#6b7280; margin-top:6px;">Compatibility fallback for older staff roles. Component Verifiers use Routing Priority below.</div>
+                </div>
+                <div class="form-control" style="grid-column:1/-1;">
+                    <label>Verifier Routing Priority</label>
+                    <div id="staffRoutingPriorityHost" style="display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:12px; margin-top:8px;"></div>
+                    <div style="font-size:11px; color:#6b7280; margin-top:6px;">Applies to Component Verifier / DB Verifier. Basic Details remains shared context and is not routed workload.</div>
                 </div>
                 <div class="form-control">
                     <label>Send Login Email</label>

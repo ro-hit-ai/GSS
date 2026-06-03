@@ -2,8 +2,6 @@
 require_once __DIR__ . '/../../includes/layout.php';
 require_once __DIR__ . '/../../includes/menus.php';
 require_once __DIR__ . '/../../includes/auth.php';
-// header('Content-Type: application/pdf');
-// header('Content-Disposition: inline; filename="document.pdf"');
 
 $candidateReportJsVersion = '1';
 try {
@@ -89,17 +87,13 @@ if ($role === 'verifier' || $role === 'validator' || $role === 'db_verifier') {
         $st->execute([$uid]);
         $dbAllowed = (string)($st->fetchColumn() ?: '');
 
-        // ✅ FIX START
         if ($role === 'validator') {
-            // Validator should see all client-required sections
             $allowedSections = '*';
             $_SESSION['auth_allowed_sections'] = '*';
         } else {
-            // Verifier should still respect assigned sections
             $allowedSections = $dbAllowed;
             $_SESSION['auth_allowed_sections'] = $dbAllowed;
         }
-        // ✅ FIX END
     }
 }
 } catch (Throwable $e) {
@@ -609,14 +603,12 @@ ob_start();
     .cr-report-root.cr-role-validator .cr-remarksbar,
     .cr-report-root.cr-role-db_verifier .cr-remarksbar{display:none !important;}
 
-    /* Hide remarks ONLY in normal verifier/validator view */
 .cr-report-root.cr-role-verifier:not(.qa-case-review-mode) .cr-remarksbar,
 .cr-report-root.cr-role-validator:not(.qa-case-review-mode) .cr-remarksbar,
 .cr-report-root.cr-role-db_verifier:not(.qa-case-review-mode) .cr-remarksbar {
     display: none !important;
 }
 
-/* Explicitly show remarks in QA Case Review */
 .qa-case-review-mode .cr-remarksbar {
     display: flex !important;
 }
@@ -1170,8 +1162,6 @@ ob_start();
     .cr-main .table{margin-bottom:0;}
     .cr-main .table thead th{font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:#64748b;}
     .cr-main .table tbody td{font-size:13px; color:#0f172a;}
-
-    /* Prevent first-paint sidebar/section flicker: reveal after JS finalizes assigned-component view */
     .cr-report-root[data-ui-ready="0"] .cr-sidebar,
     .cr-report-root[data-ui-ready="0"] #cvComponentNav,
     .cr-report-root[data-ui-ready="0"] #crSectionsScroll{
@@ -1180,8 +1170,6 @@ ob_start();
     .candidate-section .form-grid{gap:10px !important; margin-top:8px !important;}
     .candidate-section .form-control label{margin-bottom:4px; font-size:11px;}
     .candidate-section .form-control input,.candidate-section .form-control select,.candidate-section .form-control textarea{padding:8px 10px; border-radius:12px;}
-
-    /* Stable layout for admin/client roles (non workflow modes) */
     .cr-report-root:not(.cr-role-verifier):not(.cr-role-validator):not(.cr-role-db_verifier) .candidate-section .form-grid{
         display:grid;
         grid-template-columns:repeat(2, minmax(0, 1fr));
@@ -1219,8 +1207,6 @@ ob_start();
             grid-template-columns:1fr;
         }
     }
-
-    /* Match Basic/Contact-style sections to the same iOS-like key/value look used by table sections */
     .cr-report-root.cr-role-verifier .candidate-section .form-grid,
     .cr-report-root.cr-role-validator .candidate-section .form-grid,
     .cr-report-root.cr-role-db_verifier .candidate-section .form-grid{
@@ -1279,8 +1265,6 @@ ob_start();
             gap:4px;
         }
     }
-
-    /* Per-section evidence/action/upload block (used by all component sections) */
     .cr-comp-tools{margin-top:8px; border:1px solid rgba(148,163,184,0.22); border-radius:12px; padding:8px; background:#fff;}
     #section-basic .cr-comp-tools{margin-top:8px; padding:8px;}
     .form-grid > .cr-comp-tools{grid-column:1 / -1;}
@@ -1408,8 +1392,6 @@ ob_start();
     .cr-report-root.cr-validator-workspace .cr-comp-file{
         max-width:240px;
     }
-
-    /* Force modal backdrop cleanup - prevents unclickable screen */
     .modal-backdrop{display:none !important;}
     .modal-backdrop.fade{display:none !important;}
     .modal-backdrop.show{display:none !important;}
@@ -1541,14 +1523,12 @@ ob_start();
     display: none !important;
 }
 
-/* QA mode: keep hero visible like validator/verifier workspace */
 .qa-case-review-mode .cr-hero {
     display: block !important;
     padding: 8px 12px !important;
     margin-top: 10px !important;
 }
 
-/* Keep action buttons visible */
 .qa-case-review-mode .cr-actions {
     display: flex !important;
     gap: 8px;
@@ -1557,7 +1537,6 @@ ob_start();
 }
 
 
-/* Section wrapper */
 .qa-case-review-mode .candidate-section {
     padding: 0 !important;
     margin-bottom: 16px;
@@ -1567,20 +1546,6 @@ ob_start();
     overflow: hidden;
 }
 
-/* Simple section header */
-/* .qa-case-review-mode .candidate-section::before {
-    content: attr(id);
-    display: block;
-    padding: 10px 12px;
-    font-size: 13px;
-    font-weight: 900;
-    color: #0f172a;
-    background: #f8fafc;
-    border-bottom: 1px solid rgba(148,163,184,0.25);
-    text-transform: capitalize;
-} */
-
-/* QA-only section header */
 .qa-case-review-mode .candidate-section > .qa-section-head {
     padding: 10px 12px;
     font-size: 13px;
@@ -1590,12 +1555,6 @@ ob_start();
     border-bottom: 1px solid rgba(148,163,184,0.25);
 }
 
-/* Kill horizontal tables */
-/* .qa-case-review-mode table {
-    display: none !important;
-} */
-
-/* Hide only CV data tables */
 .qa-case-review-mode #cv_basic_table table,
 .qa-case-review-mode #cv_identification_table table,
 .qa-case-review-mode #cv_education_table table,
@@ -1603,7 +1562,6 @@ ob_start();
     display: none !important;
 }
 
-/* Vertical KV layout */
 .qa-case-review-mode .kv-vertical {
     display: block;
 }
@@ -1633,8 +1591,6 @@ ob_start();
     color: #0f172a;
     word-break: break-word;
 }
-
-/* QA mode: make Contact + Reference match the same key/value UI */
 .qa-case-review-mode #section-contact .form-grid,
 .qa-case-review-mode #section-reference .form-grid {
     display: grid;
@@ -1708,8 +1664,6 @@ ob_start();
     opacity: 1 !important;
     -webkit-text-fill-color: #0f172a !important;
 }
-
-/* Mobile safety */
 @media (max-width: 900px) {
     .qa-case-review-mode .kv-row {
         grid-template-columns: 1fr;
@@ -1736,38 +1690,26 @@ ob_start();
         display: none;
     }
 }
-/* =========================
-   QA Remarks – Bottom Input (QA Case Review iframe mode only)
-   ========================= */
-
 .qa-case-review-mode .cr-remarksbar {
     display: flex;
     flex-direction: column;
 }
-
-/* scrollable remarks list */
 .qa-case-review-mode .qa-remarks-list {
     flex: 1 1 auto;
     overflow-y: auto;
     padding-right: 4px;
     margin-bottom: 10px;
 }
-
-/* bottom fixed input area */
 .qa-case-review-mode .qa-comment-box {
     border-top: 1px solid rgba(148,163,184,0.25);
     padding-top: 8px;
     background: #fff;
 }
-
-/* input row */
 .qa-case-review-mode .qa-comment-row {
     display: flex;
     gap: 8px;
     align-items: center;
 }
-
-/* input styling */
 .qa-case-review-mode .qa-input {
     width: 100%;
     padding: 8px 10px;
@@ -1782,8 +1724,6 @@ ob_start();
     border-color: #2563eb;
     box-shadow: 0 0 0 2px rgba(37,99,235,0.15);
 }
-
-/* add button */
 .qa-case-review-mode .qa-btn {
     background: #2563eb;
     border-color: #2563eb;
@@ -1817,8 +1757,6 @@ ob_start();
 .cr-comp-file::-webkit-file-upload-button:hover {
     background: #e2e8f0;
 }
-
-/* Split pane document verification workspace */
 .cr-splitpane-overlay{
     position:fixed;
     inset:0;
@@ -1979,8 +1917,6 @@ ob_start();
     .cr-splitpane-pane + .cr-splitpane-pane{border-left:0; border-top:1px solid rgba(148,163,184,0.28);}
     .cr-splitpane-doc iframe,.cr-splitpane-doc img{height:45vh;}
 }
-
-/* Draggable modeless PDF viewer */
 #pdfViewer{
     position:fixed;
     top:76px;
@@ -2092,7 +2028,7 @@ ob_start();
     position: fixed !important;
     top: 80px;
     left: 100px;
-    transform: none !important; /* VERY IMPORTANT */
+    transform: none !important;
     width: 900px;
     height: 600px;
     z-index: 99999;
@@ -2362,7 +2298,7 @@ ob_start();
     align-items:center !important;
 }
 .cr-report-root.cr-validator-workspace .cr-secbar-meta{
-    display:none !important; /* remove TAT badge from section header */
+    display:none !important;
 }
 .cr-report-root.cr-validator-workspace .cr-secbar-actions{
     margin-left:auto;
@@ -2449,8 +2385,6 @@ ob_start();
 .cr-report-root.cr-validator-workspace .candidate-section + .candidate-section{
     margin-top:16px !important;
 }
-
-/* Center Review Worksheet Redesign (content area only) */
 .cr-report-root.cr-validator-workspace .cr-content .cr-sections-scroll{
     padding:0 !important;
 }
@@ -2513,8 +2447,6 @@ ob_start();
     font-weight:700 !important;
     color:#0f172a !important;
 }
-
-/* Single-record sheet rows */
 .cr-report-root.cr-validator-workspace .cr-content .candidate-section.cr-single-record .form-grid{
     display:grid !important;
     grid-template-columns:minmax(0,1fr) minmax(0,1fr);
@@ -2551,8 +2483,6 @@ ob_start();
     color:#0f172a !important;
     font-weight:700 !important;
 }
-
-/* Multi-record worksheet with tabbed records and split detail feel */
 .cr-report-root.cr-validator-workspace .cr-content .candidate-section.cr-multi-record .cr-record-tabs{
     margin:0 !important;
     padding:8px 12px !important;
@@ -2599,8 +2529,6 @@ ob_start();
     border-radius:8px !important;
     margin-top:2px;
 }
-
-/* Evidence / remark area as clean footer row */
 .cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-comp-tools,
 .cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-remarks{
     margin:0 !important;
@@ -2618,8 +2546,6 @@ ob_start();
     letter-spacing:.04em !important;
     color:#6b7280 !important;
 }
-
-/* Compact documents utility row: reduce oversized upload/file blocks */
 .cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-doc-uploadbox{
     border:0 !important;
     border-radius:0 !important;
@@ -2718,8 +2644,6 @@ ob_start();
 .cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-file-action:hover{
     background:#eff6ff;
 }
-
-/* Identification uploaded file as supporting inline metadata row (no standalone container) */
 .cr-report-root.cr-validator-workspace .cr-content #cv_identification_table .cr-kv2-cell:has(.cr-doc-uploadname){
     grid-column:1 / -1 !important;
     padding:6px 16px 10px !important;
@@ -2732,7 +2656,7 @@ ob_start();
     font-size:10px !important;
 }
 .cr-report-root.cr-validator-workspace .cr-content #cv_identification_table .cr-doc-uploadbox{
-    display:contents !important; /* remove outer uploaded-file wrapper box entirely */
+    display:contents !important;
 }
 .cr-report-root.cr-validator-workspace .cr-content #cv_identification_table .cr-doc-uploadrow{
     border:0 !important;
@@ -2745,7 +2669,7 @@ ob_start();
     gap:8px !important;
 }
 .cr-report-root.cr-validator-workspace .cr-content #cv_identification_table .cr-doc-uploadbtn{
-    display:none !important; /* hide tag chip, keep only metadata row */
+    display:none !important;
 }
 .cr-report-root.cr-validator-workspace .cr-content #cv_identification_table .cr-doc-uploadname{
     flex:1 1 auto;
@@ -2755,8 +2679,6 @@ ob_start();
     margin-left:auto;
     gap:8px;
 }
-
-/* Evidence upload as slim footer toolbar */
 .cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-comp-tools{
     padding:8px 12px !important;
     background:#f8fafc !important;
@@ -2792,8 +2714,6 @@ ob_start();
     font-size:11px !important;
     color:#64748b !important;
 }
-
-/* Unified 3-column center worksheet grid across all components */
 .cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-kv2-grid{
     display:grid !important;
     grid-template-columns:repeat(3, minmax(0, 1fr)) !important;
@@ -2804,20 +2724,14 @@ ob_start();
     grid-template-columns:repeat(3, minmax(0, 1fr)) !important;
     gap:0 !important;
 }
-
-/* Default cell rhythm */
 .cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-kv2-cell,
 .cr-report-root.cr-validator-workspace .cr-content .candidate-section .form-control{
     padding:10px 16px !important;
     border-bottom:1px solid #eef2f7 !important;
 }
-
-/* Medium fields can span two columns (document/file style cells) */
 .cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-kv2-cell:has(.cr-doc-uploadbox){
     grid-column:span 2;
 }
-
-/* Long fields and narrative sections span full width */
 .cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-kv2-cell:has(.cr-doc-uploadbox) + .cr-kv2-cell:has(.cr-doc-uploadbox){
     grid-column:1 / -1;
 }
@@ -2829,8 +2743,6 @@ ob_start();
 .cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-comp-tools{
     grid-column:1 / -1 !important;
 }
-
-/* Stabilize dense single-record sections in shared report (validator/verifier/qa). */
 #section-socialmedia .form-grid,
 #section-ecourt .form-grid,
 #section-reports .form-grid{
@@ -2852,7 +2764,6 @@ ob_start();
     word-break:normal;
     overflow-wrap:break-word;
 }
-/* Social media URLs are long/unbroken, allow aggressive wrapping only there. */
 #section-socialmedia .cr-kv2-v,
 #section-socialmedia .cr-kv2-v span{
     min-width:0;
@@ -2872,8 +2783,6 @@ ob_start();
         grid-template-columns:1fr !important;
     }
 }
-
-/* Keep labels above values consistently */
 .cr-report-root.cr-validator-workspace .cr-content .candidate-section .form-control label,
 .cr-report-root.cr-validator-workspace .cr-content .candidate-section .cr-kv2-k{
     display:block;
@@ -2897,8 +2806,6 @@ ob_start();
     border-radius:10px !important;
     box-shadow:none !important;
 }
-
-/* Component list density + active state */
 .cr-report-root.cr-validator-workspace .cr-nav{gap:8px !important;}
 .cr-report-root.cr-validator-workspace .cr-nav .list-group-item{
     border:1px solid #e5e7eb !important;
@@ -2912,8 +2819,6 @@ ob_start();
     background:rgba(37,99,235,0.06) !important;
     box-shadow:inset 3px 0 0 #2563eb !important;
 }
-
-/* Utility right rail as connected tabbed zone */
 .cr-report-root.cr-validator-workspace .cr-utility-panel{
     border:0 !important;
     border-radius:0 !important;
@@ -2963,8 +2868,6 @@ ob_start();
     padding:10px;
     background:#f9fafb;
 }
-
-/* Dynamic tools block style */
 .cr-comp-tools{
     margin-top:20px !important;
     padding:14px !important;
@@ -2973,8 +2876,6 @@ ob_start();
     border:1px solid #e5e7eb !important;
     box-shadow:none !important;
 }
-
-/* Action hierarchy */
 .cr-report-root.cr-validator-workspace #cvValidatorActionApprove{
     background:#16a34a !important;
     border:1px solid #15803d !important;
@@ -2995,13 +2896,9 @@ ob_start();
     border:1px solid #d1d5db !important;
     color:#374151 !important;
 }
-
-/* Keep only integrated utility rail on right for this cockpit */
 .cr-report-root.cr-validator-workspace .cr-docbar{
     display:none !important;
 }
-
-/* Compact enterprise density */
 .cr-report-root.cr-validator-workspace .cr-case-actions-head,
 .cr-report-root.cr-validator-workspace .cr-sidebar-title{
     font-size:11px !important;
@@ -3185,8 +3082,6 @@ ob_start();
         grid-template-columns:1fr;
     }
 }
-
-/* Final responsive authority for validator / verifier / QA / team lead report shell */
 .cv-docviewer-modal.is-compact{
     left:8px !important;
     top:8px !important;
@@ -3752,10 +3647,7 @@ $workspaceRoles = in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], 
 $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 'qa' || $role === 'team_lead');
 ?>
 <div class="card cr-report-root cr-role-<?php echo htmlspecialchars($role); ?><?php echo $isPrint ? ' cr-print' : ''; ?><?php echo $enableWorkspaceClass ? ' cr-validator-workspace' : ''; ?>" data-ui-ready="<?php echo $isPrint ? '1' : '0'; ?>">
-    <!-- <h3>Candidate Report</h3>
-    <p class="card-subtitle">Individual candidate report with quick navigation across all verification sections.</p> -->
-
-    <div id="cvTopMessage" style="display:none; margin-top:10px;"></div>
+<div id="cvTopMessage" style="display:none; margin-top:10px;"></div>
 
 <?php if (in_array($role, ['verifier', 'validator', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
     <div class="modal fade" id="cvMailModal" tabindex="-1" aria-hidden="true">
@@ -3888,17 +3780,7 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
 
     <div class="cr-hero cr-validator-case-strip" style="margin-top:10px;">
         <div class="cr-hero-layout">
-            <!-- <div class="cr-hero-row cr-hero-row-copy">
-                <div class="cr-hero-head">
-                    <div class="cr-validator-case-copy">
-                        <h2 class="cr-hero-title">Candidate Review Workspace</h2>
-                        <div class="cr-hero-sub">Review submitted details, evidence, and section-level decisions.</div>
-                        <span id="cvHeaderClient" style="display:none;">-</span>
-                    </div>
-                </div>
-            </div> -->
-
-            <div class="cr-hero-row cr-hero-row-kpis">
+<div class="cr-hero-row cr-hero-row-kpis">
                 <div class="cr-stat-row cr-validator-case-grid">
                     <div class="cr-stat">
                         <div class="cr-avatar" id="cvHeaderAvatar" aria-label="Candidate photo">
@@ -3951,15 +3833,7 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
         <div class="cr-compnav-title">Components</div>
         <div id="cvComponentNavItems" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
     </div>
-    <!-- <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
-    <div class="cr-review-tabs" id="cvReviewTabs" aria-label="Review Sections">
-        <button type="button" class="cr-review-tab" data-review-section="id">Identification</button>
-        <button type="button" class="cr-review-tab" data-review-section="education">Education</button>
-        <button type="button" class="cr-review-tab" data-review-section="employment">Employment</button>
-    </div>
-    <?php endif; ?> -->
-
-    <div class="cr-shell cr-layout cr-page">
+<div class="cr-shell cr-layout cr-page">
         <aside class="cr-sidebar cr-validator-nav cr-sections">
             <div class="cr-sidebar-title">Sections</div>
             <div class="cr-nav" style="font-size:13px;">
@@ -4143,8 +4017,7 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
                             <div class="cr-secbar-icon">BD</div>
                             <div class="cr-secbar-copy">
                                 <div class="cr-secbar-title">Basic Details</div>
-                                <!-- <div class="cr-secbar-sub">Candidate submitted personal information</div> -->
-                            </div>
+</div>
                         </div>
                         <div class="cr-secbar-meta" id="cvSectionTatBasic"></div>
                         <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
@@ -4174,8 +4047,7 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
                             <div class="cr-secbar-icon">ID</div>
                             <div class="cr-secbar-copy">
                                 <div class="cr-secbar-title">Identification</div>
-                                <!-- <div class="cr-secbar-sub">Government ID details and supporting documents</div> -->
-                            </div>
+</div>
                         </div>
                         <div class="cr-secbar-meta" id="cvSectionTatId"></div>
                         <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
@@ -4205,8 +4077,7 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
                             <div class="cr-secbar-icon">CT</div>
                             <div class="cr-secbar-copy">
                                 <div class="cr-secbar-title">Contact Information</div>
-                                <!-- <div class="cr-secbar-sub">Current and permanent address information</div> -->
-                            </div>
+</div>
                         </div>
                         <div class="cr-secbar-meta" id="cvSectionTatContact"></div>
                         <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
@@ -4256,8 +4127,7 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
                             <div class="cr-secbar-icon">ED</div>
                             <div class="cr-secbar-copy">
                                 <div class="cr-secbar-title">Education Details</div>
-                                <!-- <div class="cr-secbar-sub">Academic history, institutions, and certificates</div> -->
-                            </div>
+</div>
                         </div>
                         <div class="cr-secbar-meta" id="cvSectionTatEducation"></div>
                         <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
@@ -4290,8 +4160,7 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
                             <div class="cr-secbar-icon">EM</div>
                             <div class="cr-secbar-copy">
                                 <div class="cr-secbar-title">Employment Details</div>
-                                <!-- <div class="cr-secbar-sub">Employer history, tenure, and proof documents</div> -->
-                            </div>
+</div>
                         </div>
                         <div class="cr-secbar-meta" id="cvSectionTatEmployment"></div>
                         <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
@@ -4324,8 +4193,7 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
                             <div class="cr-secbar-icon">RF</div>
                             <div class="cr-secbar-copy">
                                 <div class="cr-secbar-title">Reference</div>
-                                <!-- <div class="cr-secbar-sub">Professional reference and relationship details</div> -->
-                            </div>
+</div>
                         </div>
                         <div class="cr-secbar-meta" id="cvSectionTatReference"></div>
                         <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
@@ -4387,8 +4255,7 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
                             <div class="cr-secbar-icon">SM</div>
                             <div class="cr-secbar-copy">
                                 <div class="cr-secbar-title">Social Media</div>
-                                <!-- <div class="cr-secbar-sub">Online profile details shared by the candidate</div> -->
-                            </div>
+</div>
                         </div>
                         <div class="cr-secbar-meta" id="cvSectionTatSocialmedia"></div>
                         <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
@@ -4418,8 +4285,7 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
                             <div class="cr-secbar-icon">EC</div>
                             <div class="cr-secbar-copy">
                                 <div class="cr-secbar-title">E-Court</div>
-                                <!-- <div class="cr-secbar-sub">Court-related declarations and supporting evidence</div> -->
-                            </div>
+</div>
                         </div>
                         <div class="cr-secbar-meta" id="cvSectionTatEcourt"></div>
                         <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
@@ -4450,8 +4316,7 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
                             <div class="cr-secbar-icon">RP</div>
                             <div class="cr-secbar-copy">
                                 <div class="cr-secbar-title">Reports</div>
-                                <!-- <div class="cr-secbar-sub">Submission milestones and authorization details</div> -->
-                            </div>
+</div>
                         </div>
                         <div class="cr-secbar-meta" id="cvSectionTatReports"></div>
                         <?php if (in_array($role, ['validator', 'verifier', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
@@ -4515,7 +4380,8 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
                             </div>
                         </div>
                         <div class="tab-pane fade" id="crUtilReplies" role="tabpanel">
-                            <div style="display:flex; justify-content:flex-end; margin-bottom:10px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px;">
+                                <div id="cvRepliesSyncMeta" style="font-size:11px; color:#64748b;">Not synced yet.</div>
                                 <button
                                     type="button"
                                     id="cvRepliesSyncBtn"
@@ -4523,7 +4389,7 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
                                     aria-label="Refresh replies"
                                     style="width:34px; height:34px; border-radius:999px; border:1px solid #cbd5e1; background:#fff; color:#2563eb; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 4px 14px rgba(37,99,235,0.08); cursor:pointer;"
                                 >
-                                    <span aria-hidden="true" style="font-size:16px; line-height:1; font-weight:700;">↻</span>
+                                    <span aria-hidden="true" style="font-size:16px; line-height:1; font-weight:700;">â†»</span>
                                 </button>
                             </div>
                             <div id="emailReplies" class="cr-util-scroll">
@@ -4544,39 +4410,7 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
                 </div>
             </aside>
         <?php endif; ?>
-
-        <!-- <?php if (in_array($role, ['qa', 'verifier', 'validator', 'db_verifier'], true) && !$isPrint && !$isEmbed): ?>
-            <aside class="cr-remarksbar" aria-label="Remarks">
-                <div class="cr-remarksbar-title">
-                    <span>Remarks</span>
-                    <div class="qa-filter-wrap">
-                        <button class="btn btn-sm qa-btn qa-btn-light qa-filter-btn" id="qaRemarksFilterBtn" type="button">
-                            Filter: <span id="qaRemarksFilterLabel">All</span>
-                        </button>
-                        <div class="qa-filter-menu" id="qaRemarksFilterMenu">
-                            <button class="qa-filter-item active" data-filter="all">All</button>
-                            <button class="qa-filter-item" data-filter="general">General</button>
-                            <button class="qa-filter-item" data-filter="basic">Basic</button>
-                            <button class="qa-filter-item" data-filter="identification">Identification</button>
-                            <button class="qa-filter-item" data-filter="address">Address</button>
-                            <button class="qa-filter-item" data-filter="employment">Employment</button>
-                            <button class="qa-filter-item" data-filter="education">Education</button>
-                            <button class="qa-filter-item" data-filter="reference">Reference</button>
-                            <button class="qa-filter-item" data-filter="documents">Documents</button>
-                        </div>
-                    </div>
-                </div>
-                <div id="cvRemarksPanel" class="qa-remarks-list"></div>
-                <div class="qa-comment-box">
-                    <div class="qa-comment-row">
-                        <input id="qaCommentText" class="qa-input" type="text" placeholder="Type a remark..." />
-                        <button class="btn btn-sm qa-btn" id="qaCommentAddBtn" type="button">Add</button>
-                    </div>
-                </div>
-            </aside>
-        <?php endif; ?> -->
-
-        <?php if (($role === 'validator' || $role === 'verifier') && !$isPrint && !$isEmbed): ?>
+<?php if (($role === 'validator' || $role === 'verifier') && !$isPrint && !$isEmbed): ?>
             <aside class="cr-docbar">
                 <div class="cr-docbar-title">Resume / Documents</div>
                 <div class="cr-docbar-frame" id="cvDocPreviewFrameHost">
@@ -4699,8 +4533,8 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
                 <div class="cv-docviewer-title">Document Viewer</div>
                 <div class="cv-docviewer-actions">
                     <button type="button" id="cvDocViewerMinimize" class="cv-docviewer-btn" title="Minimize">_</button>
-                    <button type="button" id="cvDocViewerMaximize" class="cv-docviewer-btn" title="Maximize">□</button>
-                    <button type="button" id="cvDocViewerClose" class="cv-docviewer-btn danger" title="Close">✕</button>
+                    <button type="button" id="cvDocViewerMaximize" class="cv-docviewer-btn" title="Maximize">â–¡</button>
+                    <button type="button" id="cvDocViewerClose" class="cv-docviewer-btn danger" title="Close">âœ•</button>
                 </div>
             </div>
             <div id="cvDocViewerSplit" class="cv-docviewer-split">
@@ -4726,6 +4560,34 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
         </div>
     </div>
     <?php endif; ?>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            var iconMap = {
+                cvRepliesSyncBtn: '&#8635;',
+                cvDocViewerMinimize: '&minus;',
+                cvDocViewerMaximize: '&#9633;',
+                cvDocViewerClose: '&times;'
+            };
+
+            Object.keys(iconMap).forEach(function (id) {
+                var target = document.getElementById(id);
+                if (!target) {
+                    return;
+                }
+
+                if (id === 'cvRepliesSyncBtn') {
+                    var icon = target.querySelector('span[aria-hidden="true"]');
+                    if (icon) {
+                        icon.innerHTML = iconMap[id];
+                    }
+                    return;
+                }
+
+                target.innerHTML = iconMap[id];
+            });
+        });
+    </script>
 
     <?php if (!$isPrint): ?>
     <?php if (!$isPrint): ?>

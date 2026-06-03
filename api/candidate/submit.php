@@ -136,7 +136,7 @@ try {
     if (!empty($_SESSION['candidate_correction_mode']) && !empty($_SESSION['candidate_correction_session_id'])) {
         ccs_ensure_table($pdo);
         $corrId = (int)$_SESSION['candidate_correction_session_id'];
-        $corr = $pdo->prepare('SELECT * FROM candidate_correction_sessions WHERE correction_session_id = ? LIMIT 1');
+        $corr = $pdo->prepare('SELECT * FROM Vati_Payfiller_Candidate_Correction_Sessions WHERE correction_session_id = ? LIMIT 1');
         $corr->execute([$corrId]);
         $corrRow = $corr->fetch(PDO::FETCH_ASSOC) ?: null;
         if (!$corrRow || strtolower(trim((string)($corrRow['status'] ?? ''))) !== 'active') {
@@ -166,7 +166,7 @@ try {
               WHERE application_id = ?"
         );
         $setAppPending->execute([$application_id]);
-        $done = $pdo->prepare("UPDATE candidate_correction_sessions SET status = 'completed', completed_at = NOW(), updated_at = NOW(), completed_by_role = 'candidate' WHERE correction_session_id = ?");
+        $done = $pdo->prepare("UPDATE Vati_Payfiller_Candidate_Correction_Sessions SET status = 'completed', completed_at = NOW(), updated_at = NOW(), completed_by_role = 'candidate' WHERE correction_session_id = ?");
         $done->execute([$corrId]);
         $svc = new WorkflowTransitionService($pdo);
         $reconcile = $svc->reconcileCorrectionLifecycle(

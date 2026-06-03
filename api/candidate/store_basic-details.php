@@ -26,6 +26,69 @@ function sendSuccess($message) {
     exit;
 }
 
+function candidate_upload_dir(string $relative): string {
+    $dir = rtrim(app_path($relative), '/\\') . DIRECTORY_SEPARATOR;
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0775, true);
+    }
+    return $dir;
+}
+
+function candidate_handle_upload(array $file, string $relativeDir, string $prefix, array $allowedExt = ['pdf', 'jpg', 'jpeg', 'png'], int $maxSize = 5242880): array {
+    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+        throw new RuntimeException('File upload failed.');
+    }
+    $originalName = (string)($file['name'] ?? '');
+    $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+    if (!in_array($ext, $allowedExt, true)) {
+        throw new RuntimeException($allowedExt === ['pdf'] ? 'Only PDF resumes are allowed.' : 'Invalid file type uploaded.');
+    }
+    if ((int)($file['size'] ?? 0) > $maxSize) {
+        throw new RuntimeException('Uploaded file exceeds the allowed size.');
+    }
+    $dir = candidate_upload_dir($relativeDir);
+    $storedName = $prefix . '_' . time() . '_' . uniqid('', true) . '.' . $ext;
+    $target = $dir . $storedName;
+    if (!move_uploaded_file((string)$file['tmp_name'], $target)) {
+        throw new RuntimeException('Failed to store uploaded file.');
+    }
+    return ['file_name' => $storedName, 'original_name' => $originalName];
+}
+
+function candidate_assert_pdf_upload(array $file): void {
+    $originalName = strtolower((string)($file['name'] ?? ''));
+    if (!str_ends_with($originalName, '.pdf')) {
+        throw new RuntimeException('Only PDF resumes are allowed.');
+    }
+    $tmp = (string)($file['tmp_name'] ?? '');
+    if ($tmp !== '' && is_file($tmp)) {
+        $mime = '';
+        if (function_exists('finfo_open')) {
+            $fi = finfo_open(FILEINFO_MIME_TYPE);
+            if ($fi) {
+                $mime = (string)finfo_file($fi, $tmp);
+                finfo_close($fi);
+            }
+        } elseif (function_exists('mime_content_type')) {
+            $mime = (string)mime_content_type($tmp);
+        }
+        if ($mime !== '' && !in_array($mime, ['application/pdf', 'application/x-pdf'], true)) {
+            throw new RuntimeException('Only PDF resumes are allowed.');
+        }
+    }
+}
+
+function candidate_delete_uploaded_file(string $relativeDir, string $fileName): void {
+    $fileName = trim($fileName);
+    if ($fileName === '' || strtoupper($fileName) === 'INSUFFICIENT_DOCUMENTS') {
+        return;
+    }
+    $path = candidate_upload_dir($relativeDir) . basename($fileName);
+    if (is_file($path)) {
+        @unlink($path);
+    }
+}
+
 function ensure_upload_dir(string $dir): void {
     if (!is_dir($dir)) {
         @mkdir($dir, 0775, true);
@@ -195,6 +258,19 @@ try {
 
     // Handle photo upload
     $photoPath = $_POST['existing_photo'] ?? null;
+    $resumeRow = [];
+    try {
+        $resumeStmt = $pdo->prepare("CALL SP_Vati_Payfiller_get_basic_details(?)");
+        $resumeStmt->execute([$application_id]);
+        $resumeRow = $resumeStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        while ($resumeStmt->nextRowset()) {
+        }
+        $resumeStmt->closeCursor();
+    } catch (Throwable $e) {
+        $resumeRow = [];
+    }
+    $resumePath = trim((string)($_POST['existing_resume'] ?? ($resumeRow['resume_file'] ?? '')));
+    $resumeOriginalName = trim((string)($_POST['existing_resume_name'] ?? ($resumeRow['resume_original_name'] ?? '')));
     
     if (isset($_FILES['photo']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK) {
         $photo = $_FILES['photo'];
@@ -237,6 +313,22 @@ try {
         }
     }
 
+    if (isset($_FILES['resume']) && $_FILES['resume']['error'] === UPLOAD_ERR_OK) {
+        candidate_assert_pdf_upload($_FILES['resume']);
+        $upload = candidate_handle_upload(
+            $_FILES['resume'],
+            '/uploads/resume/',
+            'resume_' . $application_id,
+            ['pdf'],
+            8 * 1024 * 1024
+        );
+        if ($resumePath !== '' && $resumePath !== $upload['file_name']) {
+            candidate_delete_uploaded_file('/uploads/resume/', $resumePath);
+        }
+        $resumePath = $upload['file_name'];
+        $resumeOriginalName = $upload['original_name'];
+    }
+
     // For final submit, photo is mandatory (either existing or new upload).
     if ($save_draft === '0') {
         $hasUpload = (isset($_FILES['photo']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK);
@@ -248,6 +340,10 @@ try {
             }
             $photoPath = $current;
         }
+    }
+
+    if ($save_draft === '0' && $resumePath === '') {
+        sendError('Please upload resume');
     }
 
     // Prepare parameters for stored procedure
@@ -273,7 +369,9 @@ try {
         ':pincode'        => trim($_POST['pincode'] ?? ''),
         ':nationality'    => trim($_POST['nationality'] ?? ''),
         ':application_id' => $application_id,
-        ':photo_path'     => $photoPath
+        ':photo_path'     => $photoPath,
+        ':resume_file'    => $resumePath !== '' ? $resumePath : null,
+        ':resume_original_name' => $resumeOriginalName !== '' ? $resumeOriginalName : null
     ];
 
     error_log("Stored procedure params: " . print_r($params, true));
@@ -284,7 +382,7 @@ try {
         :father_name, :mother_name, :mobile, :landline, :email,
         :marital_status, :spouse_name, :other_name,
         :country, :state, :city_village, :district, :pincode, :nationality,
-        :application_id, :photo_path
+        :application_id, :photo_path, :resume_file, :resume_original_name
     )");
 
     $result = $stmt->execute($params);
@@ -292,6 +390,21 @@ try {
     if (!$result) {
         $errorInfo = $stmt->errorInfo();
         sendError('Database error: ' . ($errorInfo[2] ?? 'Unknown error'));
+    }
+    $stmt->closeCursor();
+
+    try {
+        $fullName = trim((string)($_POST['full_name'] ?? ''));
+        if ($fullName === '') {
+            $fullName = trim(implode(' ', array_filter([
+                trim((string)($_POST['first_name'] ?? '')),
+                trim((string)($_POST['middle_name'] ?? '')),
+                trim((string)($_POST['last_name'] ?? '')),
+            ])));
+        }
+        $fullNameStmt = $pdo->prepare('UPDATE Vati_Payfiller_Candidate_Basic_details SET full_name = ?, updated_at = CURRENT_TIMESTAMP WHERE application_id = ?');
+        $fullNameStmt->execute([$fullName, $application_id]);
+    } catch (Throwable $e) {
     }
 
     // Mark as completed if final submission

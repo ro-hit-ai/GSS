@@ -85,3 +85,19 @@
 [2026-05-25 14:20:30] source=submit application_id=APP-20260525141338783 case_id=213 final_submit_completed=1 authorization_completed=1 queue_created=1 queue_seed_reason=final_submit
 [2026-05-25 15:14:21] source=store_authorization application_id=APP-20260525150831514 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none
 [2026-05-25 15:20:43] source=submit application_id=APP-20260525150831514 case_id=214 final_submit_completed=1 authorization_completed=1 queue_created=1 queue_seed_reason=final_submit
+[2026-05-27 06:41:38] source=store_authorization application_id=APP-20260527063956327 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none
+[2026-05-29 12:42:29] source=store_authorization application_id=APP-20260529123908236 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none
+[2026-05-29 12:51:57] source=submit application_id=APP-20260529123908236 case_id=217 final_submit_completed=1 authorization_completed=1 queue_created=1 queue_seed_reason=final_submit
+[2026-05-29 13:27:10] source=store_authorization application_id=APP-20260529132431508 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none
+[2026-05-29 13:37:18] source=submit application_id=APP-20260529132431508 case_id=219 final_submit_completed=1 authorization_completed=1 queue_created=1 queue_seed_reason=final_submit
+[2026-05-30 08:00:14] source=submit application_id=APP-20260529132431508 case_id=219 final_submit_completed=1 authorization_completed=1 queue_created=1 queue_seed_reason=final_submit
+[2026-05-30 14:25:43] source=store_authorization application_id=APP-20260530142042341 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none
+[2026-06-02 12:41:50] source=store_authorization application_id=APP-20260602123815757 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none
+[2026-06-02 12:55:18] source=submit application_id=APP-20260602123815757 case_id=221 final_submit_completed=1 authorization_completed=1 queue_created=1 queue_seed_reason=final_submit
+[2026-06-02 14:03:40] source=store_authorization application_id=APP-20260602135933139 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none
+[2026-06-02 14:19:25] source=submit application_id=APP-20260602135933139 case_id=222 final_submit_completed=1 authorization_completed=1 queue_created=1 queue_seed_reason=final_submit
+[2026-06-03 08:19:21] source=store_authorization application_id=APP-20260603074533261 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none
+[2026-06-03 09:44:40] source=submit application_id=APP-20260603074533261 case_id=223 final_submit_completed=1 authorization_completed=1 queue_created=1 queue_seed_reason=final_submit
+[2026-06-03 13:12:20] source=store_authorization application_id=APP-20260603131017556 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none
+[2026-06-03 14:08:29] source=store_authorization application_id=APP-20260603140030312 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none
+[2026-06-03 14:13:31] source=submit application_id=APP-20260603140030312 case_id=225 final_submit_completed=1 authorization_completed=1 queue_created=1 queue_seed_reason=final_submit

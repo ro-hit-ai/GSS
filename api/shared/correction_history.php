@@ -41,8 +41,8 @@ try {
     }
 
     $s = $pdo->prepare("SELECT ccs.correction_session_id, ccs.requested_role, ccs.requested_by_name, ccs.correction_reason, ccs.status, ccs.created_at, ccs.completed_at, ccc.component_key, ccc.cycle_number, ccc.previous_status, ccc.requested_at, ccc.candidate_submitted_at, ccc.reviewer_completed_at, ccc.final_status, ccc.reopened_count
-                        FROM candidate_correction_sessions ccs
-                        JOIN component_correction_cycles ccc ON ccc.correction_session_id = ccs.correction_session_id
+                        FROM Vati_Payfiller_Candidate_Correction_Sessions ccs
+                        JOIN Vati_Payfiller_Component_Correction_Cycles ccc ON ccc.correction_session_id = ccs.correction_session_id
                         WHERE ccs.case_id = ?
                         ORDER BY ccc.requested_at DESC, ccc.correction_cycle_id DESC
                         LIMIT 300");

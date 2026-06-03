@@ -41,16 +41,16 @@ try {
         exit;
     }
 
-    // Best-effort: log to case timeline
     try {
         $log = $pdo->prepare('INSERT INTO Vati_Payfiller_Case_Timeline (application_id, actor_user_id, actor_role, event_type, section_key, message, created_at) SELECT application_id, ?, ?, ?, ?, ?, NOW() FROM Vati_Payfiller_Cases WHERE case_id = ? LIMIT 1');
         $role = !empty($_SESSION['auth_moduleAccess']) ? (string)$_SESSION['auth_moduleAccess'] : 'verifier';
-        $log->execute([$userId, $role, 'update', 'verifier', 'Verifier claimed case', $caseId]);
+        $claimedComponents = implode(', ', array_map('strval', $claim['components'] ?? []));
+        $message = $claimedComponents !== '' ? ('Verifier claimed components: ' . $claimedComponents) : 'Verifier claimed components';
+        $log->execute([$userId, $role, 'update', 'verifier', $message, $caseId]);
     } catch (Throwable $e) {
-        // ignore
     }
 
-    echo json_encode(['status' => 1, 'message' => 'claimed', 'data' => ['case_id' => $caseId]]);
+    echo json_encode(['status' => 1, 'message' => 'claimed', 'data' => ['case_id' => $caseId, 'components' => $claim['components'] ?? []]]);
 
 } catch (Throwable $e) {
     http_response_code(500);

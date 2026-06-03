@@ -4,13 +4,17 @@ document.addEventListener('DOMContentLoaded', function () {
     var rowsHost = document.getElementById('vrBoardRows');
     var refreshBtn = document.getElementById('vrBoardRefreshBtn');
     var bucketHost = document.getElementById('vrBucketChips');
-    var familyHost = document.getElementById('vrFamilyChips');
+    var stateHost = document.getElementById('vrStateChips');
     var compatNoteEl = document.getElementById('vrBoardCompatNote');
+    var kpiPendingEl = document.getElementById('vrKpiPending');
+    var kpiInProgressEl = document.getElementById('vrKpiInProgress');
+    var kpiFollowUpEl = document.getElementById('vrKpiFollowUp');
+    var kpiCompletedEl = document.getElementById('vrKpiCompleted');
 
     var state = {
         rows: [],
         bucket: 'pending',
-        family: 'all',
+        stateFilter: 'all',
         loading: false,
         claimInFlightKey: ''
     };
@@ -53,9 +57,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function claimStateLabel(row) {
         var s = String(row && row.row_state ? row.row_state : '').toLowerCase().trim();
-        if (s === 'available') return 'Available';
-        if (s === 'mine_active') return 'My Active Case';
+        if (s === 'available') return 'Claimable';
+        if (s === 'mine_active') return 'Owned Active';
         if (s === 'claimed_by_other') return 'Claimed By Other';
+        if (s === 'locked_future') return 'Locked';
+        if (s === 'hidden_unrelated') return 'Unavailable';
         if (s === 'followup') return 'Follow Up';
         if (s === 'completed') return 'Completed';
         return '-';
@@ -65,7 +71,7 @@ document.addEventListener('DOMContentLoaded', function () {
         var s = String(row && row.row_state ? row.row_state : '').toLowerCase().trim();
         var out = ['vr-board-row', 'vr-board-data-row'];
         if (s === 'mine_active' || s === 'followup') out.push('is-mine');
-        if (s === 'claimed_by_other') out.push('is-locked');
+        if (s === 'claimed_by_other' || s === 'locked_future' || s === 'hidden_unrelated') out.push('is-locked');
         if (s === 'completed') out.push('is-completed');
         if ((row && row.can_claim) || (row && row.can_open)) out.push('is-clickable');
         return out.join(' ');
@@ -84,21 +90,60 @@ document.addEventListener('DOMContentLoaded', function () {
         return '<span class="vr-badge ' + esc(bucket) + '">' + esc(bucketLabel(bucket)) + '</span>';
     }
 
+    function routingTierText(row) {
+        var states = row && row.routing_component_states && typeof row.routing_component_states === 'object'
+            ? row.routing_component_states
+            : {};
+        var parts = [];
+        Object.keys(states).forEach(function (key) {
+            var item = states[key] || {};
+            var priority = item.priority ? ('P' + String(item.priority)) : 'P-';
+            var label = String(item.label || key || '').trim();
+            var stateText = String(item.state || '').replace(/_/g, ' ');
+            var reason = String(item.reason || '').trim();
+            if (!label) return;
+            parts.push(priority + ' ' + label + ' — ' + stateText + (reason && stateText !== 'owned active' ? ' (' + reason + ')' : ''));
+        });
+        return parts.join(' · ');
+    }
+
     function filteredRows() {
         return state.rows.filter(function (row) {
             var bucketOk = String(row.board_bucket || '').toLowerCase() === state.bucket;
-            var families = Array.isArray(row.family_keys) ? row.family_keys : [];
-            var familyOk = state.family === 'all' || families.indexOf(state.family) >= 0;
-            return bucketOk && familyOk;
+            var stateKeys = Array.isArray(row.state_keys) ? row.state_keys : [];
+            var stateOk = state.stateFilter === 'all' || stateKeys.indexOf(state.stateFilter) >= 0;
+            return bucketOk && stateOk;
         });
+    }
+
+    function updateKpis() {
+        var counts = {
+            pending: 0,
+            mineActive: 0,
+            followup: 0,
+            completed: 0
+        };
+        state.rows.forEach(function (row) {
+            var bucket = String(row.board_bucket || '').toLowerCase().trim();
+            var rowState = String(row.row_state || '').toLowerCase().trim();
+            if (bucket === 'pending' && rowState === 'available') counts.pending += 1;
+            if (rowState === 'mine_active') counts.mineActive += 1;
+            if (bucket === 'followup') counts.followup += 1;
+            if (bucket === 'completed') counts.completed += 1;
+        });
+        if (kpiPendingEl) kpiPendingEl.textContent = String(counts.pending);
+        if (kpiInProgressEl) kpiInProgressEl.textContent = String(counts.mineActive);
+        if (kpiFollowUpEl) kpiFollowUpEl.textContent = String(counts.followup);
+        if (kpiCompletedEl) kpiCompletedEl.textContent = String(counts.completed);
     }
 
     function updateChipLabels() {
         if (!bucketHost) return;
         var counts = { pending: 0, completed: 0, followup: 0, insuff_docs: 0 };
         state.rows.forEach(function (row) {
-            var familyOk = state.family === 'all' || String(row.family_key || '').toLowerCase() === state.family;
-            if (!familyOk) return;
+            var stateKeys = Array.isArray(row.state_keys) ? row.state_keys : [];
+            var stateOk = state.stateFilter === 'all' || stateKeys.indexOf(state.stateFilter) >= 0;
+            if (!stateOk) return;
             var key = String(row.board_bucket || '').toLowerCase().trim();
             if (Object.prototype.hasOwnProperty.call(counts, key)) counts[key] += 1;
         });
@@ -111,21 +156,22 @@ document.addEventListener('DOMContentLoaded', function () {
         if (compatNoteEl) compatNoteEl.style.display = state.rows.length ? 'block' : 'none';
     }
 
-    function updateFamilyLabels() {
-        if (!familyHost) return;
-        Array.prototype.slice.call(familyHost.querySelectorAll('[data-family]')).forEach(function (btn) {
-            var key = String(btn.getAttribute('data-family') || '').toLowerCase().trim();
-            btn.classList.toggle('active', key === state.family);
+    function updateStateLabels() {
+        if (!stateHost) return;
+        Array.prototype.slice.call(stateHost.querySelectorAll('[data-state]')).forEach(function (btn) {
+            var key = String(btn.getAttribute('data-state') || '').toLowerCase().trim();
+            btn.classList.toggle('active', key === state.stateFilter);
         });
     }
 
     function renderRows() {
         if (!rowsHost) return;
+        updateKpis();
         updateChipLabels();
-        updateFamilyLabels();
+        updateStateLabels();
         var rows = filteredRows();
         if (!rows.length) {
-            rowsHost.innerHTML = '<div class="vr-empty">No cases in this bucket for the selected family.</div>';
+            rowsHost.innerHTML = '<div class="vr-empty">No cases in this bucket for the selected routing state.</div>';
             return;
         }
         rowsHost.innerHTML = rows.map(function (row) {
@@ -147,11 +193,12 @@ document.addEventListener('DOMContentLoaded', function () {
             } else if (String(row.completed_at || '').trim()) {
                 claimedMeta = '<div class="vr-board-muted">Completed ' + esc(fmtDateTime(row.completed_at)) + '</div>';
             }
+            var tierText = routingTierText(row);
             return ''
                 + '<div class="' + esc(rowClass(row)) + '" data-row-key="' + esc(key) + '" data-actionable="' + (row.can_claim || row.can_open ? '1' : '0') + '">'
                 +   '<div class="vr-board-cell"><div class="vr-board-case">' + esc(row.application_id || '-') + '</div><div class="vr-board-muted">' + esc(String(row.workflow_mode || '').replace(/_/g, ' ')) + '</div></div>'
                 +   '<div class="vr-board-cell"><div class="vr-board-name">' + esc(((row.candidate_first_name || '') + ' ' + (row.candidate_last_name || '')).trim() || '-') + '</div></div>'
-                +   '<div class="vr-board-cell"><div>' + esc(row.component_summary_text || '-') + '</div><div class="vr-board-muted">' + esc((row.component_summary || []).map(function (it) { return it.label || ''; }).filter(Boolean).join(' | ')) + '</div></div>'
+                +   '<div class="vr-board-cell"><div>' + esc(row.component_summary_text || '-') + '</div><div class="vr-board-muted">' + esc(tierText || (row.component_summary || []).map(function (it) { return it.label || ''; }).filter(Boolean).join(' | ')) + '</div></div>'
                 +   '<div class="vr-board-cell">' + bucketBadgeHtml(row) + '</div>'
                 +   '<div class="vr-board-cell">' + stateBadgeHtml(row) + '</div>'
                 +   '<div class="vr-board-cell"><div>' + esc(claimedBy) + '</div>' + claimedMeta + '</div>'
@@ -221,11 +268,11 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    if (familyHost) {
-        familyHost.addEventListener('click', function (e) {
-            var btn = e.target && e.target.closest ? e.target.closest('[data-family]') : null;
+    if (stateHost) {
+        stateHost.addEventListener('click', function (e) {
+            var btn = e.target && e.target.closest ? e.target.closest('[data-state]') : null;
             if (!btn) return;
-            state.family = String(btn.getAttribute('data-family') || 'all').toLowerCase();
+            state.stateFilter = String(btn.getAttribute('data-state') || 'all').toLowerCase();
             renderRows();
         });
     }

@@ -521,6 +521,90 @@ body.candidate-page .form-header i {
 }
 
 /* ============================================
+   EDUCATION CARD COMPACT OVERRIDES
+============================================ */
+.candidate-form.compact-form.cr-fixed-form.bgv-fixed-form.create-like-spacing .education-toolbar {
+    padding: 8px 10px !important;
+    gap: 8px !important;
+}
+
+.candidate-form.compact-form.cr-fixed-form.bgv-fixed-form.create-like-spacing .education-toolbar .compact-control {
+    min-height: auto !important;
+    padding: 0 !important;
+}
+
+.candidate-form.compact-form.cr-fixed-form.bgv-fixed-form.create-like-spacing .education-card {
+    padding: 10px 10px 12px !important;
+}
+
+.candidate-form.compact-form.cr-fixed-form.bgv-fixed-form.create-like-spacing .education-card .compact-header {
+    padding: 8px 10px !important;
+}
+
+.candidate-form.compact-form.cr-fixed-form.bgv-fixed-form.create-like-spacing .education-card .compact-body {
+    padding: 10px 0 0 !important;
+}
+
+.candidate-form.compact-form.cr-fixed-form.bgv-fixed-form.create-like-spacing .education-card .compact-row,
+.candidate-form.compact-form.cr-fixed-form.bgv-fixed-form.create-like-spacing .education-card .compact-body .form-row-3,
+.candidate-form.compact-form.cr-fixed-form.bgv-fixed-form.create-like-spacing .education-card .compact-body .form-row-2,
+.candidate-form.compact-form.cr-fixed-form.bgv-fixed-form.create-like-spacing .education-card .compact-body .form-row-4 {
+    gap: 10px !important;
+    margin-bottom: 10px !important;
+}
+
+.candidate-form.compact-form.cr-fixed-form.bgv-fixed-form.create-like-spacing .education-card .education-meta-row {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+}
+
+.candidate-form.compact-form.cr-fixed-form.bgv-fixed-form.create-like-spacing .education-card .form-field {
+    min-width: 0;
+}
+
+.candidate-form.compact-form.cr-fixed-form.bgv-fixed-form.create-like-spacing .education-card .form-control.double-border.compact-control {
+    padding: 0 !important;
+    min-height: auto !important;
+}
+
+.candidate-form.compact-form.cr-fixed-form.bgv-fixed-form.create-like-spacing .education-card .compact-label {
+    font-size: 12px !important;
+    margin-bottom: 3px !important;
+}
+
+.candidate-form.compact-form.cr-fixed-form.bgv-fixed-form.create-like-spacing .education-card .compact-input,
+.candidate-form.compact-form.cr-fixed-form.bgv-fixed-form.create-like-spacing .education-card .compact-select {
+    height: 34px !important;
+    padding: 6px 8px !important;
+    border-radius: 8px !important;
+}
+
+.candidate-form.compact-form.cr-fixed-form.bgv-fixed-form.create-like-spacing .education-card .file-upload-box {
+    padding: 6px 8px !important;
+    gap: 4px !important;
+}
+
+.candidate-form.compact-form.cr-fixed-form.bgv-fixed-form.create-like-spacing .education-card .file-upload-row {
+    gap: 8px !important;
+}
+
+.candidate-form.compact-form.cr-fixed-form.bgv-fixed-form.create-like-spacing .education-card .file-upload-name {
+    max-width: 180px;
+}
+
+.candidate-form.compact-form.cr-fixed-form.bgv-fixed-form.create-like-spacing .education-card .marksheet-doc-list {
+    gap: 6px !important;
+}
+
+.candidate-form.compact-form.cr-fixed-form.bgv-fixed-form.create-like-spacing .education-card .marksheet-doc-preview {
+    max-width: 160px;
+    padding: 4px 8px;
+}
+
+.candidate-form.compact-form.cr-fixed-form.bgv-fixed-form.create-like-spacing .education-card .marksheet-doc-name {
+    max-width: 110px;
+}
+
+/* ============================================
    SIDEBAR COMPLETION DOTS
 ============================================ */
 body.candidate-page .sidebar-item {
@@ -528,19 +612,285 @@ body.candidate-page .sidebar-item {
 }
 
 body.candidate-page .sidebar-status {
-    width: 8px;
-    height: 8px;
+    width: 22px;
+    height: 22px;
     border-radius: 999px;
-    background: #cbd5f5;
+    background: #eef2ff;
+    border: 1px solid #dbe4f0;
+    color: #64748b;
     margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 900;
+    line-height: 1;
+    flex: 0 0 22px;
 }
 
 body.candidate-page .sidebar-item.completed .sidebar-status {
-    background: #22c55e;
+    background: #dcfce7;
+    border-color: #bbf7d0;
+    color: #15803d;
 }
 
 body.candidate-page .sidebar-item.current .sidebar-status {
-    background: #2563eb;
+    background: #dbeafe;
+    border-color: #bfdbfe;
+    color: #1d4ed8;
+}
+
+body.candidate-page .candidate-sidebar-assistant {
+    margin: 12px 10px 10px;
+    padding: 10px;
+    border: 1px solid rgba(203, 213, 225, 0.85);
+    border-radius: 15px;
+    background: rgba(255, 255, 255, 0.9);
+}
+
+body.candidate-page .candidate-sidebar-assistant-kicker {
+    color: #64748b;
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: .11em;
+    text-transform: uppercase;
+}
+
+body.candidate-page .candidate-sidebar-assistant-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+body.candidate-page .candidate-sidebar-assistant-percent {
+    color: #0f172a;
+    font-size: 19px;
+    font-weight: 900;
+    line-height: 1;
+}
+
+body.candidate-page .candidate-sidebar-assistant-pill {
+    padding: 3px 7px;
+    border-radius: 999px;
+    background: #fff7ed;
+    border: 1px solid #fed7aa;
+    color: #9a3412;
+    font-size: 10px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+body.candidate-page .candidate-sidebar-assistant-pill.is-ready {
+    background: #dcfce7;
+    border-color: #bbf7d0;
+    color: #166534;
+}
+
+body.candidate-page .candidate-sidebar-progress-track {
+    height: 5px;
+    border-radius: 999px;
+    background: #e2e8f0;
+    overflow: hidden;
+    margin-top: 9px;
+}
+
+body.candidate-page .candidate-sidebar-progress-fill {
+    height: 100%;
+    width: 0;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #2563eb, #0ea5e9);
+    transition: width .2s ease;
+}
+
+body.candidate-page .candidate-sidebar-next {
+    margin-top: 9px;
+    display: grid;
+    gap: 3px;
+}
+
+body.candidate-page .candidate-sidebar-next span {
+    color: #64748b;
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+body.candidate-page .candidate-sidebar-next strong {
+    color: #0f172a;
+    font-size: 11px;
+    line-height: 1.25;
+    font-weight: 800;
+}
+
+body.candidate-page .sidebar-copy {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+}
+
+body.candidate-page .sidebar-helper {
+    color: #64748b;
+    font-size: 10.5px;
+    line-height: 1.2;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 126px;
+}
+
+body.candidate-page .sidebar-item.needs-attention .sidebar-status,
+body.candidate-page .sidebar-item.correction-required .sidebar-status {
+    background: #fff7ed;
+    border-color: #fed7aa;
+    color: #c2410c;
+}
+
+body.candidate-page .sidebar-item.waiting-mobile-upload .sidebar-status,
+body.candidate-page .sidebar-item.submitted .sidebar-status,
+body.candidate-page .sidebar-item.in-progress .sidebar-status {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+    color: #1d4ed8;
+}
+
+body.candidate-page .sidebar.collapsed .candidate-sidebar-assistant,
+body.candidate-page .sidebar.collapsed .sidebar-helper {
+    display: none;
+}
+
+body.candidate-page .candidate-sidebar-focus {
+    outline: 2px solid rgba(245, 158, 11, 0.55) !important;
+    outline-offset: 3px;
+    border-radius: 12px;
+    transition: outline-color .2s ease;
+}
+
+/* Intelligent sidebar refinement: compact workflow checklist, not dashboard KPI UI. */
+body.candidate-page .candidate-sidebar-assistant,
+body.candidate-page .candidate-sidebar-progress-track,
+body.candidate-page .candidate-sidebar-next {
+    display: none !important;
+}
+
+body.candidate-page .sidebar-nav {
+    gap: 3px !important;
+    margin-top: 10px !important;
+}
+
+body.candidate-page .sidebar-group-label {
+    margin: 12px 10px 5px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(203, 213, 225, 0.7);
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: .12em;
+    line-height: 1;
+    text-transform: uppercase;
+}
+
+body.candidate-page .sidebar-group-label:first-child {
+    margin-top: 4px;
+    padding-top: 0;
+    border-top: 0;
+}
+
+body.candidate-page .sidebar-item {
+    min-height: 38px !important;
+    margin: 0 8px !important;
+    padding: 7px 8px !important;
+    gap: 8px !important;
+    border: 1px solid transparent !important;
+    border-radius: 10px !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+body.candidate-page .sidebar-item:hover {
+    background: rgba(239, 246, 255, 0.72) !important;
+    box-shadow: none !important;
+    transform: none !important;
+}
+
+body.candidate-page .sidebar-item.active {
+    background: rgba(219, 234, 254, 0.72) !important;
+    border-color: rgba(147, 197, 253, 0.9) !important;
+    box-shadow: none !important;
+}
+
+body.candidate-page .sidebar-item::before {
+    width: 2px !important;
+}
+
+body.candidate-page .sidebar-item i {
+    width: 24px !important;
+    height: 24px !important;
+    flex-basis: 24px !important;
+    border-radius: 8px !important;
+    font-size: 12px !important;
+    background: transparent !important;
+    border-color: transparent !important;
+}
+
+body.candidate-page .sidebar-item.active i {
+    color: #075c9f !important;
+    background: #e0f2fe !important;
+}
+
+body.candidate-page .sidebar-label {
+    font-size: 12.5px !important;
+    line-height: 1.12 !important;
+    font-weight: 800 !important;
+}
+
+body.candidate-page .sidebar-helper {
+    margin-top: 1px;
+    max-width: 132px;
+    color: #64748b;
+    font-size: 10px;
+    line-height: 1.18;
+    font-weight: 700;
+}
+
+body.candidate-page .sidebar-helper[hidden] {
+    display: none !important;
+}
+
+body.candidate-page .sidebar-status {
+    width: 17px !important;
+    height: 17px !important;
+    flex-basis: 17px !important;
+    border: 0 !important;
+    background: transparent !important;
+    font-size: 12px !important;
+}
+
+body.candidate-page .sidebar-item.completed .sidebar-status {
+    color: #15803d !important;
+    background: transparent !important;
+}
+
+body.candidate-page .sidebar-item.needs-attention .sidebar-status,
+body.candidate-page .sidebar-item.correction-required .sidebar-status,
+body.candidate-page .sidebar-item.rejected .sidebar-status {
+    color: #c2410c !important;
+    background: transparent !important;
+}
+
+body.candidate-page .sidebar-item.waiting-mobile-upload .sidebar-status,
+body.candidate-page .sidebar-item.submitted .sidebar-status,
+body.candidate-page .sidebar-item.in-progress .sidebar-status,
+body.candidate-page .sidebar-item.not-started .sidebar-status {
+    color: #64748b !important;
+    background: transparent !important;
+}
+
+body.candidate-page .sidebar.collapsed .sidebar-group-label {
+    display: none !important;
 }
 
 .candidate-sidebar-card {
@@ -1580,6 +1930,100 @@ body.candidate-page .compact-header h6 {
     font-size: 12px !important;
 }
 
+.marksheet-doc-list {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    flex: 1 1 auto;
+    min-width: 0;
+    margin-top: 0;
+}
+
+.marksheet-doc-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 0;
+    border: 0;
+    background: transparent;
+    min-width: 0;
+    max-width: 100%;
+    flex: 0 1 auto;
+}
+
+.marksheet-doc-item.is-new {
+    background: transparent;
+}
+
+.marksheet-doc-preview {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    max-width: 240px;
+    padding: 6px 10px;
+    border: 1px solid #bfdbfe;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #0f172a;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: left;
+}
+
+.marksheet-doc-preview:hover,
+.marksheet-doc-preview:focus {
+    background: #dbeafe;
+    outline: none;
+}
+
+.marksheet-doc-name {
+    min-width: 0;
+    max-width: 170px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: 1.2;
+}
+
+.marksheet-doc-remove {
+    border: 0;
+    background: #fee2e2;
+    color: #dc2626;
+    font-size: 12px;
+    line-height: 1;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border-radius: 999px;
+    cursor: pointer;
+    flex: 0 0 auto;
+}
+
+.marksheet-doc-remove:hover,
+.marksheet-doc-remove:focus {
+    background: #fee2e2;
+    color: #b91c1c;
+    outline: none;
+}
+
+.marksheet-doc-more {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 5px 10px;
+    border: 1px dashed #cbd5e1;
+    border-radius: 8px;
+    background: #f8fafc;
+    color: #475569;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+    flex: 0 0 auto;
+}
+
 /* ============================================
    FILE UPLOAD BOX (CANDIDATE FORMS)
 ============================================ */
@@ -1615,6 +2059,27 @@ body.candidate-page .compact-header h6 {
 
 .file-replace-link {
     background: #0f172a;
+}
+
+.file-upload-remove {
+    border: none;
+    background: #fee2e2;
+    color: #dc2626;
+    width: 24px;
+    height: 24px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex: 0 0 auto;
+}
+
+.file-upload-remove:hover,
+.file-upload-remove:focus {
+    background: #fecaca;
+    color: #991b1b;
+    outline: none;
 }
 
 .file-upload-name {
@@ -2602,18 +3067,18 @@ body.candidate-page .candidate-form .file-upload-box.is-invalid {
 
 /* Make the file upload rows more compact */
 .candidate-form.compact-form .education-card .form-row-2.compact-row {
-    gap: 8px !important;
-    margin-bottom: 8px !important;
+    gap: 10px !important;
+    margin-bottom: 10px !important;
 }
 
 /* Make file upload controls more compact */
 .candidate-form.compact-form .education-card .compact-control {
-    padding: 6px 8px !important;
-    min-height: 60px !important;
+    padding: 5px 7px !important;
+    min-height: 54px !important;
 }
 
 .education-card-header {
-    padding: 8px 12px;
+    padding: 8px 10px;
     border-radius: 10px 10px 0 0;
 }
 
@@ -2641,8 +3106,8 @@ body.candidate-page .candidate-form .file-upload-box.is-invalid {
 /* Make preview containers compact */
 .candidate-form.compact-form .education-card .marksheet-preview,
 .candidate-form.compact-form .education-card .degree-preview {
-    margin-top: 2px !important;
-    max-height: 60px !important;
+    margin-top: 4px !important;
+    max-height: 56px !important;
     overflow-y: auto !important;
 }
 
@@ -2651,6 +3116,180 @@ body.candidate-page .candidate-form .file-upload-box.is-invalid {
     padding: 3px 6px !important;
     font-size: 10px !important;
     margin-bottom: 2px !important;
+}
+
+.candidate-form.create-like-spacing .education-card {
+    padding: 10px 12px 12px !important;
+}
+
+.candidate-form.create-like-spacing .education-card .compact-body {
+    padding-top: 10px !important;
+}
+
+.candidate-form.create-like-spacing .education-card .compact-row,
+.candidate-form.create-like-spacing .education-card .compact-body .form-row-3,
+.candidate-form.create-like-spacing .education-card .compact-body .form-row-2,
+.candidate-form.create-like-spacing .education-card .compact-body .form-row-4 {
+    gap: 12px !important;
+    margin-bottom: 12px !important;
+}
+
+.candidate-form.create-like-spacing .education-card .form-field {
+    min-width: 0;
+}
+
+.candidate-form.create-like-spacing .education-card .form-field.col-span-2 {
+    align-self: start;
+}
+
+.candidate-form.create-like-spacing .education-card .form-field .form-control.double-border {
+    min-height: 0;
+}
+
+.candidate-form.create-like-spacing .education-card .file-upload-box {
+    padding: 5px 8px;
+    gap: 4px;
+}
+
+.candidate-form.create-like-spacing .education-card .file-upload-row {
+    gap: 8px;
+    align-items: center;
+}
+
+.candidate-form.create-like-spacing .education-card .file-upload-name {
+    max-width: 180px;
+}
+
+.candidate-form.create-like-spacing .education-card .file-upload-remove {
+    width: 22px;
+    height: 22px;
+}
+
+.candidate-form.create-like-spacing .education-card .marksheet-doc-list {
+    gap: 6px;
+    margin-top: 2px;
+}
+
+.candidate-form.create-like-spacing .education-card .marksheet-doc-preview {
+    padding: 5px 8px;
+    max-width: 180px;
+}
+
+.candidate-form.create-like-spacing .education-card .marksheet-doc-name {
+    max-width: 120px;
+}
+
+.candidate-form.create-like-spacing .education-card .marksheet-doc-more {
+    padding: 4px 8px;
+}
+
+/* Institution master async lookup */
+.candidate-form.create-like-spacing .education-card .institution-select-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 34px;
+    align-items: center;
+    width: 100%;
+    border: 1px solid #d7dde5;
+    border-radius: 10px;
+    background: #ffffff;
+    overflow: hidden;
+}
+
+.candidate-form.create-like-spacing .education-card .institution-search-input {
+    width: 100%;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    min-height: 38px !important;
+}
+
+.candidate-form.create-like-spacing .education-card .institution-search-input:focus {
+    outline: none;
+}
+
+.candidate-form.create-like-spacing .education-card .institution-select-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 100%;
+    min-height: 38px;
+    border: 0;
+    border-left: 1px solid #e5ebf2;
+    background: #f8fafc;
+    color: #64748b;
+    cursor: pointer;
+}
+
+.candidate-form.create-like-spacing .education-card .institution-select-shell:focus-within {
+    border-color: #8ec5ff;
+    box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.08);
+}
+
+.candidate-form.create-like-spacing .education-card .institution-select-trigger:hover {
+    background: #eef6ff;
+    color: #075ea8;
+}
+
+.candidate-form.create-like-spacing .education-card .institution-search-panel {
+    display: none;
+    width: 100%;
+    max-height: 220px;
+    margin-top: 5px;
+    padding: 5px;
+    overflow-y: auto;
+    border: 1px solid #d8e4f2;
+    border-radius: 10px;
+    background: #ffffff;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+    z-index: 20;
+}
+
+.candidate-form.create-like-spacing .education-card .institution-search-option,
+.candidate-form.create-like-spacing .education-card .institution-search-manual {
+    display: flex;
+    width: 100%;
+    flex-direction: column;
+    gap: 2px;
+    padding: 7px 9px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #132238;
+    text-align: left;
+    cursor: pointer;
+}
+
+.candidate-form.create-like-spacing .education-card .institution-search-option:hover,
+.candidate-form.create-like-spacing .education-card .institution-search-manual:hover {
+    background: #f1f7ff;
+}
+
+.candidate-form.create-like-spacing .education-card .institution-search-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.candidate-form.create-like-spacing .education-card .institution-search-meta,
+.candidate-form.create-like-spacing .education-card .institution-search-empty {
+    color: #64748b;
+    font-size: 11px;
+}
+
+.candidate-form.create-like-spacing .education-card .institution-search-empty {
+    padding: 7px 9px;
+}
+
+.candidate-form.create-like-spacing .education-card .institution-search-manual {
+    margin-top: 3px;
+    border-top: 1px solid #edf2f7;
+    color: #075ea8;
+    font-size: 12px;
+    font-weight: 800;
 }
 
 /* ===== 75% FORM-WIDTH DOCUMENT PREVIEW ===== */
@@ -3296,6 +3935,121 @@ body.candidate-page.cr-fixed-forms .identification-toolbar {
     margin-bottom: 16px !important;
 }
 
+.candidate-form.create-like-spacing .basic-summary-row {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 16px 18px;
+    margin-bottom: 16px;
+}
+
+.candidate-form.create-like-spacing .basic-summary-card {
+    border: 1px solid #dbe5f1;
+    border-radius: 14px;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
+    padding: 10px 12px;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+}
+
+.candidate-form.create-like-spacing .basic-fullname-card {
+    grid-column: span 2;
+}
+
+.candidate-form.create-like-spacing .basic-resume-card {
+    grid-column: span 2;
+}
+
+.candidate-form.create-like-spacing .basic-summary-card .compact-label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.candidate-form.create-like-spacing .basic-summary-value {
+    min-height: 42px;
+    border: 1px solid #dbe5f1;
+    border-radius: 12px;
+    background: #f8fbff;
+    color: #1e293b;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.45;
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+}
+
+.candidate-form.create-like-spacing .basic-resume-card .file-upload-box {
+    min-height: 46px;
+    padding: 10px 12px;
+}
+
+.candidate-form.create-like-spacing .basic-compact-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px 16px;
+    align-items: start;
+}
+
+.candidate-form.create-like-spacing .basic-compact-grid > * {
+    min-width: 0;
+}
+
+.candidate-form.create-like-spacing .basic-grid-span-1 {
+    grid-column: span 1;
+}
+
+.candidate-form.create-like-spacing .basic-grid-span-2 {
+    grid-column: span 2;
+}
+
+.candidate-form.create-like-spacing .basic-grid-span-3 {
+    grid-column: span 3;
+}
+
+.candidate-form.create-like-spacing .basic-grid-span-4 {
+    grid-column: 1 / -1;
+}
+
+.candidate-form.create-like-spacing .basic-photo-align-top {
+    align-self: start;
+}
+
+.candidate-form.create-like-spacing .basic-field-first {
+    grid-column: 1;
+    grid-row: 1;
+}
+
+.candidate-form.create-like-spacing .basic-field-middle {
+    grid-column: 2;
+    grid-row: 1;
+}
+
+.candidate-form.create-like-spacing .basic-field-last {
+    grid-column: 3;
+    grid-row: 1;
+}
+
+.candidate-form.create-like-spacing .basic-field-photo {
+    grid-column: 4;
+    grid-row: 1 / span 2;
+}
+
+.candidate-form.create-like-spacing .basic-field-fullname {
+    grid-column: 1 / span 2;
+    grid-row: 2;
+}
+
+.candidate-form.create-like-spacing .basic-field-gender {
+    grid-column: 3;
+    grid-row: 2;
+}
+
 .candidate-form.create-like-spacing .basic-details-top-fields,
 .candidate-form.create-like-spacing .basic-details-bottom-fields {
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -3304,19 +4058,15 @@ body.candidate-page.cr-fixed-forms .identification-toolbar {
 }
 
 .candidate-form.create-like-spacing .basic-top-grid {
-    grid-template-columns: minmax(0, 1fr) 186px;
-    gap: 12px;
+    grid-template-columns: minmax(0, 1fr) 220px;
+    gap: 16px;
     margin-bottom: 14px;
 }
 
 .candidate-form.create-like-spacing .basic-photo-area {
-    max-width: 186px;
-}
-
-.candidate-form.create-like-spacing .basic-photo-area {
     width: 100%;
-    max-width: 186px;
-    justify-self: end;
+    max-width: none;
+    justify-self: stretch;
 }
 
 .candidate-form.create-like-spacing .basic-details-contact-row {
@@ -3332,16 +4082,17 @@ body.candidate-page.cr-fixed-forms .identification-toolbar {
 
 .candidate-form.create-like-spacing .basic-photo-card {
     border: 1px solid #dbe5f1;
-    border-radius: 12px;
-    padding: 2px;
+    border-radius: 14px;
+    padding: 8px;
     background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
     text-align: center;
     box-shadow: 0 6px 16px rgba(15, 23, 42, 0.04);
+    width: 100%;
 }
 
 .candidate-form.create-like-spacing .basic-photo-card .compact-label {
     display: block;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
     font-size: 12px;
     font-weight: 700;
     color: #0f172a;
@@ -3349,7 +4100,7 @@ body.candidate-page.cr-fixed-forms .identification-toolbar {
 
 .candidate-form.create-like-spacing .basic-photo-card .compact-photo {
     width: 100%;
-    height: 108px !important;
+    height: 148px !important;
     margin: 0;
     padding: 2px !important;
     border: 1px solid #dbe5f1;
@@ -3411,7 +4162,7 @@ body.candidate-page.cr-fixed-forms .identification-toolbar {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 4px;
+    padding: 2px;
     background: linear-gradient(180deg, #f8fbff 0%, #eef4fb 100%);
 }
 
@@ -3424,15 +4175,35 @@ body.candidate-page.cr-fixed-forms .identification-toolbar {
 }
 
 .candidate-form.create-like-spacing .basic-photo-card .photo-remove-btn {
-    top: 8px;
-    right: 8px;
-    width: 28px;
-    height: 28px;
+    top: 6px;
+    right: 6px;
+    width: 24px;
+    height: 24px;
     border-radius: 999px;
     border: 1px solid rgba(219, 229, 241, 0.95);
     background: rgba(255, 255, 255, 0.96);
     color: #475569;
     box-shadow: 0 4px 10px rgba(15, 23, 42, 0.10);
+}
+
+.candidate-form.create-like-spacing .basic-resume-inline .compact-label {
+    display: block;
+    margin-bottom: 6px;
+}
+
+.candidate-form.create-like-spacing .basic-resume-inline-box {
+    padding: 8px 10px;
+    border-radius: 12px;
+    min-height: 0;
+}
+
+.candidate-form.create-like-spacing .basic-resume-inline-box .file-upload-row {
+    gap: 10px;
+    align-items: center;
+}
+
+.candidate-form.create-like-spacing .basic-resume-inline-box .file-upload-name {
+    min-height: 38px;
 }
 
 .candidate-form.create-like-spacing .basic-photo-card .photo-remove-btn:hover {
@@ -3441,29 +4212,58 @@ body.candidate-page.cr-fixed-forms .identification-toolbar {
 }
 
 @media (max-width: 992px) {
+    .candidate-form.create-like-spacing .basic-compact-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .candidate-form.create-like-spacing .basic-field-first,
+    .candidate-form.create-like-spacing .basic-field-middle,
+    .candidate-form.create-like-spacing .basic-field-last,
+    .candidate-form.create-like-spacing .basic-field-photo,
+    .candidate-form.create-like-spacing .basic-field-fullname,
+    .candidate-form.create-like-spacing .basic-field-gender {
+        grid-column: auto;
+        grid-row: auto;
+    }
+
     .candidate-form.create-like-spacing .basic-top-grid {
         grid-template-columns: 1fr;
         gap: 16px;
     }
 
+    .candidate-form.create-like-spacing .basic-summary-row,
     .candidate-form.create-like-spacing .basic-form-area .basic-details-row,
     .candidate-form.create-like-spacing .basic-details-top-fields,
     .candidate-form.create-like-spacing .basic-details-bottom-fields {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
+    .candidate-form.create-like-spacing .basic-fullname-card,
+    .candidate-form.create-like-spacing .basic-resume-card {
+        grid-column: span 1;
+    }
+
     .candidate-form.create-like-spacing .basic-photo-area {
-        max-width: 200px;
-        justify-self: center;
+        max-width: none;
+        justify-self: stretch;
     }
 }
 
 @media (max-width: 768px) {
+    .candidate-form.create-like-spacing .basic-compact-grid {
+        grid-template-columns: 1fr;
+    }
 
+    .candidate-form.create-like-spacing .basic-summary-row,
     .candidate-form.create-like-spacing .basic-form-area .basic-details-row,
     .candidate-form.create-like-spacing .basic-details-top-fields,
     .candidate-form.create-like-spacing .basic-details-bottom-fields {
         grid-template-columns: 1fr;
+    }
+
+    .candidate-form.create-like-spacing .basic-fullname-card,
+    .candidate-form.create-like-spacing .basic-resume-card {
+        grid-column: span 1;
     }
 }
 
@@ -5220,6 +6020,32 @@ body.candidate-page .candidate-form .file-upload-name {
     background: #ffffff;
 }
 
+body.candidate-page .candidate-form .identification-proof-inline {
+    display: grid;
+    grid-template-columns: minmax(0, 180px) minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+}
+
+body.candidate-page .candidate-form .identification-proof-inline .grouped-doc-select {
+    min-width: 0;
+}
+
+body.candidate-page .candidate-form .compact-inline-upload {
+    min-height: 0;
+    padding: 8px 10px;
+}
+
+body.candidate-page .candidate-form .compact-inline-upload .file-upload-row {
+    gap: 8px;
+}
+
+@media (max-width: 768px) {
+    body.candidate-page .candidate-form .identification-proof-inline {
+        grid-template-columns: 1fr;
+    }
+}
+
 body.candidate-page .candidate-form.contact-create-compact .address-tabs {
     display: inline-flex;
     align-items: center;
@@ -5236,10 +6062,15 @@ body.candidate-page .candidate-form.reference-create-compact .address-tabs {
     align-items: center;
     gap: 8px;
     padding: 6px;
+    margin-bottom: 10px !important;
     border: 1px solid rgba(4, 20, 24, 0.10);
     border-radius: 14px;
     background: linear-gradient(180deg, #fbfdff 0%, #f5f9fd 100%);
     box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+}
+
+body.candidate-page .candidate-form.reference-create-compact .reference-section-card {
+    margin-top: 0;
 }
 
 body.candidate-page .candidate-form.contact-create-compact .address-tab-btn {
@@ -5626,6 +6457,1517 @@ body.candidate-page .candidate-success .logout-btn {
 }
 
 /* ============================================
+   CANDIDATE FORM SPACING POLISH
+   Late shared override for candidate portal forms.
+============================================ */
+body.candidate-page .candidate-form,
+body.candidate-page .candidate-form.compact-form,
+body.candidate-page .candidate-form.create-like-spacing,
+body.candidate-page .candidate-form.employment-create-compact {
+    padding: 22px 24px 18px !important;
+}
+
+body.candidate-page .page-area {
+    padding: 30px 48px 28px !important;
+}
+
+body.candidate-page .candidate-page-shell {
+    max-width: 100%;
+}
+
+body.candidate-page .candidate-form .compact-card {
+    padding: 14px 16px !important;
+    margin-bottom: 10px !important;
+}
+
+body.candidate-page .candidate-form .compact-header,
+body.candidate-page .candidate-form.bgv-fixed-form .compact-header {
+    padding: 8px 10px !important;
+    margin-bottom: 0 !important;
+}
+
+body.candidate-page .candidate-form .compact-body,
+body.candidate-page .candidate-form.bgv-fixed-form .compact-body {
+    padding: 10px 0 0 !important;
+}
+
+body.candidate-page .candidate-form .form-row-3,
+body.candidate-page .candidate-form .form-row-2,
+body.candidate-page .candidate-form .form-row-4,
+body.candidate-page .candidate-form .compact-row,
+body.candidate-page .candidate-form .compact-body .form-row-3,
+body.candidate-page .candidate-form .compact-body .form-row-2,
+body.candidate-page .candidate-form .compact-body .form-row-4 {
+    gap: 8px 10px !important;
+    margin-bottom: 8px !important;
+}
+
+body.candidate-page .candidate-form .compact-control,
+body.candidate-page .candidate-form .form-control.compact-control,
+body.candidate-page .candidate-form .form-control.double-border.compact-control {
+    gap: 2px !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+}
+
+body.candidate-page .candidate-form label,
+body.candidate-page .candidate-form .compact-label,
+body.candidate-page .candidate-form .form-control.double-border>label {
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+    margin-bottom: 2px !important;
+}
+
+body.candidate-page .candidate-form input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+body.candidate-page .candidate-form select,
+body.candidate-page .candidate-form .compact-input,
+body.candidate-page .candidate-form .compact-select,
+body.candidate-page .candidate-form .form-control.double-border input:not([type="file"]),
+body.candidate-page .candidate-form .form-control.double-border select {
+    height: 34px !important;
+    min-height: 34px !important;
+    padding: 6px 8px !important;
+}
+
+body.candidate-page .candidate-form textarea,
+body.candidate-page .candidate-form .compact-textarea,
+body.candidate-page .candidate-form .form-control.double-border textarea {
+    min-height: 58px !important;
+    padding: 6px 8px !important;
+}
+
+body.candidate-page .candidate-form .file-upload-box {
+    gap: 4px !important;
+    min-height: 34px !important;
+    padding: 7px 9px !important;
+}
+
+body.candidate-page .candidate-form .file-upload-row {
+    gap: 6px !important;
+}
+
+body.candidate-page .candidate-form .file-upload-btn,
+body.candidate-page .candidate-form .file-replace-link {
+    min-height: 28px;
+    padding: 5px 9px;
+}
+
+body.candidate-page .candidate-form .file-upload-name {
+    min-height: 28px;
+    max-width: 220px;
+    padding: 5px 8px;
+    font-size: 11px;
+    line-height: 1.25;
+}
+
+body.candidate-page .candidate-form .file-upload-remove,
+body.candidate-page .candidate-form .marksheet-doc-remove {
+    width: 24px;
+    height: 24px;
+}
+
+body.candidate-page .candidate-form .marksheet-doc-list {
+    gap: 5px !important;
+    margin-top: 2px !important;
+}
+
+body.candidate-page .candidate-form .marksheet-doc-preview,
+body.candidate-page .candidate-form .file-preview-pill {
+    min-height: 28px;
+    padding: 4px 7px !important;
+    font-size: 10px !important;
+}
+
+body.candidate-page .candidate-form .marksheet-doc-name {
+    max-width: 118px;
+}
+
+body.candidate-page .candidate-form .compact-hint,
+body.candidate-page .candidate-form small.text-muted {
+    margin-top: 3px;
+    font-size: 10px;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-top-grid {
+    gap: 14px;
+    margin-bottom: 12px;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(210px, 245px) !important;
+    gap: 8px 14px !important;
+    align-items: start;
+    grid-auto-flow: dense;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid .form-field {
+    margin-bottom: 0 !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-details-contact-row,
+body.candidate-page .candidate-form.create-like-spacing .basic-details-top-fields,
+body.candidate-page .candidate-form.create-like-spacing .basic-details-bottom-fields,
+body.candidate-page .candidate-form.create-like-spacing .basic-form-area .basic-details-row,
+body.candidate-page .candidate-form.create-like-spacing .basic-summary-row {
+    gap: 12px 14px !important;
+    margin-bottom: 12px !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-photo-card {
+    padding: 10px !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-field-photo {
+    grid-column: 5;
+    grid-row: 1 / span 3;
+    align-self: stretch;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-field-fullname {
+    grid-column: 1;
+    grid-row: 2;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-field-gender {
+    grid-column: 4;
+    grid-row: 1;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid > :nth-child(7) {
+    grid-column: 2;
+    grid-row: 2;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid > :nth-child(8) {
+    grid-column: 3;
+    grid-row: 2;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid > :nth-child(9) {
+    grid-column: 4;
+    grid-row: 2;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid > :nth-child(10) {
+    grid-column: 2;
+    grid-row: 3;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid > :nth-child(11) {
+    grid-column: 3;
+    grid-row: 3;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid > :nth-child(12) {
+    grid-column: 1;
+    grid-row: 3;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid > :nth-child(13) {
+    grid-column: 4;
+    grid-row: 3;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid > :nth-child(14) {
+    grid-column: 1;
+    grid-row: 4;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid > :nth-child(15) {
+    grid-column: 2;
+    grid-row: 4;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid > :nth-child(16) {
+    grid-column: 3;
+    grid-row: 4;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid > :nth-child(17) {
+    grid-column: 4;
+    grid-row: 4;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid > :nth-child(18) {
+    grid-column: 5;
+    grid-row: 4;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-photo-area {
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    justify-self: stretch;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-photo-card {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: 7px !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-photo-card .compact-photo {
+    flex: 1 1 auto;
+    height: auto !important;
+    min-height: 0;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-resume-inline-box {
+    min-height: 0 !important;
+    padding: 7px 10px !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-resume-inline {
+    grid-column: 1 / -1;
+    grid-row: 5;
+    align-self: start;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-resume-inline-box .file-upload-row {
+    gap: 8px;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-resume-inline-box .file-upload-name {
+    min-height: 28px;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card .file-upload-name {
+    max-width: 170px;
+}
+
+body.candidate-page .candidate-form.compact-form.cr-fixed-form.bgv-fixed-form.create-like-spacing .education-card {
+    padding: 12px 14px !important;
+}
+
+body.candidate-page .candidate-form.compact-form.cr-fixed-form.bgv-fixed-form.create-like-spacing .education-card .compact-body {
+    padding-top: 8px !important;
+}
+
+body.candidate-page .candidate-form.compact-form.cr-fixed-form.bgv-fixed-form.create-like-spacing .education-card .compact-row,
+body.candidate-page .candidate-form.compact-form.cr-fixed-form.bgv-fixed-form.create-like-spacing .education-card .compact-body .form-row-3,
+body.candidate-page .candidate-form.compact-form.cr-fixed-form.bgv-fixed-form.create-like-spacing .education-card .compact-body .form-row-2,
+body.candidate-page .candidate-form.compact-form.cr-fixed-form.bgv-fixed-form.create-like-spacing .education-card .compact-body .form-row-4 {
+    gap: 8px 10px !important;
+    margin-bottom: 8px !important;
+}
+
+body.candidate-page .candidate-form.compact-form.cr-fixed-form.bgv-fixed-form.create-like-spacing .education-card .compact-label {
+    font-size: 11px !important;
+    margin-bottom: 2px !important;
+}
+
+body.candidate-page .candidate-form.compact-form.cr-fixed-form.bgv-fixed-form.create-like-spacing .education-card .file-upload-box {
+    padding: 6px 8px !important;
+    gap: 4px !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card .marksheet-doc-preview {
+    max-width: 160px;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .compact-card {
+    padding: 12px 14px !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .compact-body {
+    padding-top: 8px !important;
+}
+
+body.candidate-page .candidate-form .identification-proof-inline {
+    gap: 8px !important;
+}
+
+body.candidate-page .candidate-form .compact-inline-upload {
+    padding: 6px 8px !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .identification-toolbar {
+    padding: 8px 10px !important;
+    margin-bottom: 8px !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .identification-card {
+    padding: 12px 14px !important;
+    margin-bottom: 10px !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .identification-card-header {
+    padding: 6px 10px !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .identification-card-header h6 {
+    font-size: 12px;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .identification-card-body {
+    padding: 8px 0 0 !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .identification-proof-stack {
+    display: grid;
+    gap: 8px;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .identification-proof-block {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px 10px;
+    align-items: start;
+    padding: 8px 10px;
+    border: 1px solid rgba(4, 20, 24, 0.08);
+    border-radius: 10px;
+    background: #ffffff;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .identification-proof-block > .form-row-3 {
+    display: contents !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .identification-proof-block > .form-row-3 > .form-field {
+    min-width: 0;
+    margin-bottom: 0 !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .identification-proof-block > .form-row-1 {
+    grid-column: 4;
+    grid-row: 1;
+    margin-bottom: 0 !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .identification-proof-block > .form-row-1 > .form-field {
+    margin-bottom: 0 !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .identification-proof-block > .proof-date-row {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px 10px !important;
+    margin-bottom: 0 !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .identification-proof-block .compact-control {
+    gap: 2px !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .identification-proof-block .compact-label {
+    font-size: 11px !important;
+    margin-bottom: 2px !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .identification-proof-block .compact-input,
+body.candidate-page .candidate-form.create-like-spacing .identification-proof-block .compact-select {
+    height: 32px !important;
+    min-height: 32px !important;
+    padding: 5px 8px !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .identification-proof-block .compact-inline-upload {
+    min-height: 32px !important;
+    padding: 5px 7px !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .identification-proof-block .file-upload-row {
+    gap: 6px !important;
+    flex-wrap: nowrap;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .identification-proof-block .file-upload-btn,
+body.candidate-page .candidate-form.create-like-spacing .identification-proof-block .file-upload-name {
+    min-height: 26px;
+    white-space: nowrap;
+}
+
+body.candidate-page .candidate-form.contact-create-compact #sameAsCurrentWrap {
+    margin-top: 8px !important;
+    margin-bottom: 8px !important;
+}
+
+body.candidate-page .candidate-form.contact-create-compact .address-tabs {
+    margin-bottom: 8px !important;
+    padding: 4px;
+}
+
+body.candidate-page .candidate-form.contact-create-compact .address-tab-btn {
+    padding: 8px 12px;
+}
+
+body.candidate-page .candidate-form.contact-create-compact .contact-address-switch {
+    padding: 8px 10px;
+}
+
+body.candidate-page .candidate-form.contact-create-compact .contact-switch-option {
+    padding: 5px 8px;
+}
+
+body.candidate-page .candidate-form.contact-create-compact .contact-address-pane {
+    margin-top: 6px;
+    padding: 10px 12px 12px;
+}
+
+body.candidate-page .candidate-form.contact-create-compact .contact-address-pane .form-grid {
+    gap: 8px 12px !important;
+    margin-top: 0 !important;
+    margin-bottom: 8px !important;
+}
+
+body.candidate-page .candidate-form.contact-create-compact .contact-address-pane .form-field {
+    margin-bottom: 0 !important;
+}
+
+body.candidate-page .candidate-form.contact-create-compact .contact-address-pane .form-field.col-span-full {
+    margin-bottom: 0 !important;
+}
+
+body.candidate-page .candidate-form.contact-create-compact .contact-address-pane .form-row-2.compact-row {
+    gap: 10px !important;
+    margin-bottom: 0 !important;
+}
+
+body.candidate-page .candidate-form.contact-create-compact .contact-address-pane .form-field.mt-3 {
+    margin-top: 8px !important;
+}
+
+body.candidate-page .candidate-form.contact-create-compact .contact-proof-control {
+    gap: 4px !important;
+}
+
+body.candidate-page .candidate-form.contact-create-compact .contact-proof-control .compact-select {
+    margin-bottom: 4px !important;
+}
+
+body.candidate-page .candidate-form.contact-create-compact .contact-proof-control .file-upload-box {
+    min-height: 34px !important;
+    padding: 7px 9px !important;
+}
+
+body.candidate-page .candidate-form.contact-create-compact .contact-proof-control .file-upload-row {
+    gap: 8px !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-toolbar {
+    padding: 8px 10px !important;
+    margin-bottom: 8px !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card {
+    padding: 12px 14px !important;
+    margin-bottom: 10px !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-header {
+    padding: 6px 10px !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-header h6 {
+    font-size: 12px;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px 12px;
+    padding: 8px 0 0 !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(1),
+body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(2),
+body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(3) {
+    display: contents !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(1) > .form-field,
+body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(2) > .form-field,
+body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(3) > .form-field {
+    min-width: 0;
+    margin-bottom: 0 !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(1) > .form-field:nth-child(1) {
+    grid-column: 1;
+    grid-row: 1;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(1) > .form-field:nth-child(2) {
+    grid-column: 2;
+    grid-row: 1;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(1) > .form-field:nth-child(3) {
+    grid-column: 3;
+    grid-row: 1;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(2) > .form-field:nth-child(1) {
+    grid-column: 4;
+    grid-row: 1;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(2) > .form-field:nth-child(2) {
+    grid-column: 1;
+    grid-row: 2;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(2) > .form-field:nth-child(3) {
+    grid-column: 2;
+    grid-row: 2;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(2) > .form-field:nth-child(4) {
+    grid-column: 3;
+    grid-row: 2;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(3) > .form-field:nth-child(3) {
+    grid-column: 4;
+    grid-row: 2;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(3) > .form-field:nth-child(1) {
+    grid-column: 1 / span 2;
+    grid-row: 3;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(3) > .form-field:nth-child(2) {
+    grid-column: 3 / span 2;
+    grid-row: 3;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(4) {
+    grid-column: 1 / -1;
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px 12px !important;
+    margin-bottom: 0 !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(4) > .form-field {
+    margin-bottom: 0 !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body > .no-further-education-row {
+    grid-column: 1 / -1;
+    margin-bottom: 0 !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body .compact-control {
+    gap: 2px !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body .compact-label {
+    font-size: 11px !important;
+    margin-bottom: 2px !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body .compact-input,
+body.candidate-page .candidate-form.create-like-spacing .education-card-body .compact-select {
+    height: 32px !important;
+    min-height: 32px !important;
+    padding: 5px 8px !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body .file-upload-box {
+    min-height: 32px !important;
+    padding: 5px 7px !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body .file-upload-row {
+    gap: 6px !important;
+    flex-wrap: nowrap;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body .file-upload-btn,
+body.candidate-page .candidate-form.create-like-spacing .education-card-body .file-upload-name {
+    min-height: 26px;
+    white-space: nowrap;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body .marksheet-doc-list {
+    gap: 4px !important;
+    margin-top: 0 !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body .marksheet-doc-preview {
+    max-width: 130px;
+    min-height: 24px;
+    padding: 3px 6px !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-toolbar {
+    padding: 8px 10px !important;
+    margin-bottom: 8px !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card {
+    padding: 12px 14px !important;
+    margin-bottom: 10px !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-header {
+    padding: 6px 10px !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-header h6 {
+    font-size: 12px;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .first-employer-fields {
+    margin-bottom: 0 !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .first-employer-fields .form-row-3 {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 4px 10px !important;
+    margin-bottom: 0 !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .first-employer-fields .form-field {
+    margin-bottom: 0 !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .first-employer-fields .compact-control {
+    min-height: 0 !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-header {
+    margin-top: 0 !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px 12px;
+    padding: 8px 0 0 !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(1),
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(2),
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(5),
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(6) {
+    display: contents !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(1) > .form-field,
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(2) > .form-field,
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(5) > .form-field,
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(6) > .form-field {
+    min-width: 0;
+    margin-bottom: 0 !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(1) > .form-field:nth-child(1) {
+    grid-column: 1;
+    grid-row: 1;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(1) > .form-field:nth-child(2) {
+    grid-column: 2;
+    grid-row: 1;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(1) > .form-field:nth-child(3) {
+    grid-column: 3;
+    grid-row: 1;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(2) > .form-field:nth-child(1) {
+    grid-column: 4;
+    grid-row: 1;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(2) > .form-field:nth-child(2) {
+    grid-column: 1;
+    grid-row: 2;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(2) > .form-field:nth-child(3) {
+    grid-column: 2;
+    grid-row: 2;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(3) {
+    grid-column: 3 / span 2;
+    grid-row: 2;
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px 12px !important;
+    margin-bottom: 0 !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(3) > .form-field {
+    margin-bottom: 0 !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(4) {
+    grid-column: 1 / -1;
+    margin-bottom: 0 !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(4) > .form-field {
+    margin-bottom: 0 !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(5) > .form-field:nth-child(1) {
+    grid-column: 1;
+    grid-row: 4;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(5) > .form-field:nth-child(2) {
+    grid-column: 2;
+    grid-row: 4;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(5) > .form-field:nth-child(3) {
+    grid-column: 3;
+    grid-row: 4;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(6) > .form-field:nth-child(1) {
+    grid-column: 4;
+    grid-row: 4;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(6) > .form-field:nth-child(2) {
+    grid-column: 1;
+    grid-row: 5;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(6) > .form-field:nth-child(3) {
+    grid-column: 2;
+    grid-row: 5;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .no-further-employment-row {
+    grid-column: 1 / -1;
+    margin-bottom: 0 !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body .compact-control {
+    gap: 2px !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body .compact-label {
+    font-size: 11px !important;
+    margin-bottom: 2px !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body .compact-input,
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body .compact-select {
+    height: 32px !important;
+    min-height: 32px !important;
+    padding: 5px 8px !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body .compact-textarea {
+    min-height: 42px !important;
+    padding: 5px 8px !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body .file-upload-box {
+    min-height: 32px !important;
+    padding: 5px 7px !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body .file-upload-row {
+    gap: 6px !important;
+    flex-wrap: nowrap;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body .file-upload-btn,
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body .file-upload-name {
+    min-height: 26px;
+    white-space: nowrap;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(3) .file-upload-box {
+    min-height: 32px !important;
+    height: 32px;
+    padding: 3px 6px !important;
+    border-style: solid;
+    border-color: rgba(4, 20, 24, 0.14);
+    border-radius: 10px;
+    background: #ffffff;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(3) .file-upload-row {
+    height: 100%;
+    gap: 6px !important;
+    flex-wrap: nowrap;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(3) .file-upload-btn {
+    min-height: 24px;
+    height: 24px;
+    padding: 3px 8px;
+    border-radius: 7px;
+    font-size: 11px;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(3) .file-upload-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: none;
+    min-height: 24px;
+    height: 24px;
+    padding: 3px 6px;
+    border: 0;
+    background: transparent;
+    text-decoration: none;
+    justify-content: flex-start;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(3) .file-upload-name.preview-btn {
+    border: 1px solid rgba(5, 125, 219, 0.14);
+    background: #f8fbff;
+    color: #0f172a;
+    text-decoration: none;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(3) .file-upload-name.preview-btn::after {
+    content: "View";
+    margin-left: auto;
+    color: var(--crm-primary);
+    font-size: 10px;
+    font-weight: 700;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(3) .file-upload-name span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(3) .file-upload-remove {
+    width: 24px;
+    height: 24px;
+    border-radius: 7px;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(3) .file-upload-error,
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(3) .file-upload-meta {
+    display: none;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 8px 12px;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(1),
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(2),
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(3),
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(4),
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(5),
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(6) {
+    display: contents !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(1) > .form-field:nth-child(1) {
+    grid-column: 1 / span 4;
+    grid-row: 1;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(1) > .form-field:nth-child(2) {
+    grid-column: 5 / span 4;
+    grid-row: 1;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(1) > .form-field:nth-child(3) {
+    grid-column: 9 / span 4;
+    grid-row: 1;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(2) > .form-field:nth-child(3) {
+    grid-column: 1 / span 4;
+    grid-row: 2;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(2) > .form-field:nth-child(1) {
+    grid-column: 5 / span 4;
+    grid-row: 2;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(2) > .form-field:nth-child(2) {
+    grid-column: 9 / span 4;
+    grid-row: 2;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(4) > .form-field {
+    grid-column: 1 / span 5;
+    grid-row: 3;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(3) > .form-field:nth-child(1) {
+    grid-column: 6 / span 3;
+    grid-row: 3;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(3) > .form-field:nth-child(2) {
+    grid-column: 9 / span 4;
+    grid-row: 3;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(5) > .form-field:nth-child(1) {
+    grid-column: 1 / span 4;
+    grid-row: 4;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(5) > .form-field:nth-child(2) {
+    grid-column: 5 / span 4;
+    grid-row: 4;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(5) > .form-field:nth-child(3) {
+    grid-column: 9 / span 4;
+    grid-row: 4;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(6) > .form-field:nth-child(1) {
+    grid-column: 1 / span 4;
+    grid-row: 5;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(6) > .form-field:nth-child(2) {
+    grid-column: 5 / span 4;
+    grid-row: 5;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(6) > .form-field:nth-child(3) {
+    grid-column: 9 / span 4;
+    grid-row: 5;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .no-further-employment-row {
+    grid-column: 1 / -1;
+    grid-row: 6;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(1) > .form-field,
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(2) > .form-field,
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(3) > .form-field,
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(4) > .form-field,
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(5) > .form-field,
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(6) > .form-field {
+    min-width: 0;
+    margin-bottom: 0 !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(4) .compact-textarea {
+    min-height: 32px !important;
+    height: 32px !important;
+    resize: vertical;
+}
+
+body.candidate-page .candidate-form .marksheet-doc-list {
+    display: grid !important;
+    grid-template-columns: 1fr;
+    gap: 3px !important;
+    width: 100%;
+    min-width: 0;
+    margin-top: 3px !important;
+}
+
+body.candidate-page .candidate-form .marksheet-doc-item {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+    padding: 3px 6px;
+    border: 1px solid rgba(4, 20, 24, 0.08);
+    border-radius: 7px;
+    background: #ffffff;
+}
+
+body.candidate-page .candidate-form .marksheet-doc-preview {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    max-width: none !important;
+    width: 100%;
+    min-height: 22px;
+    padding: 0 !important;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: #0f172a;
+    font-size: 11px !important;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+body.candidate-page .candidate-form .marksheet-doc-item > .marksheet-doc-name,
+body.candidate-page .candidate-form .marksheet-doc-preview .marksheet-doc-name {
+    max-width: none !important;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+body.candidate-page .candidate-form .marksheet-doc-remove {
+    width: auto !important;
+    height: auto !important;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    opacity: 0;
+}
+
+body.candidate-page .candidate-form .marksheet-doc-item:hover .marksheet-doc-remove,
+body.candidate-page .candidate-form .marksheet-doc-remove:focus {
+    opacity: 1;
+    color: #dc2626;
+}
+
+body.candidate-page .candidate-form .file-upload-remove {
+    width: auto !important;
+    height: auto !important;
+    min-height: 0;
+    padding: 0 2px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+body.candidate-page .candidate-form .file-upload-remove i {
+    display: none;
+}
+
+body.candidate-page .candidate-form .file-upload-remove::after {
+    content: "Remove";
+}
+
+body.candidate-page .candidate-form .file-upload-remove:hover,
+body.candidate-page .candidate-form .file-upload-remove:focus {
+    background: transparent;
+    color: #dc2626;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body .marksheet-doc-list {
+    display: flex !important;
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 5px !important;
+    width: 100%;
+    max-width: 100%;
+    max-height: 70px;
+    min-width: 0;
+    margin-top: 2px !important;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body .marksheet-doc-item {
+    position: relative;
+    display: inline-flex !important;
+    align-items: center;
+    flex: 0 1 auto;
+    width: fit-content;
+    min-width: 0;
+    max-width: min(180px, 100%);
+    min-height: 28px;
+    padding: 4px 7px;
+    border: 1px solid #dfe6ee;
+    border-radius: 8px;
+    background: #f7f9fc;
+    box-shadow: none;
+    overflow: visible;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body .marksheet-doc-preview {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    width: auto;
+    max-width: none !important;
+    min-height: 20px;
+    padding: 0 !important;
+    border: 0;
+    background: transparent;
+    color: #0f172a;
+    font-size: 10.5px !important;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body .marksheet-doc-item > .marksheet-doc-name,
+body.candidate-page .candidate-form.create-like-spacing .education-card-body .marksheet-doc-preview .marksheet-doc-name {
+    min-width: 0;
+    max-width: 128px !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body .marksheet-doc-remove {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px !important;
+    height: 16px !important;
+    padding: 0;
+    border: 1px solid #d0d7de;
+    border-radius: 999px;
+    background: #ffffff;
+    color: #64748b;
+    font-size: 9px;
+    line-height: 1;
+    opacity: 0;
+    cursor: pointer;
+    transition: opacity 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body .marksheet-doc-remove i {
+    display: inline-block;
+    font-size: 9px;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body .marksheet-doc-item:hover .marksheet-doc-remove,
+body.candidate-page .candidate-form.create-like-spacing .education-card-body .marksheet-doc-remove:focus {
+    opacity: 1;
+    color: #dc2626;
+    border-color: #fecaca;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body .marksheet-doc-remove::after {
+    content: none;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body .file-upload-box {
+    min-height: 0 !important;
+    padding: 5px 7px !important;
+    overflow: visible;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body .file-upload-row {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px !important;
+    width: 100%;
+    min-width: 0;
+    flex-wrap: nowrap;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body .file-upload-row .file-upload-btn {
+    flex: 0 0 auto;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body .file-upload-row > .file-upload-name {
+    max-width: 100%;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body .file-upload-box.has-chip-list .file-upload-row > .file-upload-name {
+    display: none !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .education-card-body .file-upload-row > .file-upload-remove {
+    display: none !important;
+}
+
+/* Compact single-document upload chips: Basic, Contact, E-Court, Identification only */
+body.candidate-page .candidate-form.create-like-spacing .basic-resume-inline-box.file-upload-box,
+body.candidate-page .candidate-form.contact-create-compact .contact-proof-control .file-upload-box,
+body.candidate-page .candidate-form.create-like-spacing #ecourtForm .file-upload-box,
+body.candidate-page .candidate-form.create-like-spacing .identification-proof-block .file-upload-box {
+    display: inline-flex !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    justify-content: center;
+    width: fit-content !important;
+    max-width: 100% !important;
+    flex: 0 0 auto !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    overflow: visible;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-resume-inline-box .file-upload-row,
+body.candidate-page .candidate-form.contact-create-compact .contact-proof-control .file-upload-row,
+body.candidate-page .candidate-form.create-like-spacing #ecourtForm .file-upload-row,
+body.candidate-page .candidate-form.create-like-spacing .identification-proof-block .file-upload-row {
+    display: inline-flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 7px !important;
+    width: fit-content !important;
+    max-width: 100% !important;
+    min-width: 0;
+    flex: 0 1 auto !important;
+    flex-wrap: wrap;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-resume-inline-box .file-upload-btn,
+body.candidate-page .candidate-form.contact-create-compact .contact-proof-control .file-upload-btn,
+body.candidate-page .candidate-form.create-like-spacing #ecourtForm .file-upload-btn,
+body.candidate-page .candidate-form.create-like-spacing .identification-proof-block .file-upload-btn {
+    min-height: 32px !important;
+    padding: 6px 12px !important;
+    border-radius: 8px !important;
+    font-size: 12px !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-resume-inline-box .file-upload-name,
+body.candidate-page .candidate-form.contact-create-compact .contact-proof-control .file-upload-name,
+body.candidate-page .candidate-form.create-like-spacing #ecourtForm .file-upload-name,
+body.candidate-page .candidate-form.create-like-spacing .identification-proof-block .file-upload-name {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 6px;
+    flex: 0 1 auto !important;
+    width: auto !important;
+    max-width: min(220px, calc(100vw - 80px));
+    min-width: 0;
+    min-height: 32px !important;
+    padding: 5px 10px !important;
+    border: 1px solid #dfe6ee !important;
+    border-radius: 8px !important;
+    background: #f7f9fc !important;
+    color: #0f172a !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-resume-inline-box .file-upload-error,
+body.candidate-page .candidate-form.contact-create-compact .contact-proof-control .file-upload-error,
+body.candidate-page .candidate-form.create-like-spacing #ecourtForm .file-upload-error,
+body.candidate-page .candidate-form.create-like-spacing .identification-proof-block .file-upload-error {
+    width: auto !important;
+    min-height: 0 !important;
+    margin-top: 2px;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-resume-inline-box .file-upload-name[disabled]:not(.preview-btn),
+body.candidate-page .candidate-form.contact-create-compact .contact-proof-control .file-upload-name[disabled]:not(.preview-btn),
+body.candidate-page .candidate-form.create-like-spacing #ecourtForm .file-upload-name[disabled]:not(.preview-btn),
+body.candidate-page .candidate-form.create-like-spacing .identification-proof-block .file-upload-name[disabled]:not(.preview-btn) {
+    display: none !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-resume-inline-box .file-upload-name span,
+body.candidate-page .candidate-form.contact-create-compact .contact-proof-control .file-upload-name span,
+body.candidate-page .candidate-form.create-like-spacing #ecourtForm .file-upload-name span,
+body.candidate-page .candidate-form.create-like-spacing .identification-proof-block .file-upload-name span {
+    min-width: 0;
+    max-width: 165px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-resume-inline-box .file-upload-remove,
+body.candidate-page .candidate-form.contact-create-compact .contact-proof-control .file-upload-remove,
+body.candidate-page .candidate-form.create-like-spacing #ecourtForm .file-upload-remove,
+body.candidate-page .candidate-form.create-like-spacing .identification-proof-block .file-upload-remove {
+    position: relative;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 16px;
+    width: 16px !important;
+    height: 16px !important;
+    min-width: 16px;
+    margin-left: -17px;
+    margin-top: -25px;
+    padding: 0 !important;
+    border: 1px solid #d0d7de !important;
+    border-radius: 999px !important;
+    background: #ffffff !important;
+    color: #64748b !important;
+    font-size: 9px !important;
+    line-height: 1 !important;
+    opacity: 0;
+    cursor: pointer;
+    transition: opacity 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-resume-inline-box .file-upload-remove i,
+body.candidate-page .candidate-form.contact-create-compact .contact-proof-control .file-upload-remove i,
+body.candidate-page .candidate-form.create-like-spacing #ecourtForm .file-upload-remove i,
+body.candidate-page .candidate-form.create-like-spacing .identification-proof-block .file-upload-remove i {
+    display: inline-block;
+    font-size: 9px;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-resume-inline-box .file-upload-remove::after,
+body.candidate-page .candidate-form.contact-create-compact .contact-proof-control .file-upload-remove::after,
+body.candidate-page .candidate-form.create-like-spacing #ecourtForm .file-upload-remove::after,
+body.candidate-page .candidate-form.create-like-spacing .identification-proof-block .file-upload-remove::after {
+    content: none;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-resume-inline-box .file-upload-row:hover .file-upload-remove,
+body.candidate-page .candidate-form.create-like-spacing .basic-resume-inline-box .file-upload-remove:focus,
+body.candidate-page .candidate-form.contact-create-compact .contact-proof-control .file-upload-row:hover .file-upload-remove,
+body.candidate-page .candidate-form.contact-create-compact .contact-proof-control .file-upload-remove:focus,
+body.candidate-page .candidate-form.create-like-spacing #ecourtForm .file-upload-row:hover .file-upload-remove,
+body.candidate-page .candidate-form.create-like-spacing #ecourtForm .file-upload-remove:focus,
+body.candidate-page .candidate-form.create-like-spacing .identification-proof-block .file-upload-row:hover .file-upload-remove,
+body.candidate-page .candidate-form.create-like-spacing .identification-proof-block .file-upload-remove:focus {
+    opacity: 1;
+    color: #dc2626 !important;
+    border-color: #fecaca !important;
+}
+
+@media (max-width: 768px) {
+    body.candidate-page .candidate-form,
+    body.candidate-page .candidate-form.compact-form,
+    body.candidate-page .candidate-form.create-like-spacing,
+    body.candidate-page .candidate-form.employment-create-compact {
+        padding: 14px !important;
+    }
+
+    body.candidate-page .candidate-form .compact-card {
+        padding: 12px !important;
+    }
+
+    body.candidate-page .candidate-form.create-like-spacing .basic-field-photo {
+        grid-row: auto;
+    }
+
+    body.candidate-page .candidate-form.create-like-spacing .basic-field-fullname,
+    body.candidate-page .candidate-form.create-like-spacing .basic-field-gender,
+    body.candidate-page .candidate-form.create-like-spacing .basic-resume-inline,
+    body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid > :nth-child(7),
+    body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid > :nth-child(8),
+    body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid > :nth-child(9),
+    body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid > :nth-child(10),
+    body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid > :nth-child(11),
+    body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid > :nth-child(12),
+    body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid > :nth-child(13),
+    body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid > :nth-child(14),
+    body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid > :nth-child(15),
+    body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid > :nth-child(16),
+    body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid > :nth-child(17),
+    body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid > :nth-child(18),
+    body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid > .form-field {
+        grid-column: auto;
+        grid-row: auto;
+    }
+
+    body.candidate-page .candidate-form.create-like-spacing .basic-photo-area,
+    body.candidate-page .candidate-form.create-like-spacing .basic-photo-card {
+        height: auto;
+    }
+
+    body.candidate-page .candidate-form.create-like-spacing .basic-photo-card .compact-photo {
+        height: 146px !important;
+        min-height: 0;
+    }
+
+    body.candidate-page .candidate-form.create-like-spacing .identification-proof-block {
+        grid-template-columns: 1fr;
+    }
+
+    body.candidate-page .candidate-form.create-like-spacing .identification-proof-block > .form-row-3 {
+        display: grid !important;
+        grid-template-columns: 1fr !important;
+        gap: 8px !important;
+    }
+
+    body.candidate-page .candidate-form.create-like-spacing .identification-proof-block > .form-row-1,
+    body.candidate-page .candidate-form.create-like-spacing .identification-proof-block > .proof-date-row {
+        grid-column: auto;
+        grid-row: auto;
+        grid-template-columns: 1fr !important;
+    }
+
+    body.candidate-page .candidate-form.create-like-spacing .identification-proof-block .file-upload-row {
+        flex-wrap: wrap;
+    }
+
+    body.candidate-page .candidate-form.create-like-spacing .education-card-body {
+        grid-template-columns: 1fr;
+    }
+
+    body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(1),
+    body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(2),
+    body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(3) {
+        display: grid !important;
+        grid-template-columns: 1fr !important;
+        gap: 8px !important;
+    }
+
+    body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(1) > .form-field,
+    body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(2) > .form-field,
+    body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(3) > .form-field,
+    body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(4),
+    body.candidate-page .candidate-form.create-like-spacing .education-card-body > .no-further-education-row {
+        grid-column: auto;
+        grid-row: auto;
+    }
+
+    body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(4) {
+        grid-template-columns: 1fr !important;
+    }
+
+    body.candidate-page .candidate-form.create-like-spacing .education-card-body .file-upload-row {
+        flex-wrap: wrap;
+    }
+
+    body.candidate-page .candidate-form.employment-create-compact .first-employer-fields .form-row-3,
+    body.candidate-page .candidate-form.employment-create-compact .employment-card-body {
+        grid-template-columns: 1fr !important;
+    }
+
+    body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(1),
+    body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(2),
+    body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(3),
+    body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(4),
+    body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(5),
+    body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(6) {
+        display: grid !important;
+        grid-template-columns: 1fr !important;
+        gap: 8px !important;
+    }
+
+    body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(1) > .form-field,
+    body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(2) > .form-field,
+    body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(3),
+    body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(3) > .form-field,
+    body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(4),
+    body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(4) > .form-field,
+    body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(5) > .form-field,
+    body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row:nth-child(6) > .form-field,
+    body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .no-further-employment-row {
+        grid-column: auto;
+        grid-row: auto;
+    }
+
+    body.candidate-page .candidate-form.employment-create-compact .employment-card-body .file-upload-row {
+        flex-wrap: wrap;
+    }
+}
+
+/* ============================================
    DASHBOARD (dashboard.php)
 ============================================ */
 .candidate-dashboard .hover-shadow:hover {
@@ -5656,4 +7998,307 @@ body.candidate-page .candidate-success .logout-btn {
 
 .candidate-dashboard .list-group-item:hover {
     background-color: rgba(65, 84, 241, 0.05);
+}
+
+/* Basic Details mobile-captured photo sizing fix
+   Keep camera portraits inside a fixed verification-photo viewport instead of
+   letting the image/card stretch the 3-row grid area. */
+body.candidate-page .candidate-form.create-like-spacing .basic-field-photo {
+    align-self: start !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-photo-area {
+    height: auto !important;
+    align-self: start !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-photo-card {
+    height: auto !important;
+    max-height: none !important;
+    align-self: start !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-photo-card .compact-photo {
+    flex: 0 0 auto !important;
+    height: 178px !important;
+    min-height: 178px !important;
+    max-height: 178px !important;
+    width: 100% !important;
+    overflow: hidden !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-photo-card .photo-preview,
+body.candidate-page .candidate-form.create-like-spacing .basic-photo-card .photo-preview.has-image {
+    width: 100% !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    overflow: hidden !important;
+    padding: 2px !important;
+    display: block !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-photo-card .photo-preview img {
+    display: block !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
+    object-fit: cover !important;
+    object-position: center 40% !important;
+}
+
+/* Final compact photo override
+   The profile photo is part of the 5-column enterprise grid, so keep its
+   card visually secondary and prevent mobile camera portraits from making the
+   right column feel like a separate oversized panel. */
+body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(180px, 215px) !important;
+    gap: 8px 14px !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-field-photo {
+    justify-self: stretch !important;
+    align-self: start !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-photo-card {
+    padding: 6px !important;
+    border-radius: 14px !important;
+    max-width: 215px !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-photo-card .compact-label {
+    margin-bottom: 4px !important;
+    font-size: 11px !important;
+    line-height: 1.1 !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-photo-card .compact-photo {
+    height: 178px !important;
+    min-height: 178px !important;
+    max-height: 178px !important;
+    border-radius: 11px !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-photo-card .photo-preview {
+    border-radius: 11px !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .basic-photo-card .photo-remove-btn {
+    width: 24px !important;
+    height: 24px !important;
+    top: 5px !important;
+    right: 5px !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .mobile-photo-actions {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    gap: 5px !important;
+    margin-top: 6px !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .mobile-photo-btn,
+body.candidate-page .candidate-form.create-like-spacing .mobile-photo-link {
+    min-height: 26px !important;
+    padding: 4px 7px !important;
+    border-radius: 8px !important;
+    font-size: 10px !important;
+    line-height: 1.15 !important;
+    white-space: nowrap !important;
+}
+
+
+
+
+/* Employment layout hard reset: keep compact rows in natural order */
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body {
+    display: block !important;
+    grid-template-columns: none !important;
+    gap: 0 !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 8px 14px !important;
+    margin-bottom: 8px !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row > .form-field {
+    grid-column: auto !important;
+    grid-row: auto !important;
+    min-width: 0 !important;
+    margin-bottom: 0 !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .no-further-employment-row {
+    display: block !important;
+    grid-column: auto !important;
+    grid-row: auto !important;
+    margin-top: 2px !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body .compact-label {
+    display: block !important;
+    margin-bottom: 3px !important;
+    line-height: 1.2 !important;
+    white-space: normal !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body .compact-input,
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body .compact-select,
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body .compact-textarea {
+    width: 100% !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body .employment-inline-upload {
+    height: 34px !important;
+    min-height: 34px !important;
+    padding: 4px 7px !important;
+    border-style: solid !important;
+    background: #ffffff !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body .employment-inline-upload .file-upload-row {
+    height: 100% !important;
+    flex-wrap: nowrap !important;
+}
+
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body .employment-inline-upload .file-upload-btn,
+body.candidate-page .candidate-form.employment-create-compact .employment-card-body .employment-inline-upload .file-upload-name {
+    height: 24px !important;
+    min-height: 24px !important;
+    padding: 3px 8px !important;
+}
+
+@media (max-width: 992px) {
+    body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+}
+
+@media (max-width: 640px) {
+    body.candidate-page .candidate-form.employment-create-compact .employment-card-body > .compact-row {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+/* Employment layout emergency reset: independent of body class */
+.candidate-form.employment-create-compact .employment-card-body,
+.employment-create-compact .employment-card-body {
+    display: block !important;
+    grid-template-columns: none !important;
+}
+
+.candidate-form.employment-create-compact .employment-card-body > .form-row-3.compact-row,
+.employment-create-compact .employment-card-body > .form-row-3.compact-row {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 8px 14px !important;
+    align-items: start !important;
+    width: 100% !important;
+    margin-bottom: 8px !important;
+}
+
+.candidate-form.employment-create-compact .employment-card-body > .form-row-2.compact-row,
+.employment-create-compact .employment-card-body > .form-row-2.compact-row {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px 14px !important;
+    width: 100% !important;
+    margin-bottom: 8px !important;
+}
+
+.candidate-form.employment-create-compact .employment-card-body > .compact-row > .form-field,
+.employment-create-compact .employment-card-body > .compact-row > .form-field {
+    display: block !important;
+    grid-column: auto !important;
+    grid-row: auto !important;
+    width: auto !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+}
+
+.candidate-form.employment-create-compact .employment-card-body > .compact-row > .form-field .compact-control,
+.employment-create-compact .employment-card-body > .compact-row > .form-field .compact-control {
+    display: flex !important;
+    flex-direction: column !important;
+    width: 100% !important;
+}
+
+.candidate-form.employment-create-compact .employment-card-body .compact-label,
+.employment-create-compact .employment-card-body .compact-label {
+    display: block !important;
+    width: auto !important;
+    line-height: 1.2 !important;
+    margin: 0 0 3px !important;
+}
+
+.candidate-form.employment-create-compact .employment-card-body .compact-input,
+.candidate-form.employment-create-compact .employment-card-body .compact-select,
+.candidate-form.employment-create-compact .employment-card-body .compact-textarea,
+.employment-create-compact .employment-card-body .compact-input,
+.employment-create-compact .employment-card-body .compact-select,
+.employment-create-compact .employment-card-body .compact-textarea {
+    display: block !important;
+    width: 100% !important;
+}
+
+.candidate-form.employment-create-compact .employment-card-body > .no-further-employment-row,
+.employment-create-compact .employment-card-body > .no-further-employment-row {
+    display: block !important;
+    width: 100% !important;
+    margin-top: 4px !important;
+}
+
+@media (max-width: 992px) {
+    .candidate-form.employment-create-compact .employment-card-body > .form-row-3.compact-row,
+    .employment-create-compact .employment-card-body > .form-row-3.compact-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+}
+
+@media (max-width: 640px) {
+    .candidate-form.employment-create-compact .employment-card-body > .form-row-3.compact-row,
+    .candidate-form.employment-create-compact .employment-card-body > .form-row-2.compact-row,
+    .employment-create-compact .employment-card-body > .form-row-3.compact-row,
+    .employment-create-compact .employment-card-body > .form-row-2.compact-row {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+/* Employment timeline intelligence */
+.employment-create-compact .employment-order-hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 10px;
+    border: 1px solid rgba(5, 125, 219, 0.18);
+    border-radius: 10px;
+    background: #f7fbff;
+    color: #314155;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.employment-create-compact .employment-timeline-warning {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 32px;
+    padding: 7px 10px;
+    border: 1px solid #fed7aa;
+    border-radius: 10px;
+    background: #fff7ed;
+    color: #9a3412;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.employment-create-compact .employment-gap-row,
+.employment-create-compact .employment-overlap-row {
+    border-top: 1px dashed rgba(234, 88, 12, 0.18);
+    padding-top: 6px;
 }

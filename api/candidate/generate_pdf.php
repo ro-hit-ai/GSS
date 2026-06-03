@@ -1,15 +1,11 @@
 <?php
-// Enable error reporting for debugging
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
-// Start session FIRST
 session_start();
 
-// Check if embedded mode (for modal)
 $isEmbedded = isset($_GET['embedded']) && $_GET['embedded'] == '1';
 
-// For non-embedded mode, check authentication
 if (!$isEmbedded) {
     $isCandidateSession = !empty($_SESSION['logged_in']) && !empty($_SESSION['application_id']);
     if (!isset($_SESSION['candidate_id']) && !$isCandidateSession && !isset($_GET['bypass'])) {
@@ -18,7 +14,6 @@ if (!$isEmbedded) {
     }
 }
 
-// Get application ID
 $applicationId = $_SESSION['application_id'] ?? $_GET['application_id'] ?? null;
 if (!$applicationId || $applicationId == 'N/A') {
     die('Application ID not found or invalid.');
@@ -35,14 +30,6 @@ if (!empty($_SESSION['logged_in']) && !empty($_SESSION['application_id']) && iss
 require_once __DIR__ . '/../../config/env.php';
 require_once __DIR__ . '/../../config/db.php';
 
-// Initialize database
-$db = getDB();
-
-// ============================================
-// FETCH ALL DATA FROM DATABASE
-// ============================================
-
-// Helper functions
 function safeFetch($stmt) {
     try {
         $result = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -71,6 +58,53 @@ function normalizeStoredFilePath($path) {
     return str_replace('\\', '/', $raw);
 }
 
+function candidate_fetch_education_documents(PDO $pdo, string $applicationId): array {
+    $stmt = $pdo->prepare("
+        SELECT education_index, document_slot, file_name, original_name, created_at
+        FROM Vati_Payfiller_Candidate_Education_Documents
+        WHERE application_id = ?
+        ORDER BY education_index ASC, id ASC
+    ");
+    $stmt->execute([$applicationId]);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $out = [];
+    foreach ($rows as $row) {
+        $idx = (int)($row['education_index'] ?? 0);
+        if ($idx <= 0) continue;
+        $out[$idx][] = $row;
+    }
+    return $out;
+}
+
+function candidate_fetch_identification_rows(PDO $pdo, string $applicationId): array {
+    $stmt = $pdo->prepare("
+        SELECT
+            document_index,
+            COALESCE(NULLIF(proof_group, ''), 'primary') AS proof_group,
+            documentId_type AS document_type,
+            id_number,
+            name,
+            issue_date,
+            expiry_date,
+            upload_document
+        FROM Vati_Payfiller_Candidate_Identification_details
+        WHERE application_id = ?
+        ORDER BY document_index ASC, proof_group ASC, id ASC
+    ");
+    $stmt->execute([$applicationId]);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $out = [];
+    foreach ($rows as $row) {
+        $idx = (int)($row['document_index'] ?? 0);
+        $group = trim((string)($row['proof_group'] ?? ''));
+        if ($idx <= 0 || $group === '') continue;
+        $out[$idx][$group] = $row;
+    }
+    return $out;
+}
+
+$db = getDB();
+
 function inferUploadFolder($sourceField, $component) {
     $field = strtolower(trim((string)$sourceField));
     $comp = strtolower(trim((string)$component));
@@ -79,6 +113,7 @@ function inferUploadFolder($sourceField, $component) {
     if ($field === 'proof_file' || $comp === 'contact' || $comp === 'address') return '/uploads/address/';
     if ($field === 'marksheet_file' || $field === 'degree_file' || $comp === 'education') return '/uploads/education/';
     if ($field === 'employment_doc' || $comp === 'employment') return '/uploads/employment/';
+    if ($field === 'resume') return '/uploads/resume/';
     if ($field === 'photo_path' || $comp === 'basic') return '/uploads/candidate_photos/';
     if ($field === 'evidence_document' || $comp === 'ecourt') return '/uploads/ecourt/';
     if ($field === 'authorization_file' || $comp === 'reports' || $comp === 'authorization') return '/uploads/verification/';
@@ -105,10 +140,8 @@ function buildDocumentUrl($path, $sourceField = '', $component = '') {
     return app_url(inferUploadFolder($sourceField, $component) . rawurlencode(basename($file)));
 }
 
-// Fetch all data
 $data = [];
 
-// Basic details (from Vati_Payfiller_Candidate_Basic_details table)
 try {
     $stmt = $db->prepare("SELECT * FROM Vati_Payfiller_Candidate_Basic_details WHERE application_id = ?");
     if ($stmt->execute([$applicationId])) {
@@ -120,7 +153,6 @@ try {
     $data['basic'] = null;
 }
 
-// Contact details (from stored procedure)
 try {
     $stmt = $db->prepare("CALL SP_Vati_Payfiller_get_contact_details(?)");
     if ($stmt->execute([$applicationId])) {
@@ -132,7 +164,6 @@ try {
     $data['contact'] = null;
 }
 
-// Identification details (from stored procedure)
 try {
     $stmt = $db->prepare("CALL SP_Vati_Payfiller_get_identification_details(?)");
     if ($stmt->execute([$applicationId])) {
@@ -144,7 +175,27 @@ try {
     $data['identifications'] = [];
 }
 
-// Education details (from stored procedure)
+try {
+    $identificationRowsByDocument = candidate_fetch_identification_rows($db, (string)$applicationId);
+    if (!empty($identificationRowsByDocument)) {
+        $flattened = [];
+        foreach ($identificationRowsByDocument as $docIndex => $groupRows) {
+            foreach (['primary', 'secondary'] as $groupKey) {
+                if (empty($groupRows[$groupKey]) || !is_array($groupRows[$groupKey])) {
+                    continue;
+                }
+                $row = $groupRows[$groupKey];
+                $row['document_index'] = $docIndex;
+                $row['document_type'] = (string)($row['document_type'] ?? '');
+                $flattened[] = $row;
+            }
+        }
+        $data['identifications'] = $flattened;
+    }
+} catch (Exception $e) {
+    error_log("Identification grouped details error: " . $e->getMessage());
+}
+
 try {
     $stmt = $db->prepare("CALL SP_Vati_Payfiller_get_education_details(?)");
     if ($stmt->execute([$applicationId])) {
@@ -156,7 +207,6 @@ try {
     $data['educations'] = [];
 }
 
-// Employment details (from stored procedure)
 try {
     $stmt = $db->prepare("CALL SP_Vati_Payfiller_get_employment_details(?)");
     if ($stmt->execute([$applicationId])) {
@@ -168,7 +218,6 @@ try {
     $data['employments'] = [];
 }
 
-// Reference details (from Vati_Payfiller_Candidate_Reference_details table)
 try {
     $stmt = $db->prepare("SELECT * FROM Vati_Payfiller_Candidate_Reference_details WHERE application_id = ?");
     if ($stmt->execute([$applicationId])) {
@@ -180,7 +229,6 @@ try {
     $data['reference'] = null;
 }
 
-// Social media details
 try {
     $stmt = $db->prepare("CALL SP_Vati_Payfiller_get_social_media_details(?)");
     if ($stmt->execute([$applicationId])) {
@@ -192,7 +240,6 @@ try {
     $data['social'] = null;
 }
 
-// E-court details
 try {
     $stmt = $db->prepare("CALL SP_Vati_Payfiller_get_ecourt_details(?)");
     if ($stmt->execute([$applicationId])) {
@@ -204,7 +251,6 @@ try {
     $data['ecourt'] = null;
 }
 
-// Authorization details
 try {
     $stmt = $db->prepare("SELECT file_name, digital_signature, uploaded_at FROM Vati_Payfiller_Candidate_Authorization_documents WHERE application_id = ? ORDER BY uploaded_at DESC LIMIT 1");
     if ($stmt->execute([$applicationId])) {
@@ -216,7 +262,6 @@ try {
     $data['authorization'] = null;
 }
 
-// Uploaded verification documents
 try {
     $stmt = $db->prepare("SELECT doc_type, file_path, original_name, mime_type, uploaded_by_role, created_at FROM Vati_Payfiller_Verification_Documents WHERE application_id = ? ORDER BY created_at ASC, id ASC");
     if ($stmt->execute([$applicationId])) {
@@ -228,12 +273,10 @@ try {
     $data['uploaded_docs'] = [];
 }
 
-// Clear output buffers
 while (ob_get_level()) {
     ob_end_clean();
 }
 
-// Set headers
 if (!$isEmbedded) {
     header('Content-Type: text/html; charset=utf-8');
     header('Cache-Control: no-cache, no-store, must-revalidate');
@@ -250,7 +293,6 @@ if (!$isEmbedded) {
     header('Expires: 0');
 }
 
-// Extract variables for cleaner template
 $basic = $data['basic'];
 $contact = $data['contact'];
 $identifications = $data['identifications'];
@@ -261,6 +303,12 @@ $social = $data['social'] ?? null;
 $ecourt = $data['ecourt'] ?? null;
 $authorization = $data['authorization'] ?? null;
 $uploadedDocs = is_array($data['uploaded_docs'] ?? null) ? $data['uploaded_docs'] : [];
+$educationDocumentsByIndex = candidate_fetch_education_documents($db, (string)$applicationId);
+if (is_array($ecourt)) {
+    $ecourt['applicant_legal_name'] = (string)($ecourt['applicant_legal_name'] ?? '');
+    $ecourt['father_name'] = (string)($ecourt['father_name'] ?? '');
+    $ecourt['same_as_current'] = (int)($ecourt['same_as_current'] ?? 0);
+}
 
 $evidenceDocs = [];
 
@@ -283,7 +331,8 @@ $addEvidence = function ($component, $label, $path, $sourceField = '', $uploaded
 };
 
 if (is_array($contact)) {
-    $addEvidence('contact', 'Address Proof', $contact['proof_file'] ?? '', 'proof_file', $contact['created_at'] ?? '', 'Candidate');
+    $addEvidence('contact', 'Current Address Proof', $contact['current_proof_file'] ?? ($contact['proof_file'] ?? ''), 'proof_file', $contact['created_at'] ?? '', 'Candidate');
+    $addEvidence('contact', 'Permanent Address Proof', $contact['permanent_proof_file'] ?? '', 'proof_file', $contact['created_at'] ?? '', 'Candidate');
 }
 
 if (is_array($identifications)) {
@@ -298,8 +347,23 @@ if (is_array($educations)) {
     foreach ($educations as $edu) {
         if (!is_array($edu)) continue;
         $qualification = trim((string)($edu['qualification'] ?? 'Education'));
-        $addEvidence('education', $qualification . ' Marksheet', $edu['marksheet_file'] ?? '', 'marksheet_file', $edu['created_at'] ?? '', 'Candidate');
+        $marksheetDocs = array_values(array_filter((array)($edu['marksheet_documents'] ?? []), static function ($doc) {
+            return is_array($doc) && trim((string)($doc['file_name'] ?? '')) !== '';
+        }));
+        if (!empty($marksheetDocs)) {
+            foreach ($marksheetDocs as $doc) {
+                $addEvidence('education', $qualification . ' Marksheet', $doc['file_name'] ?? '', 'marksheet_file', $doc['created_at'] ?? ($edu['created_at'] ?? ''), 'Candidate');
+            }
+        } else {
+            $addEvidence('education', $qualification . ' Marksheet', $edu['marksheet_file'] ?? '', 'marksheet_file', $edu['created_at'] ?? '', 'Candidate');
+        }
         $addEvidence('education', $qualification . ' Degree', $edu['degree_file'] ?? '', 'degree_file', $edu['created_at'] ?? '', 'Candidate');
+        $educationIndex = (int)($edu['education_index'] ?? 0);
+        foreach (($educationDocumentsByIndex[$educationIndex] ?? []) as $doc) {
+            if (!is_array($doc)) continue;
+            if (strtolower((string)($doc['document_slot'] ?? '')) === 'marksheet') continue;
+            $addEvidence('education', $qualification . ' Supporting Document', $doc['file_name'] ?? '', 'supporting_document', $doc['created_at'] ?? '', 'Candidate');
+        }
     }
 }
 
@@ -317,6 +381,10 @@ if (is_array($ecourt)) {
 
 if (is_array($authorization)) {
     $addEvidence('reports', 'Authorization Document', $authorization['file_name'] ?? '', 'authorization_file', $authorization['uploaded_at'] ?? '', 'Candidate');
+}
+
+if (!empty($basic['resume_file'])) {
+    $addEvidence('basic', (string)($basic['resume_original_name'] ?? 'Resume'), (string)$basic['resume_file'], 'resume', (string)($basic['updated_at'] ?? ''), 'Candidate');
 }
 
 foreach ($uploadedDocs as $doc) {
@@ -353,7 +421,6 @@ $evidenceDocs = $uniqueEvidence;
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
 <style>
-    /* ========== CSS VARIABLES ========== */
     :root {
         --primary-color: #2c3e50;
         --primary-light: #34495e;
@@ -375,7 +442,6 @@ $evidenceDocs = $uniqueEvidence;
         --border-radius-sm: 4px;
     }
     
-    /* ========== RESET & BASE ========== */
     * {
         box-sizing: border-box;
         margin: 0;
@@ -391,14 +457,12 @@ $evidenceDocs = $uniqueEvidence;
         padding: 20px;
     }
     
-    /* ========== LAYOUT ========== */
     .application-container {
         max-width: 1100px;
         margin: 0 auto;
         background: white;
     }
     
-    /* ========== HEADER ========== */
     .header {
         border-bottom: 2px solid var(--medium-gray);
         padding-bottom: 25px;
@@ -491,7 +555,6 @@ $evidenceDocs = $uniqueEvidence;
         color: var(--text-color);
     }
     
-    /* ========== ACTION BUTTONS SECTION ========== */
     .action-buttons {
         background: var(--light-gray);
         border-radius: var(--border-radius);
@@ -551,7 +614,6 @@ $evidenceDocs = $uniqueEvidence;
         box-shadow: 0 3px 10px rgba(52, 152, 219, 0.2);
     }
     
-    /* ========== SECTIONS ========== */
     .section {
         margin-bottom: 40px;
     }
@@ -596,7 +658,6 @@ $evidenceDocs = $uniqueEvidence;
         font-size: 12px;
     }
     
-    /* ========== DATA GRID ========== */
     .data-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -637,7 +698,6 @@ $evidenceDocs = $uniqueEvidence;
         font-style: italic;
     }
     
-    /* ========== PHOTO ========== */
     .photo-section {
         display: flex;
         justify-content: center;
@@ -667,7 +727,6 @@ $evidenceDocs = $uniqueEvidence;
         color: var(--text-light);
     }
     
-    /* ========== TABLES ========== */
     .data-table-container {
         overflow-x: auto;
         margin: 20px 0;
@@ -714,7 +773,6 @@ $evidenceDocs = $uniqueEvidence;
         font-size: 13px;
     }
     
-    /* ========== CARDS ========== */
     .card {
         background: white;
         border-radius: var(--border-radius);
@@ -752,7 +810,6 @@ $evidenceDocs = $uniqueEvidence;
         text-transform: uppercase;
     }
     
-    /* ========== EDUCATION SPECIFIC ========== */
     .education-table {
         width: 100%;
         border-collapse: collapse;
@@ -813,7 +870,6 @@ $evidenceDocs = $uniqueEvidence;
         font-size: 13px;
     }
     
-    /* ========== TAGS & BADGES ========== */
     .badge {
         display: inline-flex;
         align-items: center;
@@ -833,7 +889,6 @@ $evidenceDocs = $uniqueEvidence;
         border-color: #c6e6d2;
     }
     
-    /* ========== FOOTER ========== */
     .footer {
         margin-top: 50px;
         padding-top: 25px;
@@ -851,7 +906,6 @@ $evidenceDocs = $uniqueEvidence;
         flex-wrap: wrap;
     }
     
-    /* ========== PRINT STYLES ========== */
     @media print {
         @page {
             size: A4;
@@ -885,7 +939,6 @@ $evidenceDocs = $uniqueEvidence;
         }
     }
     
-    /* ========== MOBILE RESPONSIVE ========== */
     @media (max-width: 768px) {
         body {
             padding: 15px;
@@ -1018,7 +1071,6 @@ $evidenceDocs = $uniqueEvidence;
         }
     }
     
-    /* ========== UTILITY CLASSES ========== */
     .text-center { text-align: center; }
     .text-right { text-align: right; }
     .mb-1 { margin-bottom: 8px; }
@@ -1033,17 +1085,13 @@ $evidenceDocs = $uniqueEvidence;
     .w-100 { width: 100%; }
 </style>
     
-    <!-- Font Awesome for icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <!-- Inter Font -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <!-- Watermark -->
     <div class="watermark">CONFIDENTIAL</div>
     
     <div class="application-container">
-        <!-- Header Section -->
         <div class="header">
             <div class="company-header">
                 <div class="company-logo">
@@ -1082,7 +1130,6 @@ $evidenceDocs = $uniqueEvidence;
             </div>
         </div>
         
-        <!-- 1. Basic Details -->
         <div class="section">
             <div class="section-header">
                 <div class="section-icon">
@@ -1093,7 +1140,6 @@ $evidenceDocs = $uniqueEvidence;
             </div>
             
             <?php if ($basic && is_array($basic)): ?>
-                <!-- Personal Photo -->
                 <?php 
                 if (!empty($basic['photo_path'])) {
                     $photoPath = __DIR__ . '/../../uploads/basic/' . $basic['photo_path'];
@@ -1109,7 +1155,6 @@ $evidenceDocs = $uniqueEvidence;
                 }
                 ?>
                 
-                <!-- Personal Details Grid -->
                 <div class="data-grid">
                     <div class="data-item">
                         <div class="data-label">
@@ -1300,7 +1345,6 @@ $evidenceDocs = $uniqueEvidence;
             <?php endif; ?>
         </div>
         
-        <!-- 2. Contact Information -->
         <div class="section">
             <div class="section-header">
                 <div class="section-icon">
@@ -1311,7 +1355,6 @@ $evidenceDocs = $uniqueEvidence;
             </div>
             
             <?php if ($contact && is_array($contact)): ?>
-                <!-- Current Address Card -->
                 <div class="card mb-3">
                     <div class="card-header">
                         <h3 class="card-title">
@@ -1376,7 +1419,6 @@ $evidenceDocs = $uniqueEvidence;
                     </div>
                 </div>
                 
-                <!-- Permanent Address Card -->
                 <?php if (!($contact['same_as_current'] ?? 0)): ?>
                 <div class="card">
                     <div class="card-header">
@@ -1456,7 +1498,6 @@ $evidenceDocs = $uniqueEvidence;
                 </div>
                 <?php endif; ?>
                 
-                <!-- Address Proof -->
                 <div class="card mt-3">
                     <div class="card-header">
                         <h3 class="card-title">
@@ -1495,7 +1536,6 @@ $evidenceDocs = $uniqueEvidence;
             <?php endif; ?>
         </div>
         
-        <!-- 3. Identification Documents -->
         <div class="section">
             <div class="section-header">
                 <div class="section-icon">
@@ -1596,7 +1636,6 @@ $evidenceDocs = $uniqueEvidence;
             <?php endif; ?>
         </div>
         
-<!-- 4. Education Details -->
 <div class="section">
     <div class="section-header">
         <div class="section-icon">
@@ -1619,7 +1658,6 @@ $evidenceDocs = $uniqueEvidence;
             </div>
             
             <div class="card-body">
-                <!-- Table for education details -->
                 <table class="education-table">
                     <thead>
                         <tr>
@@ -1671,7 +1709,6 @@ $evidenceDocs = $uniqueEvidence;
                     </tbody>
                 </table>
                 
-                <!-- College Address -->
                 <div class="college-address">
                     <div class="address-label">
                         <i class="fas fa-map-marker-alt"></i> College Address
@@ -1681,7 +1718,6 @@ $evidenceDocs = $uniqueEvidence;
                     </div>
                 </div>
                 
-                <!-- College Website -->
                 <?php if (!empty($edu['college_website'])): ?>
                 <div class="mb-3">
                     <div class="address-label mb-2">
@@ -1695,8 +1731,7 @@ $evidenceDocs = $uniqueEvidence;
                 </div>
                 <?php endif; ?>
                 
-                <!-- Document Status -->
-                <?php if (!empty($edu['marksheet_file']) || !empty($edu['degree_file'])): ?>
+                <?php if (!empty($edu['marksheet_file']) || !empty($edu['degree_file']) || !empty($edu['marksheet_documents'])): ?>
                 <div class="mt-3">
                     <span class="badge success">
                         <i class="fas fa-check-circle me-1"></i> Supporting documents uploaded
@@ -1716,7 +1751,6 @@ $evidenceDocs = $uniqueEvidence;
     <?php endif; ?>
 </div>
         
-        <!-- 5. Employment History -->
         <div class="section">
             <div class="section-header">
                 <div class="section-icon">
@@ -1872,7 +1906,6 @@ $evidenceDocs = $uniqueEvidence;
                             </div>
                         </div>
                         
-                        <!-- HR Details -->
                         <div class="mt-3">
                             <div class="data-label mb-2">
                                 <i class="fas fa-users"></i> HR Details
@@ -1893,7 +1926,6 @@ $evidenceDocs = $uniqueEvidence;
                             </div>
                         </div>
                         
-                        <!-- Reporting Manager -->
                         <div class="mt-3">
                             <div class="data-label mb-2">
                                 <i class="fas fa-user-tie"></i> Reporting Manager
@@ -1934,7 +1966,6 @@ $evidenceDocs = $uniqueEvidence;
             <?php endif; ?>
         </div>
         
-        <!-- 6. Reference Details -->
         <div class="section">
             <div class="section-header">
                 <div class="section-icon">
@@ -2028,7 +2059,6 @@ $evidenceDocs = $uniqueEvidence;
             <?php endif; ?>
         </div>
 
-        <!-- 7. Evidence Documents -->
         <div class="section">
             <div class="section-header">
                 <div class="section-icon">
@@ -2079,7 +2109,6 @@ $evidenceDocs = $uniqueEvidence;
             </div>
         </div>
         
-<!-- Action Buttons Section -->
 <div class="action-buttons no-print">
     <h3><i class="fas fa-download me-2"></i>Export Options</h3>
     <div class="action-btn-group">
@@ -2096,7 +2125,6 @@ $evidenceDocs = $uniqueEvidence;
     </p>
 </div>
 
-<!-- Footer -->
 <div class="footer">
     <div class="footer-links mb-2">
         <span><i class="fas fa-lock me-1"></i> Confidential</span>
@@ -2130,7 +2158,6 @@ $evidenceDocs = $uniqueEvidence;
         <?php endif; ?>
     }
     
-    // Auto-resize iframe for embedded mode
     <?php if ($isEmbedded): ?>
     function resizeIframe() {
         const height = document.documentElement.scrollHeight;
@@ -2150,7 +2177,6 @@ $evidenceDocs = $uniqueEvidence;
     
     window.addEventListener('resize', resizeIframe);
     
-    // Listen for print command from parent
     window.addEventListener('message', function(event) {
         if (event.data === 'printIframe') {
             setTimeout(() => window.print(), 500);
@@ -2158,14 +2184,12 @@ $evidenceDocs = $uniqueEvidence;
     });
     <?php endif; ?>
     
-    // Auto-print if requested
     if (window.location.search.includes('print=1')) {
         setTimeout(() => {
             window.print();
         }, 1000);
     }
     
-    // Auto-close after printing
     window.onafterprint = function() {
         if (window.location.search.includes('autoclose=1')) {
             setTimeout(() => {

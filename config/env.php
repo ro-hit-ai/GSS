@@ -68,16 +68,29 @@ function app_base_url(): string {
             return $v;
         }
 
-        if (isset($_SERVER['HTTP_HOST']) && is_string($_SERVER['HTTP_HOST']) && $_SERVER['HTTP_HOST'] !== '') {
-            $isHttps = (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off')
-                || ((string)($_SERVER['SERVER_PORT'] ?? '') === '443');
-            $scheme = $isHttps ? 'https' : 'http';
-            $host = (string)$_SERVER['HTTP_HOST'];
-            if ($v[0] !== '/') $v = '/' . $v;
-            return $scheme . '://' . $host . $v;
+        if ($v[0] !== '/') $v = '/' . $v;
+
+        $forwardedProto = '';
+        if (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && is_string($_SERVER['HTTP_X_FORWARDED_PROTO'])) {
+            $forwardedProto = strtolower(trim(explode(',', $_SERVER['HTTP_X_FORWARDED_PROTO'])[0] ?? ''));
+        }
+        $forwardedHost = '';
+        if (isset($_SERVER['HTTP_X_FORWARDED_HOST']) && is_string($_SERVER['HTTP_X_FORWARDED_HOST'])) {
+            $forwardedHost = trim(explode(',', $_SERVER['HTTP_X_FORWARDED_HOST'])[0] ?? '');
         }
 
-        return $v;
+        $rawHost = $forwardedHost !== ''
+            ? $forwardedHost
+            : trim((string)($_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? '')));
+        if ($rawHost === '' || $rawHost === ':' || preg_match('~^https?://~i', $rawHost)) {
+            $rawHost = 'localhost';
+        }
+
+        $isHttps = ($forwardedProto === 'https')
+            || (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off')
+            || ((string)($_SERVER['SERVER_PORT'] ?? '') === '443');
+        $scheme = $isHttps ? 'https' : 'http';
+        return $scheme . '://' . $rawHost . $v;
     }
 
     $scriptName = isset($_SERVER['SCRIPT_NAME']) ? (string)$_SERVER['SCRIPT_NAME'] : '';
@@ -92,7 +105,7 @@ function app_base_url(): string {
         }
     }
 
-    $fallback = '/GSS1';
+    $fallback = '/GSS';
     return rtrim($fallback, '/');
 }
 

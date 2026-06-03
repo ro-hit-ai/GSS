@@ -8,20 +8,19 @@ class Router {
     static caseConfig = null;
     static _configLoaded = false;
     
-    // Performance cache
     static _allowedPagesCache = null;
     static _cacheTimestamp = 0;
-    static CACHE_TTL = 1000; // Cache for 1 second
+    static CACHE_TTL = 1000;
     
     static pageOrder = [
         "review-confirmation",
         "basic-details",
         "identification",
         "contact",
-        "social",
-        "ecourt",
         "education",
         "employment",
+        "ecourt",
+        "social",
         "reference",
         "review",
         "success"
@@ -62,23 +61,21 @@ class Router {
         "success": "Your application has been submitted successfully."
     };
 
-    // Special pages that don't need API submission
     static noApiSubmissionPages = ["review-confirmation", "review", "success"];
     
     static selfHandledPages = [
         "basic-details",
         "identification",
         "contact",
-        "social",
-        "ecourt",
         "education",
         "employment",
+        "ecourt",
+        "social",
         "reference",
         "review"
     ];
 
     static shouldUseCache(pageId) {
-        // Dynamic pages should always be fetched fresh to reflect saved DB values
         if (!pageId) return false;
         if (this.selfHandledPages.includes(pageId)) return false;
         if (pageId === 'review-confirmation') return false;
@@ -114,7 +111,6 @@ class Router {
         }
     }
 
-    /* ================= INITIALIZATION ================= */
     static init() {
         if (this.isInitialized) return;
         this.isInitialized = true;
@@ -128,24 +124,19 @@ class Router {
             const params = new URLSearchParams(window.location.search);
             const urlPage = params.get("page");
 
-            // ✅ FIXED: Respect URL parameter first, then fallback to logic
             let startPage;
             if (urlPage) {
-                // User requested a specific page via URL
                 startPage = this.getCurrentAllowedPage(urlPage);
                 console.log(`📌 URL requested: "${urlPage}", allowed page: "${startPage}"`);
             } else {
-                // No URL parameter, start with appropriate page
                 startPage = this.getCurrentAllowedPage();
                 console.log(`📌 No URL param, starting with: "${startPage}"`);
             }
             
-            // Only push state if we need to (URL doesn't match or no URL)
             const shouldPushState = !urlPage || urlPage !== startPage;
             
             this.navigateTo(startPage, shouldPushState);
             
-            // Handle browser back/forward buttons
             window.onpopstate = (e) => {
                 const page = e.state?.page || this.getCurrentAllowedPage();
                 console.log(`🔙 Back/Forward navigation to: ${page}`);
@@ -167,6 +158,7 @@ class Router {
                 this.enabledPages = Array.isArray(json.data.enabled_pages) ? json.data.enabled_pages : null;
                 this.caseConfig = json.data;
                 window.CANDIDATE_CASE_CONFIG = this.caseConfig;
+                this.reconcileLocalSessionState();
                 console.log('✅ Candidate enabled pages from config:', this.enabledPages);
             } else {
                 this.enabledPages = null;
@@ -187,6 +179,40 @@ class Router {
             document.body.classList.remove('candidate-config-loading');
         } catch (e) {
         }
+    }
+
+    static reconcileLocalSessionState() {
+        try {
+            const marker = String((this.caseConfig && this.caseConfig.login_marker) || window.CANDIDATE_LOGIN_MARKER || '').trim();
+            const markerKey = 'login-marker';
+            const storedMarker = this.lsGet(markerKey);
+
+            if (marker && storedMarker !== marker) {
+                this.clearCompletionFlags();
+                this.lsSet(markerKey, marker);
+            }
+
+            if (this.isSubmittedLocked()) {
+                this.clearCompletionFlags();
+                this.lsSet('completed-review-confirmation', '1');
+                this.lsSet('completed-review', '1');
+            }
+        } catch (e) {
+            console.warn('Candidate route state reconcile failed', e);
+        }
+    }
+
+    static clearCompletionFlags() {
+        this.pageOrder.forEach(page => {
+            this.lsRemove(`completed-${page}`);
+        });
+        this._allowedPagesCache = null;
+        this.pageCache.clear();
+    }
+
+    static isSubmittedLocked() {
+        const cfg = this.caseConfig || {};
+        return Number(cfg.submitted_locked || 0) === 1 && Number(cfg.correction_mode || 0) !== 1;
     }
 
     static isEnabledPage(pageId) {
@@ -219,8 +245,12 @@ class Router {
         }
     }
 
-    /* ================= PAGE ACCESS CONTROL ================= */
     static getAllowedPages() {
+        if (this.isSubmittedLocked()) {
+            this._allowedPagesCache = ['success'];
+            this._cacheTimestamp = Date.now();
+            return this._allowedPagesCache;
+        }
         if (this.caseConfig && Number(this.caseConfig.correction_mode || 0) === 1) {
             const enabled = this.getEnabledPageOrder();
             const pages = enabled.length ? enabled.slice() : this.pageOrder.slice();
@@ -230,7 +260,6 @@ class Router {
         }
         const now = Date.now();
         
-        // Return cached version if recent
         if (this._allowedPagesCache && (now - this._cacheTimestamp < this.CACHE_TTL)) {
             return this._allowedPagesCache;
         }
@@ -243,10 +272,8 @@ class Router {
             p !== "review-confirmation" && p !== "review" && p !== "success"
         );
         
-        // Always allow review-confirmation FIRST
         allowed.push("review-confirmation");
         
-        // Check if review-confirmation is completed
         const isReviewCompleted = this.lsGet("completed-review-confirmation") === "1";
         
         if (!isReviewCompleted) {
@@ -258,12 +285,11 @@ class Router {
         
         console.log(`✅ Review completed, checking other pages...`);
         
-        // Find the first incomplete page after review
         for (let i = 0; i < countablePages.length; i++) {
             const page = countablePages[i];
             const isCompleted = this.lsGet(`completed-${page}`) === "1";
             
-            allowed.push(page); // Allow access to this page
+            allowed.push(page);
             
             if (!isCompleted) {
                 console.log(`⏸️  Found first incomplete page: ${page}, stopping`);
@@ -271,7 +297,6 @@ class Router {
             }
         }
         
-        // If all form pages are completed, allow review page
         const allCompleted = countablePages.every(page => 
             this.lsGet(`completed-${page}`) === "1"
         );
@@ -288,7 +313,6 @@ class Router {
         
         console.log(`📋 Final allowed pages:`, allowed);
         
-        // Cache the result
         this._allowedPagesCache = allowed;
         this._cacheTimestamp = now;
         
@@ -298,7 +322,6 @@ class Router {
     static getCurrentAllowedPage(requestedPage = null) {
         console.log(`📋 getCurrentAllowedPage called with: "${requestedPage}"`);
         
-        // ✅ FIXED: Check if requested page is accessible
         if (requestedPage) {
             const allowedPages = this.getAllowedPages();
             if (allowedPages.includes(requestedPage)) {
@@ -309,7 +332,6 @@ class Router {
             }
         }
         
-        // Always start with review-confirmation unless it's completed
         const isReviewCompleted = this.lsGet("completed-review-confirmation") === "1";
         
         if (!isReviewCompleted) {
@@ -319,15 +341,12 @@ class Router {
         
         const allowedPages = this.getAllowedPages();
         
-        // Return the last allowed page (most recent accessible)
         const lastAllowed = allowedPages[allowedPages.length - 1] || "review-confirmation";
         console.log(`📌 Returning last allowed page: "${lastAllowed}"`);
         return lastAllowed;
     }
 
-    /* ================= NAVIGATION ================= */
     static async navigateTo(pageId, pushState = true) {
-        // Prevent double navigation
         if (this._isNavigating && this._navigatingTo === pageId) {
             console.log(`⏸️ Already navigating to ${pageId}, ignoring duplicate request`);
             return;
@@ -345,50 +364,42 @@ class Router {
         try {
             console.time(`🔄 Navigation to ${pageId}`);
             
-            // Quick access check
             const allowedPages = this.getAllowedPages();
             console.log(`📋 Allowed pages for access check:`, allowedPages);
             
             if (!allowedPages.includes(pageId)) {
                 console.warn(`⛔ ACCESS DENIED to ${pageId}. Allowed pages:`, allowedPages);
                 
-                // Find what page they should be on
                 const correctPage = this.getCurrentAllowedPage();
                 console.log(`🔄 Redirecting to correct page: ${correctPage}`);
                 
-                // Only redirect if they're trying to access a disallowed page
                 if (pageId !== correctPage) {
-                    // Update URL without pushState to prevent back button issues
                     window.history.replaceState({ page: correctPage }, "", `?page=${correctPage}`);
                     
-                    // Load the correct page
                     pageId = correctPage;
                 }
             }
             
-            // Clean up previous page
             await this.cleanupPreviousPage();
             
-            // Update current page
             this.currentPage = pageId;
             console.log(`✅ Current page updated to: ${pageId}`);
             
-            // Update URL
             if (pushState) {
                 history.pushState({ page: pageId }, "", `?page=${pageId}`);
                 console.log(`🔗 History updated with page: ${pageId}`);
             }
             
-            // Load page and update UI in parallel for better performance
             const loadPromise = this.loadPageContent(pageId);
             
-            // Update UI immediately (don't wait for page load)
             this.bindStepStrip();
             this.updateSidebar(pageId);
             this.updateProgress();
             
-            // Wait for page load to complete
             await loadPromise;
+            if (window.CandidateSidebarStatus && typeof window.CandidateSidebarStatus.focusPendingIssue === 'function') {
+                window.CandidateSidebarStatus.focusPendingIssue(pageId);
+            }
 
             console.timeEnd(`🔄 Navigation to ${pageId}`);
             console.log(`✅ Navigation completed: ${pageId}`);
@@ -402,7 +413,6 @@ class Router {
         }
     }
 
-    /* ================= PAGE LOADING ================= */
     static async loadPageContent(pageId) {
         const container = document.getElementById("page-content");
         if (!container) {
@@ -410,7 +420,6 @@ class Router {
             throw new Error("Page container not found");
         }
 
-        // Check cache first for faster loading
         if (this.shouldUseCache(pageId) && this.pageCache.has(pageId)) {
             console.log(`📦 Serving ${pageId} from cache`);
             container.innerHTML = this.pageCache.get(pageId);
@@ -424,7 +433,6 @@ class Router {
         console.log(`📡 Fetching page from: ${url}`);
 
         try {
-            // Use timeout to prevent hanging requests
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 8000);
             
@@ -450,19 +458,16 @@ class Router {
 
             const html = await response.text();
             
-            // Cache the HTML for faster future navigation
             if (this.shouldUseCache(pageId)) {
                 this.pageCache.set(pageId, html);
             }
             
-            // Set HTML and initialize
             container.innerHTML = html;
             await this.initializePage(pageId);
             
         } catch (error) {
             console.error("❌ Load error:", error);
             
-            // Show fallback content
             const safeMsg = (error && error.message) ? String(error.message) : 'Unknown error';
             container.innerHTML = this.getFallbackContent(pageId)
                 + `<div class="container" style="padding: 0 28px 18px;">
@@ -472,7 +477,6 @@ class Router {
                 </div>`;
             await this.initializePage(pageId);
             
-            // Clear cache for this page to retry next time
             this.pageCache.delete(pageId);
         }
     }
@@ -529,7 +533,6 @@ class Router {
     static async initializePage(pageId) {
         console.log(`🛠 Initializing page: ${pageId}`);
         
-        // Initialize page module
         const pageModules = {
             "basic-details": window.BasicDetails,
             "identification": window.Identification,
@@ -564,7 +567,6 @@ class Router {
             console.warn(`⚠️ No module found for page: ${pageId}`);
         }
         
-        // Only bind generic handlers for pages that need it
         if (!this.selfHandledPages.includes(pageId) && !this.noApiSubmissionPages.includes(pageId)) {
             console.log(`🔗 Router binding handlers for ${pageId}`);
             this.bindGenericFormHandlers(pageId);
@@ -575,17 +577,14 @@ class Router {
         this.initAutoExpandingTextareas();
     }
 
-    /* ================= FORM HANDLING ================= */
     static bindGenericFormHandlers(pageId) {
         console.log(`🔍 Router.bindGenericFormHandlers called for: ${pageId}`);
         
-        // Skip if no API submission needed
         if (this.noApiSubmissionPages.includes(pageId)) {
             console.log(`🚫 Skipping generic handlers for no-API page: ${pageId}`);
             return;
         }
         
-        // Skip self-handled pages
         if (this.selfHandledPages.includes(pageId)) {
             console.warn(`🚫 Skipping generic handlers for self-handled page: ${pageId}`);
             return;
@@ -604,14 +603,12 @@ class Router {
 
         console.log(`Binding generic form handlers for ${pageId}`);
         
-        // Prevent default form submission
         form.addEventListener('submit', async (e) => {
             console.log(`📝 Router handling form submit for ${pageId}`);
             e.preventDefault();
             await this.handleGenericFormSubmission(form, pageId);
         });
 
-        // Next button
         const nextBtn = document.querySelector(`.external-submit-btn[data-form="${pageId}Form"]`);
         if (nextBtn && !nextBtn.dataset.routerBound) {
             nextBtn.dataset.routerBound = "true";
@@ -622,7 +619,6 @@ class Router {
             });
         }
 
-        // Previous button
         const prevBtn = document.querySelector(`.prev-btn[data-form="${pageId}Form"]`);
         if (prevBtn && !prevBtn.dataset.routerBound) {
             prevBtn.dataset.routerBound = "true";
@@ -643,7 +639,6 @@ class Router {
     static async handleGenericFormSubmission(form, pageId) {
         console.log(`🔄 handleGenericFormSubmission called for: ${pageId}`);
         
-        // ✅ Handle pages that don't need API submission
         if (this.noApiSubmissionPages.includes(pageId)) {
             console.log(`✅ ${pageId} doesn't need API submission, marking as completed directly`);
             this.markCompleted(pageId);
@@ -656,7 +651,6 @@ class Router {
             return;
         }
         
-        // Block submission for self-handled pages
         if (this.selfHandledPages.includes(pageId)) {
             console.warn(`🚫 Router blocked submit for self-handled page: ${pageId}`);
             return;
@@ -692,19 +686,15 @@ class Router {
                 throw new Error(result.message || "Save failed");
             }
             
-            // Mark as completed and update UI
             this.markCompleted(pageId);
             this.showNotification("✅ Saved successfully!", "success");
             
-            // Clear drafts
             if (window.Forms && typeof Forms.clearDraft === 'function') {
                 Forms.clearDraft(pageId);
             }
             
-            // Clear page cache for this page
             this.pageCache.delete(pageId);
             
-            // Navigate to next page
             const nextPage = this.getNextPage(pageId);
             if (nextPage) {
                 console.log(`➡️ Navigating to next page: ${nextPage}`);
@@ -717,7 +707,6 @@ class Router {
         }
     }
 
-    /* ================= UI UPDATES ================= */
     static bindStepStrip() {
         const strip = document.getElementById("stepStrip");
         if (!strip) return;
@@ -736,14 +725,11 @@ class Router {
             const isCompleted = this.lsGet(`completed-${pageId}`) === "1";
             const isCurrent = this.currentPage === pageId;
             
-            // Clear any existing classes
             item.classList.remove("disabled-step", "current-step", "completed-step", "allowed-step");
             
-            // Remove any existing click handlers
             const newItem = item.cloneNode(true);
             item.parentNode.replaceChild(newItem, item);
             
-            // Add appropriate classes
             if (isCurrent) {
                 newItem.classList.add("current-step");
             }
@@ -757,7 +743,6 @@ class Router {
                 newItem.style.cursor = "pointer";
                 newItem.style.pointerEvents = "auto";
                 
-                // Add click handler for allowed pages
                 const clickHandler = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -772,13 +757,11 @@ class Router {
                 newItem.style.cursor = "not-allowed";
                 newItem.style.pointerEvents = "none";
                 
-                // Add tooltip for disabled steps
                 if (!isCompleted) {
                     newItem.title = "Complete previous steps first";
                 }
             }
             
-            // Update visual indicators
             const stepNumber = newItem.querySelector('.step-number');
             if (stepNumber) {
                 if (isCompleted) {
@@ -802,7 +785,6 @@ class Router {
     }
 
     static updateSidebar(pageId) {
-        // Hide navigation on final success page
         const sidebar = document.getElementById('mainSidebar');
         const toggleBtn = document.getElementById('sidebarToggle');
         const overlay = document.getElementById('sidebarOverlay');
@@ -811,7 +793,6 @@ class Router {
         if (toggleBtn) toggleBtn.style.display = onSuccess ? 'none' : '';
         if (overlay) overlay.style.display = onSuccess ? 'none' : '';
 
-        // Update sidebar active states
         document.querySelectorAll(".sidebar-item").forEach(item => {
             const p = item.dataset.page;
             item.classList.toggle("active", p === pageId);
@@ -819,13 +800,15 @@ class Router {
             const isCompleted = this.lsGet(`completed-${p}`) === "1";
             item.classList.toggle("completed", isCompleted);
         });
+        if (window.CandidateSidebarStatus && typeof window.CandidateSidebarStatus.refresh === 'function') {
+            window.CandidateSidebarStatus.refresh({ quiet: true });
+        }
 
         const currentLabelEl = document.getElementById("candidateCurrentStepLabel");
         const currentHintEl = document.getElementById("candidateCurrentStepHint");
         if (currentLabelEl) currentLabelEl.textContent = this.pageLabels[pageId] || "Complete your application";
         if (currentHintEl) currentHintEl.textContent = this.pageHints[pageId] || "Move step by step, upload documents where needed, and review everything before final submission.";
 
-        // Update step strip active states
         const strip = document.getElementById("stepStrip");
         if (strip) {
             strip.querySelectorAll(".step-item").forEach(item => {
@@ -858,24 +841,23 @@ class Router {
         console.log(`✅ Marking ${pageId} as completed`);
         this.lsSet(`completed-${pageId}`, "1");
         
-        // Clear cache when progress changes
         this._allowedPagesCache = null;
         
-        // Update UI
         this.updateProgress();
         this.bindStepStrip();
+        if (window.CandidateSidebarStatus && typeof window.CandidateSidebarStatus.refresh === 'function') {
+            window.CandidateSidebarStatus.refresh({ quiet: true });
+        }
         
         console.log("🔄 UI updated after marking as completed");
     }
 
-    /* ================= CLEANUP ================= */
     static cleanupPreviousPage() {
         const previousPage = this.currentPage;
         if (!previousPage) return;
         
         console.log(`🧹 Cleaning up previous page: ${previousPage}`);
         
-        // Clean up tab managers
         if (previousPage && this.pageManagers[previousPage]) {
             const manager = this.pageManagers[previousPage];
             if (typeof manager.cleanup === 'function') {
@@ -885,7 +867,6 @@ class Router {
             }
         }
 
-        // Clean up legacy modules
         const legacyModules = {
             "identification": window.Identification,
             "education": window.Education,
@@ -906,7 +887,6 @@ class Router {
         }
     }
 
-    /* ================= UTILITIES ================= */
     static getPreviousPage(pageId) {
         const order = this.getEnabledPageOrder();
         const index = order.indexOf(pageId);
@@ -985,7 +965,6 @@ class Router {
         this.updateProgress();
         console.log("🔄 All progress reset");
         
-        // Navigate back to review-confirmation
         this.navigateTo("review-confirmation");
     }
 
@@ -1008,7 +987,6 @@ class Router {
     }
 }
 
-// Initialize Router
 window.Router = Router;
 
 if (document.readyState === "loading") {

@@ -142,6 +142,15 @@ $current_address = !empty($ecourt_row['current_address'])
 $permanent_address = !empty($ecourt_row['permanent_address']) 
     ? $ecourt_row['permanent_address'] 
     : $permanent_address_from_contact;
+$ecourtSameAsCurrent = isset($ecourt_row['same_as_current']) ? (int)$ecourt_row['same_as_current'] : (int)$same_as_current;
+$ecourtLegalName = trim((string)($ecourt_row['applicant_legal_name'] ?? (($basic_row['first_name'] ?? '') . ' ' . ($basic_row['middle_name'] ?? '') . ' ' . ($basic_row['last_name'] ?? ''))));
+$ecourtFatherName = trim((string)($ecourt_row['father_name'] ?? ($basic_row['father_name'] ?? '')));
+if (!empty($ecourt_row['current_address_snapshot'])) {
+    $current_address = (string)$ecourt_row['current_address_snapshot'];
+}
+if (!empty($ecourt_row['permanent_address_snapshot'])) {
+    $permanent_address = (string)$ecourt_row['permanent_address_snapshot'];
+}
 
 $ecourtDob = trim((string)($ecourt_row['dob'] ?? ''));
 if ($ecourtDob === '') {
@@ -150,6 +159,7 @@ if ($ecourtDob === '') {
 $basicDobPrefillUsed = ($ecourtDob === '' && trim((string)($ecourt_row['dob'] ?? '')) !== '');
 
 $adultDobMax = date('Y-m-d', strtotime('-18 years'));
+$todayMax = date('Y-m-d');
 ?>
 
 <div class="candidate-form compact-form create-like-spacing">
@@ -176,6 +186,28 @@ $adultDobMax = date('Y-m-d', strtotime('-18 years'));
 
     <form id="ecourtForm" enctype="multipart/form-data">
 
+        <div class="form-row-2 compact-row mb-3">
+            <div class="form-field">
+                <div class="form-control double-border compact-control">
+                    <label class="compact-label">Applicant Legal Name <span class="required">*</span></label>
+                    <input type="text" name="applicant_legal_name" required class="compact-input" value="<?= htmlspecialchars(trim($ecourtLegalName)) ?>">
+                </div>
+            </div>
+            <div class="form-field">
+                <div class="form-control double-border compact-control">
+                    <label class="compact-label">Father's Name <span class="required">*</span></label>
+                    <input type="text" name="father_name" required class="compact-input" value="<?= htmlspecialchars($ecourtFatherName) ?>">
+                </div>
+            </div>
+        </div>
+
+        <div class="form-row-full compact-row mb-3">
+            <label class="compact-checkbox-label" style="display:flex; align-items:center; gap:8px;">
+                <input type="checkbox" name="same_as_current" value="1" <?= $ecourtSameAsCurrent ? 'checked' : '' ?>>
+                <span>Current and permanent address are same</span>
+            </label>
+        </div>
+
         <!-- ADDRESS SECTION: Current + Permanent side by side -->
         <div class="form-row-2 compact-row mb-3">
             <!-- Current Address -->
@@ -193,7 +225,7 @@ $adultDobMax = date('Y-m-d', strtotime('-18 years'));
             <div class="form-field">
                 <div class="form-control double-border compact-control">
                     <label class="compact-label">Permanent Address <span class="required">*</span></label>
-                    <textarea name="permanent_address" rows="3" required class="compact-textarea"><?= htmlspecialchars($permanent_address) ?></textarea>
+                    <textarea name="permanent_address" rows="3" required class="compact-textarea" <?= $ecourtSameAsCurrent ? 'readonly' : '' ?>><?= htmlspecialchars($permanent_address) ?></textarea>
                     <?php if (empty($ecourt_row['permanent_address']) && !empty($permanent_address_from_contact)): ?>
                     <small class="compact-hint">
                         Pre-filled from contact information
@@ -215,6 +247,9 @@ $adultDobMax = date('Y-m-d', strtotime('-18 years'));
                         <div class="file-upload-row">
                             <button type="button" class="file-upload-btn" data-file-choose>Choose File</button>
                             <button type="button" class="file-upload-name" data-file-name disabled>No file chosen</button>
+                            <button type="button" class="file-upload-remove" data-file-remove aria-label="Remove current address proof" style="display:none;">
+                                <i class="fas fa-times"></i>
+                            </button>
                         </div>
                         <div class="file-upload-error" data-file-error></div>
                     </div>
@@ -232,6 +267,9 @@ $adultDobMax = date('Y-m-d', strtotime('-18 years'));
                         <div class="file-upload-row">
                             <button type="button" class="file-upload-btn" data-file-choose>Choose File</button>
                             <button type="button" class="file-upload-name" data-file-name disabled>No file chosen</button>
+                            <button type="button" class="file-upload-remove" data-file-remove aria-label="Remove permanent address proof" style="display:none;">
+                                <i class="fas fa-times"></i>
+                            </button>
                         </div>
                         <div class="file-upload-error" data-file-error></div>
                     </div>
@@ -253,7 +291,7 @@ $adultDobMax = date('Y-m-d', strtotime('-18 years'));
             <div class="form-field">
                 <div class="form-control double-border compact-control">
                     <label class="compact-label">From Date <span class="required">*</span></label>
-                    <input type="date" name="period_from_date" required class="compact-input"
+                    <input type="date" name="period_from_date" required class="compact-input" max="<?= htmlspecialchars($todayMax) ?>"
                            value="<?= htmlspecialchars($ecourt_row['period_from_date'] ?? '') ?>">
                 </div>
             </div>
@@ -262,7 +300,7 @@ $adultDobMax = date('Y-m-d', strtotime('-18 years'));
             <div class="form-field">
                 <div class="form-control double-border compact-control">
                     <label class="compact-label">To Date <span class="required">*</span></label>
-                    <input type="date" name="period_to_date" required class="compact-input"
+                    <input type="date" name="period_to_date" required class="compact-input" max="<?= htmlspecialchars($todayMax) ?>"
                            value="<?= htmlspecialchars($ecourt_row['period_to_date'] ?? '') ?>">
                 </div>
             </div>
@@ -281,7 +319,7 @@ $adultDobMax = date('Y-m-d', strtotime('-18 years'));
                 <div class="form-control double-border compact-control">
                     <label class="compact-label">Date of Birth <span class="required">*</span></label>
                     <input type="date" name="dob" required class="compact-input" max="<?= htmlspecialchars($adultDobMax) ?>"
-                           value="<?= htmlspecialchars($ecourt_row['dob'] ?? '') ?>">
+                           value="<?= htmlspecialchars($ecourt_row['dob'] ?? '') ?>" readonly>
                 </div>
             </div>
         </div>
@@ -308,6 +346,9 @@ $adultDobMax = date('Y-m-d', strtotime('-18 years'));
 
 <?php
 $ecourtData = [
+    'applicant_legal_name' => trim($ecourtLegalName),
+    'father_name' => $ecourtFatherName,
+    'same_as_current' => $ecourtSameAsCurrent ? 1 : 0,
     'current_address' => $current_address,
     'permanent_address' => $permanent_address,
     'evidence_document' => $ecourt_row['evidence_document'] ?? '',

@@ -22,16 +22,12 @@ document.addEventListener('DOMContentLoaded', function () {
         next = (next == null ? '' : String(next)).trim();
         if (!next) return '';
 
-        // basic safety
         if (next.indexOf('..') !== -1) return '';
 
-        // absolute URL
         if (/^https?:\/\//i.test(next)) return next;
 
-        // absolute path
         if (next.charAt(0) === '/') return next;
 
-        // treat as app-relative path
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
         return base + '/' + next.replace(/^\/+/, '');
     }

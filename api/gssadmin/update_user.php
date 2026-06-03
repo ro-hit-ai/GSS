@@ -3,6 +3,7 @@ header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../shared/verifier_routing.php';
 
 auth_require_login('gss_admin');
 
@@ -107,6 +108,7 @@ try {
     $location = !empty($locations) ? (string)$locations[0] : post_str('location');
     $isActive = post_tinyint_nullable('is_active');
     $allowedSections = post_allowed_sections();
+    $routingCapabilities = verifier_routing_parse_capability_payload(post_str('routing_capabilities_json'));
 
     if ($userId <= 0) {
         http_response_code(400);
@@ -118,6 +120,17 @@ try {
         http_response_code(400);
         echo json_encode(['status' => 0, 'message' => 'client_id, username, first_name, last_name, phone, email and role are required.']);
         exit;
+    }
+    if (verifier_routing_role_uses_capabilities($role)) {
+        $derivedAllowedSections = verifier_routing_capabilities_to_allowed_sections($routingCapabilities);
+        if ($derivedAllowedSections === '') {
+            http_response_code(400);
+            echo json_encode(['status' => 0, 'message' => 'Select at least one verifier routing priority component.']);
+            exit;
+        }
+        $allowedSections = $derivedAllowedSections;
+    } else {
+        $routingCapabilities = [];
     }
 
     if (role_requires_explicit_client($role) && $postedClientId <= 0) {
@@ -178,10 +191,26 @@ try {
         }
     }
 
+    try {
+        verifier_routing_save_user_capabilities($pdo, $userId, $routingCapabilities);
+    } catch (Throwable $e) {
+    }
+
     if ($affected <= 0) {
-        http_response_code(404);
-        echo json_encode(['status' => 0, 'message' => 'User not found or no changes were made.']);
-        exit;
+        $exists = 0;
+        try {
+            $existsStmt = $pdo->prepare('SELECT COUNT(*) FROM Vati_Payfiller_Users WHERE user_id = ?');
+            $existsStmt->execute([$userId]);
+            $exists = (int)$existsStmt->fetchColumn();
+        } catch (Throwable $e) {
+            $exists = 0;
+        }
+        if ($exists <= 0) {
+            http_response_code(404);
+            echo json_encode(['status' => 0, 'message' => 'User not found or no changes were made.']);
+            exit;
+        }
+        $affected = 1;
     }
 
     echo json_encode([

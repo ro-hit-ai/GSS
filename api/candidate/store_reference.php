@@ -5,71 +5,94 @@ header("Content-Type: application/json");
 require_once __DIR__ . '/../../config/env.php';
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../shared/candidate_correction_service.php';
+require_once __DIR__ . '/../../services/candidate/ReferenceService.php';
 
 class ValidationException extends Exception {}
 
-function get_reference_columns(PDO $pdo): array {
-    static $cache = null;
-    if (is_array($cache)) {
-        return $cache;
-    }
-    $cache = [];
-    $stmt = $pdo->query('SHOW COLUMNS FROM Vati_Payfiller_Candidate_Reference_details');
-    $rows = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
-    foreach ($rows as $row) {
-        $field = isset($row['Field']) ? (string)$row['Field'] : '';
-        if ($field !== '') {
-            $cache[$field] = true;
-        }
-    }
-    return $cache;
+function reference_post_array(string $key): array
+{
+    $value = $_POST[$key] ?? [];
+    return is_array($value) ? array_values($value) : [$value];
 }
 
-function build_reference_section_data(string $prefix): array {
-    return [
-        'name' => trim($_POST[$prefix . '_name'] ?? ''),
-        'designation' => trim($_POST[$prefix . '_designation'] ?? ''),
-        'company' => trim($_POST[$prefix . '_company'] ?? ''),
-        'mobile' => trim($_POST[$prefix . '_mobile'] ?? ''),
-        'email' => trim($_POST[$prefix . '_email'] ?? ''),
-        'relationship' => trim($_POST[$prefix . '_relationship'] ?? ''),
-        'years_known' => trim($_POST[$prefix . '_years_known'] ?? '')
-    ];
+function build_reference_rows(string $prefix, int $visibleCount): array
+{
+    $names = reference_post_array($prefix . '_name');
+    $designations = reference_post_array($prefix . '_designation');
+    $companies = reference_post_array($prefix . '_company');
+    $relationships = reference_post_array($prefix . '_relationship');
+    $yearsKnown = reference_post_array($prefix . '_years_known');
+    $mobiles = reference_post_array($prefix . '_mobile');
+    $emails = reference_post_array($prefix . '_email');
+
+    $rows = [];
+    for ($i = 0; $i < max(1, $visibleCount); $i++) {
+        $rows[] = [
+            'name' => trim((string)($names[$i] ?? '')),
+            'designation' => trim((string)($designations[$i] ?? '')),
+            'company' => trim((string)($companies[$i] ?? '')),
+            'relationship' => trim((string)($relationships[$i] ?? '')),
+            'years_known' => trim((string)($yearsKnown[$i] ?? '')),
+            'mobile' => trim((string)($mobiles[$i] ?? '')),
+            'email' => trim((string)($emails[$i] ?? '')),
+        ];
+    }
+
+    return $rows;
 }
 
-function validate_reference_section(array $data, string $label, bool $isDraft): void {
-    $filledCount = 0;
-    foreach ($data as $value) {
-        if ($value !== '') {
-            $filledCount++;
+function reference_row_is_empty(array $row): bool
+{
+    foreach ($row as $value) {
+        if (trim((string)$value) !== '') {
+            return false;
         }
     }
+    return true;
+}
 
-    if ($isDraft && $filledCount === 0) {
-        return;
-    }
-
-    if ($isDraft && $filledCount > 0 && $filledCount < count($data)) {
-        throw new ValidationException("Fill all fields or leave all empty for {$label}");
-    }
-
-    foreach ($data as $field => $value) {
-        if ($value === '') {
-            throw new ValidationException($label . ': ' . ucwords(str_replace('_', ' ', $field)) . ' is required');
+function validate_reference_rows(array $rows, string $label, bool $isDraft): array
+{
+    $validRows = [];
+    foreach ($rows as $index => $row) {
+        $rowNumber = $index + 1;
+        $filledCount = 0;
+        foreach ($row as $value) {
+            if ($value !== '') {
+                $filledCount++;
+            }
         }
+
+        if ($isDraft && $filledCount === 0) {
+            continue;
+        }
+
+        if ($isDraft && $filledCount > 0 && $filledCount < count($row)) {
+            throw new ValidationException("Fill all fields or leave all empty for {$label} {$rowNumber}");
+        }
+
+        foreach ($row as $field => $value) {
+            if ($value === '') {
+                throw new ValidationException($label . " {$rowNumber}: " . ucwords(str_replace('_', ' ', $field)) . ' is required');
+            }
+        }
+
+        if (!filter_var($row['email'], FILTER_VALIDATE_EMAIL)) {
+            throw new ValidationException($label . " {$rowNumber}: Invalid email format");
+        }
+
+        if (!preg_match('/^[0-9]{10}$/', $row['mobile'])) {
+            throw new ValidationException($label . " {$rowNumber}: Mobile number must be exactly 10 digits");
+        }
+
+        if (!ctype_digit($row['years_known']) || (int)$row['years_known'] <= 0) {
+            throw new ValidationException($label . " {$rowNumber}: Years known must be a positive number");
+        }
+
+        $validRows[] = $row;
     }
 
-    if (!filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
-        throw new ValidationException($label . ': Invalid email format');
-    }
-
-    if (!preg_match('/^[0-9]{10}$/', $data['mobile'])) {
-        throw new ValidationException($label . ': Mobile number must be exactly 10 digits');
-    }
-
-    if (!ctype_digit($data['years_known']) || (int)$data['years_known'] <= 0) {
-        throw new ValidationException($label . ': Years known must be a positive number');
-    }
+    return $validRows;
 }
 
 try {
@@ -92,9 +115,8 @@ try {
     $isDraft = isset($_POST['draft']) && $_POST['draft'] === '1';
     $hasEducationReference = isset($_POST['has_education_reference']) && $_POST['has_education_reference'] === '1';
     $hasEmploymentReference = isset($_POST['has_employment_reference']) && $_POST['has_employment_reference'] === '1';
-
-    $educationData = build_reference_section_data('education_reference');
-    $employmentData = build_reference_section_data('employment_reference');
+    $educationVisibleCount = max(1, (int)($_POST['education_reference_visible_count'] ?? 1));
+    $employmentVisibleCount = max(1, (int)($_POST['employment_reference_visible_count'] ?? 1));
 
     if (!$hasEducationReference && !$hasEmploymentReference) {
         $pdo->commit();
@@ -107,23 +129,23 @@ try {
         exit;
     }
 
-    if ($hasEducationReference) {
-        validate_reference_section($educationData, 'Education Reference', $isDraft);
-    }
-    if ($hasEmploymentReference) {
-        validate_reference_section($employmentData, 'Employment Reference', $isDraft);
-    }
+    $educationRows = $hasEducationReference
+        ? validate_reference_rows(build_reference_rows('education_reference', $educationVisibleCount), 'Education Reference', $isDraft)
+        : [];
+    $employmentRows = $hasEmploymentReference
+        ? validate_reference_rows(build_reference_rows('employment_reference', $employmentVisibleCount), 'Employment Reference', $isDraft)
+        : [];
 
-    $hasAnyData = false;
-    foreach ([$educationData, $employmentData] as $sectionData) {
-        foreach ($sectionData as $value) {
-            if ($value !== '') {
-                $hasAnyData = true;
-                break 2;
-            }
+    if (!$isDraft) {
+        if ($hasEducationReference && !$educationRows) {
+            throw new ValidationException('At least one Education Reference is required');
+        }
+        if ($hasEmploymentReference && !$employmentRows) {
+            throw new ValidationException('At least one Employment Reference is required');
         }
     }
-    if ($isDraft && !$hasAnyData) {
+
+    if ($isDraft && !$educationRows && !$employmentRows) {
         $pdo->commit();
         echo json_encode([
             'success' => true,
@@ -133,92 +155,10 @@ try {
         exit;
     }
 
-    $columns = get_reference_columns($pdo);
-    $supportsDualReference = isset($columns['education_reference_name']) && isset($columns['employment_reference_name']);
-
-    $primaryData = $hasEmploymentReference ? $employmentData : $educationData;
-    $primaryData = [
-        'reference_name' => $primaryData['name'],
-        'reference_designation' => $primaryData['designation'],
-        'reference_company' => $primaryData['company'],
-        'reference_mobile' => $primaryData['mobile'],
-        'reference_email' => $primaryData['email'],
-        'relationship' => $primaryData['relationship'],
-        'years_known' => $primaryData['years_known']
-    ];
-
-    $payload = $primaryData;
-    if ($supportsDualReference) {
-        $payload = array_merge($payload, [
-            'education_reference_name' => $educationData['name'],
-            'education_reference_designation' => $educationData['designation'],
-            'education_reference_company' => $educationData['company'],
-            'education_reference_mobile' => $educationData['mobile'],
-            'education_reference_email' => $educationData['email'],
-            'education_reference_relationship' => $educationData['relationship'],
-            'education_reference_years_known' => $educationData['years_known'],
-            'employment_reference_name' => $employmentData['name'],
-            'employment_reference_designation' => $employmentData['designation'],
-            'employment_reference_company' => $employmentData['company'],
-            'employment_reference_mobile' => $employmentData['mobile'],
-            'employment_reference_email' => $employmentData['email'],
-            'employment_reference_relationship' => $employmentData['relationship'],
-            'employment_reference_years_known' => $employmentData['years_known']
-        ]);
-    }
-
-    $check = $pdo->prepare('SELECT id FROM Vati_Payfiller_Candidate_Reference_details WHERE application_id = ? LIMIT 1');
-    $check->execute([$application_id]);
-    $exists = (int)($check->fetchColumn() ?: 0);
-
-    $fieldsForSave = array_keys($payload);
-
-    if ($exists > 0) {
-        $setSql = [];
-        $params = [];
-        foreach ($fieldsForSave as $field) {
-            $setSql[] = $field . ' = ?';
-            $params[] = $payload[$field];
-        }
-        $params[] = $application_id;
-
-        $upd = $pdo->prepare(
-            'UPDATE Vati_Payfiller_Candidate_Reference_details '
-            . 'SET ' . implode(', ', $setSql) . ', updated_at = NOW() '
-            . 'WHERE application_id = ?'
-        );
-        $upd->execute($params);
-    } else {
-        $insertFields = array_merge(['application_id'], $fieldsForSave, ['created_at', 'updated_at']);
-        $placeholders = array_fill(0, count($insertFields), '?');
-        $params = [$application_id];
-        foreach ($fieldsForSave as $field) {
-            $params[] = $payload[$field];
-        }
-        $params[] = date('Y-m-d H:i:s');
-        $params[] = date('Y-m-d H:i:s');
-
-        $ins = $pdo->prepare(
-            'INSERT INTO Vati_Payfiller_Candidate_Reference_details '
-            . '(' . implode(', ', $insertFields) . ') '
-            . 'VALUES (' . implode(', ', $placeholders) . ')'
-        );
-        $ins->execute($params);
-    }
-
-
-    $fetchStmt = $pdo->prepare("
-        SELECT *
-        FROM Vati_Payfiller_Candidate_Reference_details
-        WHERE application_id = ?
-    ");
-    $fetchStmt->execute([$application_id]);
-    $savedData = $fetchStmt->fetch(PDO::FETCH_ASSOC) ?: [];
-    $fetchStmt->closeCursor();
+    $savedData = ReferenceService::replaceGrouped($pdo, (string)$application_id, $educationRows, $employmentRows);
 
     ccs_progress_component_after_candidate_save($pdo, (string)$application_id, 'reference', $isDraft);
     $pdo->commit();
-
 
     echo json_encode([
         'success'  => true,
@@ -226,9 +166,7 @@ try {
         'is_draft' => $isDraft,
         'data'     => $savedData
     ]);
-
 } catch (ValidationException $e) {
-
     if (isset($pdo) && $pdo->inTransaction()) {
         $pdo->rollBack();
     }
@@ -238,9 +176,7 @@ try {
         'success' => false,
         'message' => $e->getMessage()
     ]);
-
 } catch (Throwable $e) {
-
     if (isset($pdo) && $pdo->inTransaction()) {
         $pdo->rollBack();
     }

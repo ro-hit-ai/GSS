@@ -33,9 +33,13 @@ function validateEcourtData($data) {
     if (!empty($data['period_from_date']) && !empty($data['period_to_date'])) {
         $fromDate = new DateTime($data['period_from_date']);
         $toDate = new DateTime($data['period_to_date']);
+        $today = new DateTime('today');
         
         if ($fromDate > $toDate) {
             $errors[] = '"From Date" must be earlier than "To Date"';
+        }
+        if ($fromDate > $today || $toDate > $today) {
+            $errors[] = 'E-Court period dates cannot be in the future';
         }
     }
     
@@ -155,6 +159,12 @@ try {
     // Get form data
     $current_address = $post['current_address'] ?? '';
     $permanent_address = $post['permanent_address'] ?? '';
+    $applicant_legal_name = $post['applicant_legal_name'] ?? '';
+    $father_name_snapshot = $post['father_name'] ?? '';
+    $same_as_current = isset($post['same_as_current']) ? 1 : 0;
+    if ($same_as_current) {
+        $permanent_address = $current_address;
+    }
     $period_from_date = $post['period_from_date'] ?? null;
     $period_to_date = $post['period_to_date'] ?? null;
     $period_duration_years = $post['period_duration_years'] ?? null;
@@ -165,6 +175,21 @@ try {
     
     // Get existing e-court data for draft handling
     $existing = getExistingEcourtData($pdo, $application_id);
+    try {
+        $basicStmt = $pdo->prepare("CALL SP_Vati_Payfiller_get_basic_details(?)");
+        $basicStmt->execute([$application_id]);
+        $basicRow = $basicStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        while ($basicStmt->nextRowset()) {
+        }
+        $basicStmt->closeCursor();
+        if (!empty($basicRow['dob'])) {
+            $dob = $basicRow['dob'];
+        }
+    } catch (Throwable $e) {
+        if (empty($dob) && !empty($existing['dob'])) {
+            $dob = $existing['dob'];
+        }
+    }
     
     // Handle addresses for drafts
     if ($isDraft) {
@@ -218,14 +243,24 @@ try {
             'period_duration_years' => $period_duration_years,
             'dob' => $dob
         ]);
+        if (trim($applicant_legal_name) === '') {
+            throw new ValidationException('Applicant Legal Name is required');
+        }
+        if (trim($father_name_snapshot) === '') {
+            throw new ValidationException("Father's Name is required");
+        }
     } else {
         // For drafts, still validate dates if both are provided
         if (!empty($period_from_date) && !empty($period_to_date)) {
             $fromDate = new DateTime($period_from_date);
             $toDate = new DateTime($period_to_date);
+            $today = new DateTime('today');
             
             if ($fromDate > $toDate) {
                 throw new ValidationException('"From Date" must be earlier than "To Date"');
+            }
+            if ($fromDate > $today || $toDate > $today) {
+                throw new ValidationException('E-Court period dates cannot be in the future');
             }
         }
     }
@@ -270,6 +305,11 @@ try {
         :not_applicable,
         :comments,
         :application_id,
+        :applicant_legal_name,
+        :father_name,
+        :current_address_snapshot,
+        :permanent_address_snapshot,
+        :same_as_current,
         :verification_action,
         :verification_notes
     )");
@@ -287,6 +327,11 @@ try {
             ':not_applicable' => $not_applicable,
             ':comments' => $comments,
             ':application_id' => $application_id,
+            ':applicant_legal_name' => $applicant_legal_name !== '' ? $applicant_legal_name : null,
+            ':father_name' => $father_name_snapshot !== '' ? $father_name_snapshot : null,
+            ':current_address_snapshot' => $current_address !== '' ? $current_address : null,
+            ':permanent_address_snapshot' => $permanent_address !== '' ? $permanent_address : null,
+            ':same_as_current' => $same_as_current,
             ':verification_action' => $verification_action,
             ':verification_notes' => $verification_notes
         ]);
@@ -318,6 +363,8 @@ try {
         'verification_status' => $result['verification_status'] ?? 'pending',
         'is_draft' => $isDraft,
         'data' => [
+            'applicant_legal_name' => $applicant_legal_name,
+            'father_name' => $father_name_snapshot,
             'current_address' => $current_address,
             'permanent_address' => $permanent_address,
             'period_from_date' => $period_from_date,

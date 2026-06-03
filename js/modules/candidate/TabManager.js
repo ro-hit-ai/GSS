@@ -168,17 +168,14 @@ class TabManager {
     showTab(index) {
         if (index < 0 || index >= this.cards.length) return;
         
-        // Hide all cards
         this.cards.forEach(card => {
             if (card) card.style.display = 'none';
         });
         
-        // Show selected card
         if (this.cards[index]) {
             this.cards[index].style.display = 'block';
         }
         
-        // Update tab active state
         if (this.tabsContainer) {
             const tabs = this.tabsContainer.querySelectorAll(`.${this.pageName}-tab`);
             tabs.forEach(tab => tab.classList.remove('active'));
@@ -199,12 +196,10 @@ class TabManager {
         const currentCount = this.cards.length;
         
         if (newCount > currentCount) {
-            // Add new cards
             for (let i = currentCount; i < newCount; i++) {
                 this.addCard(i, null);
             }
         } else if (newCount < currentCount) {
-            // Remove cards from end
             for (let i = currentCount - 1; i >= newCount; i--) {
                 this.removeCard(i);
                 this.removeTab(i);
@@ -406,6 +401,15 @@ clearPreview(card, selector) {
         el.innerHTML = '';
     }
 }
+
+escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
     
     /* ================= HELPER METHODS ================= */
     
@@ -434,6 +438,7 @@ clearPreview(card, selector) {
             box.removeAttribute('data-object-url');
         }
         const nameEl = box.querySelector('[data-file-name]');
+        const removeEl = box.querySelector('[data-file-remove]');
         const errorEl = box.querySelector('[data-file-error]');
 
         if (nameEl) {
@@ -442,7 +447,14 @@ clearPreview(card, selector) {
             nameEl.removeAttribute('data-url');
             nameEl.removeAttribute('data-name');
             nameEl.removeAttribute('data-type');
+            nameEl.removeAttribute('data-local-file');
+            delete nameEl.dataset.hasValue;
             nameEl.setAttribute('disabled', 'disabled');
+        }
+        if (removeEl) {
+            removeEl.style.display = 'none';
+            removeEl.setAttribute('aria-hidden', 'true');
+            removeEl.disabled = true;
         }
         if (errorEl) errorEl.textContent = '';
     }
@@ -479,12 +491,28 @@ clearPreview(card, selector) {
                 nameEl.setAttribute('data-url', previewUrl);
                 nameEl.setAttribute('data-name', fileName);
                 nameEl.setAttribute('data-type', isImage ? 'image' : isPDF ? 'pdf' : 'other');
+                if (isLocal) {
+                    nameEl.setAttribute('data-local-file', '1');
+                } else {
+                    nameEl.removeAttribute('data-local-file');
+                }
+                nameEl.dataset.hasValue = '1';
             } else {
                 nameEl.setAttribute('disabled', 'disabled');
                 nameEl.removeAttribute('data-url');
                 nameEl.removeAttribute('data-name');
                 nameEl.removeAttribute('data-type');
+                nameEl.removeAttribute('data-local-file');
+                delete nameEl.dataset.hasValue;
             }
+        }
+
+        const removeEl = box.querySelector('[data-file-remove]');
+        if (removeEl) {
+            const hasFile = !!fileName;
+            removeEl.style.display = hasFile ? '' : 'none';
+            removeEl.disabled = !hasFile;
+            removeEl.setAttribute('aria-hidden', hasFile ? 'false' : 'true');
         }
 
         if (metaEl) {

@@ -109,6 +109,9 @@ class Ecourt {
 
         this.setFormValue('current_address', d.current_address);
         this.setFormValue('permanent_address', d.permanent_address);
+        this.setFormValue('applicant_legal_name', d.applicant_legal_name);
+        this.setFormValue('father_name', d.father_name);
+        this.setFormValue('same_as_current', d.same_as_current);
         this.setFormValue('period_from_date', d.period_from_date);
         this.setFormValue('period_to_date', d.period_to_date);
         this.setFormValue('period_duration_years', d.period_duration_years);
@@ -195,12 +198,31 @@ class Ecourt {
             e => {
                 e.preventDefault();
                 window.Router?.navigateTo
-                    ? Router.navigateTo('social')
-                    : (location.href = '?page=social');
+                    ? Router.navigateTo('employment')
+                    : (location.href = '?page=employment');
             }
         );
 
         const notApplicable = form.querySelector('[name="not_applicable"]');
+        const sameAsCurrent = form.querySelector('[name="same_as_current"]');
+        const currentAddress = form.querySelector('[name="current_address"]');
+        const permanentAddress = form.querySelector('[name="permanent_address"]');
+        const syncPermanentAddress = () => {
+            if (!sameAsCurrent || !permanentAddress || !currentAddress) return;
+            const checked = !!sameAsCurrent.checked;
+            permanentAddress.readOnly = checked;
+            if (checked) {
+                permanentAddress.value = currentAddress.value || '';
+            }
+        };
+        if (sameAsCurrent) {
+            this.addEventListener(sameAsCurrent, 'change', syncPermanentAddress);
+            if (currentAddress) {
+                this.addEventListener(currentAddress, 'input', syncPermanentAddress);
+            }
+            syncPermanentAddress();
+        }
+
         if (notApplicable) {
             this.addEventListener(notApplicable, 'change', e => {
                 const file = form.querySelector('[name="evidence_document"]');
@@ -235,6 +257,31 @@ class Ecourt {
             if (!trigger.closest('#ecourtForm')) return;
             e.preventDefault();
             fileInput.click();
+        });
+
+        this.addEventListener(document, 'click', (e) => {
+            const remove = e.target.closest('[data-file-remove]');
+            if (!remove) return;
+            if (!remove.closest('#ecourtForm')) return;
+            e.preventDefault();
+            fileInput.value = '';
+            if (this._savedData) this._savedData.evidence_document = '';
+            if (window.TabManager && typeof window.TabManager.prototype.clearUploadBox === 'function') {
+                window.TabManager.prototype.clearUploadBox.call(window.TabManager.prototype, box);
+            } else if (box) {
+                const nameEl = box.querySelector('[data-file-name]');
+                if (nameEl) {
+                    nameEl.textContent = 'No file chosen';
+                    nameEl.classList.remove('preview-btn');
+                    nameEl.setAttribute('disabled', 'disabled');
+                    nameEl.removeAttribute('data-url');
+                    nameEl.removeAttribute('data-name');
+                    nameEl.removeAttribute('data-type');
+                }
+                remove.style.display = 'none';
+                remove.disabled = true;
+                remove.setAttribute('aria-hidden', 'true');
+            }
         });
 
         this.addEventListener(fileInput, 'change', e => {
@@ -496,7 +543,7 @@ class Ecourt {
                 localStorage.setItem('completed-ecourt', '1');
             }
 
-            Router?.navigateTo?.('education');
+            Router?.navigateTo?.('social');
         } catch (e) {
             this.showNotification(e.message, true);
         } finally {

@@ -33,7 +33,7 @@ try {
 
     $pdo = getDB();
     ccs_ensure_table($pdo);
-    $st = $pdo->prepare('SELECT * FROM candidate_correction_sessions WHERE token = ? LIMIT 1');
+    $st = $pdo->prepare('SELECT * FROM Vati_Payfiller_Candidate_Correction_Sessions WHERE token = ? LIMIT 1');
     $st->execute([$token]);
     $row = $st->fetch(PDO::FETCH_ASSOC) ?: null;
     if (!$row) {
@@ -58,7 +58,7 @@ try {
     }
     $expiresAt = trim((string)($row['expires_at'] ?? ''));
     if ($expiresAt !== '' && strtotime($expiresAt) < time()) {
-        $u = $pdo->prepare("UPDATE candidate_correction_sessions SET status = 'expired', updated_at = NOW() WHERE correction_session_id = ?");
+        $u = $pdo->prepare("UPDATE Vati_Payfiller_Candidate_Correction_Sessions SET status = 'expired', updated_at = NOW() WHERE correction_session_id = ?");
         $u->execute([(int)$row['correction_session_id']]);
         http_response_code(409);
         echo json_encode(['status' => 0, 'message' => 'Correction session expired']);
@@ -85,7 +85,7 @@ try {
     $changed = ccs_resume_components_after_candidate_submit($pdo, $caseId, $applicationId, $components);
     ccs_mark_cycles_candidate_submitted($pdo, (int)$row['correction_session_id'], $components);
 
-    $u = $pdo->prepare("UPDATE candidate_correction_sessions SET status = 'submitted', updated_at = NOW(), completed_by_role = 'candidate' WHERE correction_session_id = ? AND status = 'active'");
+    $u = $pdo->prepare("UPDATE Vati_Payfiller_Candidate_Correction_Sessions SET status = 'submitted', updated_at = NOW(), completed_by_role = 'candidate' WHERE correction_session_id = ? AND status = 'active'");
     $u->execute([(int)$row['correction_session_id']]);
     if ((int)$u->rowCount() <= 0) {
         $pdo->rollBack();
@@ -93,7 +93,7 @@ try {
         echo json_encode(['status' => 0, 'message' => 'Correction submit collision detected. Please refresh.']);
         exit;
     }
-    $u2 = $pdo->prepare("UPDATE candidate_correction_sessions SET status = 'completed', completed_at = NOW(), updated_at = NOW() WHERE correction_session_id = ?");
+    $u2 = $pdo->prepare("UPDATE Vati_Payfiller_Candidate_Correction_Sessions SET status = 'completed', completed_at = NOW(), updated_at = NOW() WHERE correction_session_id = ?");
     $u2->execute([(int)$row['correction_session_id']]);
     $requestedRole = ccs_role_norm((string)($row['requested_role'] ?? wf_mode_default_requested_role($pdo, $caseId, $applicationId)));
     $resumeStage = ccs_component_stage_for_role($requestedRole);

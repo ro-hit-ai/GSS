@@ -2,7 +2,7 @@
 require 'config/db.php';
 $pdo = getDB();
 $sql = "SELECT application_id, component_key, COALESCE(thread_id,'') AS thread_id, direction, COALESCE(thread_owner_role,'') AS thread_owner_role, COALESCE(actor_role,'') AS actor_role, COUNT(*) AS cnt
-        FROM workflow_communications
+        FROM Vati_Payfiller_Workflow_Communications
         WHERE sent_at >= DATE_SUB(NOW(), INTERVAL 14 DAY)
         GROUP BY application_id, component_key, COALESCE(thread_id,''), direction, COALESCE(thread_owner_role,''), COALESCE(actor_role,'')
         ORDER BY application_id, component_key, thread_id, direction";

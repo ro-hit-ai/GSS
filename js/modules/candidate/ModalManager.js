@@ -1,4 +1,3 @@
-// /js/modules/candidate/common/ModalManager.js
 class ModalManager {
     static init() {
         if (window._modalManagerInitialized) return;
@@ -11,7 +10,6 @@ class ModalManager {
     }
     
     static createModal() {
-        // Remove existing modal if any
         const existingModal = document.getElementById('documentPreviewModal');
         if (existingModal) {
             existingModal.remove();

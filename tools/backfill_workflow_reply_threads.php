@@ -17,7 +17,7 @@ try {
 
     $params = [];
     $sql = 'SELECT communication_id, application_id, component_key, direction, actor_role, thread_id, thread_owner_role, root_outgoing_communication_id
-              FROM workflow_communications';
+              FROM Vati_Payfiller_Workflow_Communications';
     if ($applicationId !== '') {
         $sql .= ' WHERE application_id = ?';
         $params[] = $applicationId;

@@ -1,5 +1,8 @@
 <?php
 
+require_once __DIR__ . '/../shared/workflow_semantics.php';
+require_once __DIR__ . '/../shared/verifier_routing.php';
+
 function verifier_allowed_sections_set_from_session(?PDO $pdo = null): array {
     if (session_status() === PHP_SESSION_NONE) {
         session_start();
@@ -64,112 +67,49 @@ function verifier_allowed_groups_from_sections(array $allowedSet): array {
 
 function verifier_filter_actionable_queue_rows(PDO $pdo, array $rows, array $allowedSet): array {
     if (!$rows) return [];
-
-    $appIds = [];
-    foreach ($rows as $r) {
-        $appId = trim((string)($r['application_id'] ?? ''));
-        if ($appId !== '') {
-            $appIds[$appId] = true;
-        }
-    }
-    if (!$appIds) {
-        return $rows;
-    }
-
-    $appList = array_keys($appIds);
-    $placeholders = implode(',', array_fill(0, count($appList), '?'));
-    $componentRows = [];
-    $caseStatusByApp = [];
-
-    try {
-        $stCase = $pdo->prepare(
-            'SELECT application_id, UPPER(TRIM(COALESCE(case_status, \'\'))) AS case_status '
-            . 'FROM Vati_Payfiller_Cases '
-            . 'WHERE application_id IN (' . $placeholders . ')'
-        );
-        $stCase->execute($appList);
-        $caseRows = $stCase->fetchAll(PDO::FETCH_ASSOC) ?: [];
-        foreach ($caseRows as $cr) {
-            $appId = trim((string)($cr['application_id'] ?? ''));
-            if ($appId === '') continue;
-            $caseStatusByApp[$appId] = (string)($cr['case_status'] ?? '');
-        }
-
-        $sql = 'SELECT cc.application_id, LOWER(TRIM(cc.component_key)) AS component_key, '
-            . "COALESCE(LOWER(TRIM(vw.status)), '') AS validator_status, "
-            . "COALESCE(LOWER(TRIM(cc.status)), '') AS component_status "
-            . 'FROM Vati_Payfiller_Case_Components cc '
-            . 'LEFT JOIN Vati_Payfiller_Case_Component_Workflow vw '
-            . 'ON vw.application_id = cc.application_id '
-            . 'AND LOWER(TRIM(vw.component_key)) = LOWER(TRIM(cc.component_key)) '
-            . "AND LOWER(TRIM(vw.stage)) = 'validator' "
-            . 'WHERE cc.application_id IN (' . $placeholders . ')';
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute($appList);
-        $componentRows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-    } catch (Throwable $e) {
-        return $rows;
-    }
-
-    $byApp = [];
-    foreach ($componentRows as $cr) {
-        $appId = trim((string)($cr['application_id'] ?? ''));
-        $ck = verifier_norm_component_key((string)($cr['component_key'] ?? ''));
-        if ($appId === '' || $ck === '') continue;
-        if (!isset($byApp[$appId])) $byApp[$appId] = [];
-        $validatorStatus = strtolower(trim((string)($cr['validator_status'] ?? '')));
-        if ($validatorStatus === '') {
-            $validatorStatus = strtolower(trim((string)($cr['component_status'] ?? '')));
-        }
-        $byApp[$appId][$ck] = $validatorStatus;
-    }
-
+    $userId = isset($_SESSION['auth_user_id']) ? (int)$_SESSION['auth_user_id'] : 0;
+    if ($userId <= 0) return [];
     $out = [];
     foreach ($rows as $r) {
-        $groupKey = (string)($r['group_key'] ?? '');
-        if (!verifier_can_group_by_sections($allowedSet, $groupKey)) {
-            continue;
-        }
-
-        $appId = trim((string)($r['application_id'] ?? ''));
         $rowCaseStatus = strtoupper(trim((string)($r['case_status'] ?? '')));
-        $caseStatus = $rowCaseStatus !== '' ? $rowCaseStatus : strtoupper(trim((string)($caseStatusByApp[$appId] ?? '')));
-        if ($caseStatus === 'STOP_BGV') {
+        if ($rowCaseStatus === 'STOP_BGV') {
             continue;
         }
-        $groupComponents = verifier_group_components($groupKey);
-        if (!$groupComponents) {
-            continue;
-        }
-
-        $candidateComponents = [];
-        foreach ($groupComponents as $k) {
-            if (isset($allowedSet['*']) || isset($allowedSet[$k])) {
-                $candidateComponents[] = $k;
-            }
-        }
-        if (!$candidateComponents) {
-            continue;
-        }
-
-        // Legacy fallback: if no component rows are present, keep queue row.
-        if (!isset($byApp[$appId])) {
+        $caseId = (int)($r['case_id'] ?? 0);
+        if ($caseId <= 0) {
             $out[] = $r;
             continue;
         }
-
-        $statusMap = $byApp[$appId];
-        $seenGroupComponent = false;
-        foreach ($candidateComponents as $k) {
-            if (!array_key_exists($k, $statusMap)) continue;
-            $seenGroupComponent = true;
+        $routingState = verifier_routing_case_state($pdo, $caseId, $userId);
+        $components = $routingState['components'] ?? [];
+        $owned = $routingState['owned_active_components'] ?? [];
+        $claimable = $routingState['claimable_next_components'] ?? [];
+        $completed = $routingState['completed_components'] ?? [];
+        $locked = $routingState['locked_future_components'] ?? [];
+        if (!$owned && !$claimable && !$completed && !$locked) {
+            continue;
         }
-
-        // Keep queue rows visible even when validator rejected all group components.
-        // Verifier may still need to review/override with explicit reason.
+        $bestPriority = 99;
+        foreach (array_merge($owned, $claimable, $completed, $locked) as $componentKey) {
+            $priority = isset($components[$componentKey]['priority']) ? (int)$components[$componentKey]['priority'] : 99;
+            if ($priority > 0) $bestPriority = min($bestPriority, $priority);
+        }
+        $r['routing_state'] = $routingState;
+        $r['routing_component_states'] = $components;
+        $r['owned_active_components'] = $owned;
+        $r['claimable_next_components'] = $claimable;
+        $r['completed_components'] = $completed;
+        $r['locked_future_components'] = $locked;
+        $r['routing_priority_rank'] = $bestPriority;
+        $r['can_claim'] = $claimable ? 1 : 0;
+        $r['can_open'] = !empty($routingState['can_open']) ? 1 : 0;
         $out[] = $r;
     }
-
+    usort($out, static function (array $a, array $b): int {
+        $ap = (int)($a['routing_priority_rank'] ?? 99);
+        $bp = (int)($b['routing_priority_rank'] ?? 99);
+        if ($ap !== $bp) return $ap <=> $bp;
+        return strcmp((string)($a['claimed_at'] ?: $a['created_at'] ?: ''), (string)($b['claimed_at'] ?: $b['created_at'] ?: ''));
+    });
     return $out;
 }
-require_once __DIR__ . '/../shared/workflow_semantics.php';

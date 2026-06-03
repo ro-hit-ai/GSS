@@ -23,16 +23,16 @@ try {
     $q1 = $pdo->prepare("SELECT COUNT(*) total,
             SUM(CASE WHEN status IN ('active','submitted') THEN 1 ELSE 0 END) open_sessions,
             SUM(CASE WHEN status IN ('active','submitted') AND created_at < (NOW() - INTERVAL 48 HOUR) THEN 1 ELSE 0 END) stale_sessions
-        FROM candidate_correction_sessions" . $where);
+        FROM Vati_Payfiller_Candidate_Correction_Sessions" . $where);
     $q1->execute($params);
     $a = $q1->fetch(PDO::FETCH_ASSOC) ?: [];
 
-    $q2 = $pdo->prepare("SELECT component_key, COUNT(*) cnt FROM component_correction_cycles" . $where . " GROUP BY component_key ORDER BY cnt DESC LIMIT 10");
+    $q2 = $pdo->prepare("SELECT component_key, COUNT(*) cnt FROM Vati_Payfiller_Component_Correction_Cycles" . $where . " GROUP BY component_key ORDER BY cnt DESC LIMIT 10");
     $q2->execute($params);
     $top = $q2->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
     $q3 = $pdo->prepare("SELECT AVG(TIMESTAMPDIFF(HOUR, requested_at, candidate_submitted_at)) avg_hours
-        FROM component_correction_cycles" . ($where ? str_replace('WHERE', 'WHERE candidate_submitted_at IS NOT NULL AND', $where) : ' WHERE candidate_submitted_at IS NOT NULL'));
+        FROM Vati_Payfiller_Component_Correction_Cycles" . ($where ? str_replace('WHERE', 'WHERE candidate_submitted_at IS NOT NULL AND', $where) : ' WHERE candidate_submitted_at IS NOT NULL'));
     $q3->execute($params);
     $avgHours = (float)($q3->fetchColumn() ?: 0);
 

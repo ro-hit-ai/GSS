@@ -244,6 +244,7 @@ class Contact {
 
         const nameEl = box.querySelector('[data-file-name]');
         const errEl = box.querySelector('[data-file-error]');
+        const removeEl = box.querySelector('[data-file-remove]');
         if (errEl) errEl.textContent = '';
 
         if (nameEl) {
@@ -268,12 +269,19 @@ class Contact {
                 nameEl.removeAttribute('data-local-file');
             }
         }
+
+        if (removeEl) {
+            removeEl.style.display = fileName ? '' : 'none';
+            removeEl.disabled = !fileName;
+            removeEl.setAttribute('aria-hidden', fileName ? 'false' : 'true');
+        }
     }
 
     static clearUploadBox(box) {
         if (!box) return;
         const nameEl = box.querySelector('[data-file-name]');
         const errEl = box.querySelector('[data-file-error]');
+        const removeEl = box.querySelector('[data-file-remove]');
         if (nameEl) {
             nameEl.textContent = 'No file chosen';
             nameEl.disabled = true;
@@ -282,6 +290,11 @@ class Contact {
             nameEl.removeAttribute('data-name');
             nameEl.removeAttribute('data-type');
             nameEl.removeAttribute('data-local-file');
+        }
+        if (removeEl) {
+            removeEl.style.display = 'none';
+            removeEl.disabled = true;
+            removeEl.setAttribute('aria-hidden', 'true');
         }
         if (errEl) errEl.textContent = '';
     }
@@ -308,6 +321,16 @@ class Contact {
                 this.on(nameEl, 'click', (e) => {
                     if (!nameEl.classList.contains('preview-btn')) return;
                     e.preventDefault();
+                });
+            }
+
+            const removeEl = box.querySelector('[data-file-remove]');
+            if (removeEl) {
+                this.on(removeEl, 'click', (e) => {
+                    e.preventDefault();
+                    input.value = '';
+                    control.querySelectorAll('input[type="hidden"][name^="existing_"]').forEach((hidden) => hidden.remove());
+                    this.clearUploadBox(box);
                 });
             }
 
@@ -576,7 +599,7 @@ class Contact {
     static async saveDraft() {
         if (!this.validate(false)) return;
 
-        const fd = new FormData(this.form);
+        const fd = this.buildPayload();
         fd.append("save_draft", "1");
 
         const ok = await this.send(fd);
@@ -586,7 +609,7 @@ class Contact {
     static async submitFinal() {
         if (!this.validate(true)) return;
 
-        const fd = new FormData(this.form);
+        const fd = this.buildPayload();
         fd.append("save_draft", "0");
 
         const ok = await this.send(fd);
@@ -599,20 +622,58 @@ class Contact {
         }
 
         window.Router?.navigateTo
-            ? Router.navigateTo("social")
-            : (window.location.href = "?page=social");
+            ? Router.navigateTo("education")
+            : (window.location.href = "?page=education");
+    }
+
+    static buildPayload() {
+        const form = this.form;
+        const formData = new FormData();
+        if (!form) return formData;
+
+        Array.from(form.elements || []).forEach((el) => {
+            if (!el || !el.name || el.disabled) return;
+
+            const tagName = String(el.tagName || '').toLowerCase();
+            const type = String(el.type || '').toLowerCase();
+
+            if (type === 'file') return;
+            if ((type === 'checkbox' || type === 'radio') && !el.checked) return;
+
+            if (tagName === 'select' && el.multiple) {
+                Array.from(el.selectedOptions || []).forEach((opt) => {
+                    formData.append(el.name, opt.value);
+                });
+                return;
+            }
+
+            formData.append(el.name, el.value ?? '');
+        });
+
+        const currentProofInput = form.querySelector('input[type="file"][name="current_address_proof"]');
+        if (currentProofInput && currentProofInput.files && currentProofInput.files[0]) {
+            formData.append('current_address_proof', currentProofInput.files[0], currentProofInput.files[0].name);
+        }
+
+        const permanentProofInput = form.querySelector('input[type="file"][name="permanent_address_proof"]');
+        if (permanentProofInput && permanentProofInput.files && permanentProofInput.files[0]) {
+            formData.append('permanent_address_proof', permanentProofInput.files[0], permanentProofInput.files[0].name);
+        }
+
+        return formData;
     }
 
     static async send(formData) {
         try {
             const endpoint = `${window.APP_BASE_URL || ''}/api/candidate/store_contact.php`;
+            const form = this.form;
 
-            // Backward compatibility: API expects `address_proof_file`
-            if (!formData.has('address_proof_file') && formData.has('current_address_proof')) {
-                const f = formData.get('current_address_proof');
-                if (f instanceof File) {
-                    formData.append('address_proof_file', f);
-                }
+            if (form) {
+                const currentProofInput = form.querySelector('input[type="file"][name="current_address_proof"]');
+                const permanentProofInput = form.querySelector('input[type="file"][name="permanent_address_proof"]');
+                console.log('[Contact.send] current_address_proof file exists:', !!(currentProofInput && currentProofInput.files && currentProofInput.files[0]));
+                console.log('[Contact.send] permanent_address_proof file exists:', !!(permanentProofInput && permanentProofInput.files && permanentProofInput.files[0]));
+                console.log('[Contact.send] FormData keys:', Array.from(formData.keys()));
             }
 
             const res = await fetch(endpoint, {

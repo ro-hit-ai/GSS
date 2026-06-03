@@ -62,7 +62,6 @@ function getApplicationId() {
     return $appId;
 }
 
-// NEW TABLE + STORED PROCEDURE
 function ensureApplicationExists($application_id) {
     if (session_status() === PHP_SESSION_NONE) session_start();
 

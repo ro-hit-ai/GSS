@@ -1,5 +1,4 @@
 <?php
-// Enable error reporting for debugging
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
@@ -13,11 +12,16 @@ if (empty($_SESSION['logged_in']) || empty($_SESSION['application_id'])) {
     header('Location: ' . app_url('/modules/candidate/login.php'));
     exit;
 }
+if (empty($_SESSION['candidate_login_marker'])) {
+    try {
+        $_SESSION['candidate_login_marker'] = bin2hex(random_bytes(8));
+    } catch (Throwable $e) {
+        $_SESSION['candidate_login_marker'] = (string)time();
+    }
+}
 
-// Load application from session
 $applicationId = (string)$_SESSION['application_id'];
 
-// UI labels
 $userName = $_SESSION['user_name'] ?? "Candidate";
 $userEmail = $_SESSION['user_email'] ?? '';
 
@@ -65,14 +69,11 @@ if (($userEmail === '' || $userName === '' || $userName === 'Candidate') && func
         }
     } catch (Throwable $e) {
         error_log("Database error in index.php: " . $e->getMessage());
-        // keep silent for UI
     }
 }
 
-// Use the app_url() function from your env.php or define it if missing
 if (!function_exists('app_url')) {
     function app_url($path = '') {
-        // Use APP_BASE_URL from .env file
         $base = defined('APP_BASE_URL') ? APP_BASE_URL : '';
         if (!$base) {
             $scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
@@ -95,7 +96,6 @@ if (!function_exists('app_base_url')) {
     }
 }
 
-// Get APP_BASE_URL for JavaScript
 $jsAppBaseUrl = defined('APP_BASE_URL') ? APP_BASE_URL : '';
 if (!$jsAppBaseUrl) {
     $scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
@@ -110,22 +110,19 @@ if (!$jsAppBaseUrl) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VATI GSS - Background Verification</title>
 
-    <!-- Bootstrap + Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
-    <!-- Core UI styles -->
     <link rel="stylesheet" href="<?php echo htmlspecialchars(app_url('/assets/css/style.css')); ?>">
     <link rel="stylesheet" href="<?php echo htmlspecialchars(app_url('/assets/css/candidate.css')); ?>">
 
-    <!-- Set APP_BASE_URL early -->
     <script>
         window.APP_BASE_URL = "<?php echo htmlspecialchars($jsAppBaseUrl); ?>";
         console.log("🌐 APP_BASE_URL set to:", window.APP_BASE_URL);
         window.CANDIDATE_APP_ID = <?php echo json_encode((string)$applicationId); ?>;
+        window.CANDIDATE_LOGIN_MARKER = <?php echo json_encode((string)($_SESSION['candidate_login_marker'] ?? '')); ?>;
     </script>
 
-    <!-- Candidate UI CSS -->
 </head>
 
 <body class="candidate-page candidate-config-loading">
@@ -152,7 +149,6 @@ if (!$jsAppBaseUrl) {
                 window.localStorage.setItem('candidate_prefill', JSON.stringify(merged));
             }
         } catch (e) {
-            // ignore storage errors
         }
     })();
 </script>
@@ -204,20 +200,12 @@ if (!$jsAppBaseUrl) {
     </div>
 </div>
 
-<!-- Bootstrap Bundle (includes Popper) -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-
-<!-- ============================================
-     SPA APPLICATION SCRIPTS
-============================================ -->
-
-<!-- 1. CORE UTILITIES -->
 <script src="<?php echo htmlspecialchars(app_url('/js/modules/candidate/NotificationService.js')); ?>"></script>
 <script src="<?php echo htmlspecialchars(app_url('/js/modules/candidate/forms.js')); ?>"></script>
 <script src="<?php echo htmlspecialchars(app_url('/js/modules/candidate/DraftManager.js')); ?>"></script>
 <script src="<?php echo htmlspecialchars(app_url('/js/modules/candidate/TabManager.js')); ?>"></script>
 
-<!-- 2. PAGE MODULES -->
 <script src="<?php echo htmlspecialchars(app_url('/js/modules/candidate/pages/BasicDetails.js')); ?>"></script>
 <script src="<?php echo htmlspecialchars(app_url('/js/modules/candidate/pages/Identification.js')); ?>"></script>
 <script src="<?php echo htmlspecialchars(app_url('/js/modules/candidate/pages/Contact.js')); ?>"></script>
@@ -229,19 +217,13 @@ if (!$jsAppBaseUrl) {
 <script src="<?php echo htmlspecialchars(app_url('/js/modules/candidate/pages/Review.js')); ?>"></script>
 <script src="<?php echo htmlspecialchars(app_url('/js/modules/candidate/pages/ReviewConfirmation.js')); ?>"></script>
 <script src="<?php echo htmlspecialchars(app_url('/js/modules/candidate/pages/Success.js')); ?>"></script>
+<script src="<?php echo htmlspecialchars(app_url('/js/modules/candidate/SidebarStatus.js')); ?>"></script>
 
-<!-- 3. ROUTER (must load last) -->
-<!--<script src="<?php echo htmlspecialchars(app_url('/js/modules/candidate/router.js')); ?>"></script> -->
 
 <script
     src="<?php echo htmlspecialchars(app_url('/js/modules/candidate/router.js')); ?>"
     data-app-base="<?php echo htmlspecialchars($jsAppBaseUrl); ?>">
 </script>
-
-
-<!-- ============================================
-     GLOBAL PREVIEW MODAL - SIMPLIFIED VERSION
-============================================ -->
 <div class="modal fade" id="globalDocumentPreviewModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered" style="max-width:760px;">
         <div class="modal-content">
@@ -268,11 +250,9 @@ if (!$jsAppBaseUrl) {
 </div>
 
 <script>
-// Global Preview Handler - FIXED & EXTENDED (SAFE)
 (function () {
     console.log('🔧 Initializing global preview handler');
 
-    // Event delegation for all preview buttons
     document.addEventListener('click', function (e) {
         const previewBtn = e.target.closest('.preview-btn');
         if (!previewBtn) return;
@@ -280,7 +260,6 @@ if (!$jsAppBaseUrl) {
         e.preventDefault();
         e.stopPropagation();
 
-        // Extract attributes
         const url =
             previewBtn.getAttribute('data-url') ||
             previewBtn.getAttribute('data-doc-url');
@@ -295,7 +274,6 @@ if (!$jsAppBaseUrl) {
 
         if (!url) return;
 
-        // Auto-detect file type if not provided
         if (type === 'other') {
             if (url.match(/\.pdf$/i)) type = 'pdf';
             else if (url.match(/\.(png|jpe?g|gif|webp)$/i)) type = 'image';
@@ -306,7 +284,6 @@ if (!$jsAppBaseUrl) {
         openGlobalPreviewModal(url, name, type);
     });
 
-    // Bootstrap modal preview (existing system)
     function openGlobalPreviewModal(url, name, type = 'other') {
         const modal = document.getElementById('globalDocumentPreviewModal');
         const content = document.getElementById('globalPreviewContent');
@@ -326,7 +303,6 @@ if (!$jsAppBaseUrl) {
             titleEl.title = name;
         }
 
-        // Download button
         downloadBtn.href = url;
         downloadBtn.download = name;
         downloadBtn.innerHTML =
@@ -369,7 +345,6 @@ if (!$jsAppBaseUrl) {
             `;
         }
 
-        // Show Bootstrap modal
         try {
             if (window.bootstrap && bootstrap.Modal) {
                 new bootstrap.Modal(modal).show();
@@ -384,9 +359,7 @@ if (!$jsAppBaseUrl) {
         }
     }
 
-    // (PDF.js viewer removed, back to browser PDF viewer)
 
-    // Backward-compatible aliases
     window.openDocumentPreview = openGlobalPreviewModal;
     window.openDocPreview = openGlobalPreviewModal;
 
@@ -431,10 +404,8 @@ function closeFormPreview() {
 }
 </script>
 
-<!-- SIMPLE ROUTER PATCH -->
 <script>
 (function() {
-    // Wait a bit for router to load
     setTimeout(function() {
         if (window.Router && window.Router.loadPageContent) {
             const originalLoad = Router.loadPageContent;
@@ -451,7 +422,6 @@ function closeFormPreview() {
                     const html = await response.text();
                     container.innerHTML = html;
                     
-                    // Initialize the page
                     if (Router.initializePage) {
                         await Router.initializePage(pageId);
                     }
@@ -494,19 +464,16 @@ document.addEventListener("DOMContentLoaded", function() {
         toggleBtn.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
     }
     
-    // Toggle sidebar
     if (toggleBtn && sidebar) {
         toggleBtn.addEventListener('click', function(e) {
             e.stopPropagation();
             
             if (window.innerWidth < 768) {
-                // Mobile: toggle sidebar-open class
                 sidebar.classList.toggle('sidebar-open');
                 if (overlay) {
                     overlay.classList.toggle('show');
                 }
             } else {
-                // Desktop: toggle collapsed class
                 sidebar.classList.toggle('collapsed');
                 localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
             }
@@ -515,7 +482,6 @@ document.addEventListener("DOMContentLoaded", function() {
         });
     }
     
-    // Close sidebar on overlay click (mobile)
     if (overlay) {
         overlay.addEventListener('click', function() {
             sidebar.classList.remove('sidebar-open');
@@ -524,7 +490,6 @@ document.addEventListener("DOMContentLoaded", function() {
         });
     }
     
-    // Initialize desktop sidebar state
     if (sidebar && window.innerWidth >= 768) {
         const isCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
         if (isCollapsed) {
@@ -535,7 +500,6 @@ document.addEventListener("DOMContentLoaded", function() {
     window.addEventListener('resize', syncSidebarToggleState);
     syncSidebarToggleState();
     
-    // ✅ FIXED: Sidebar navigation - PROPER EVENT HANDLER
     const sidebarNav = document.querySelector('.sidebar-nav');
     if (sidebarNav) {
         sidebarNav.addEventListener('click', function(e) {
@@ -548,12 +512,9 @@ document.addEventListener("DOMContentLoaded", function() {
             e.preventDefault();
             e.stopPropagation();
             
-            // Check if Router is loaded and accessible
             if (window.Router && window.Router.navigateTo) {
-                // Use Router's navigation
                 Router.navigateTo(pageId);
             } else {
-                // Fallback: direct URL navigation
                 const base = window.APP_BASE_URL || '';
                 window.location.href = `${base}/modules/candidate/${pageId}.php`;
             }
@@ -621,7 +582,6 @@ window.showAlert = function ({ type = 'info', message = '' } = {}) {
     console[t === 'error' ? 'error' : 'log'](m);
 };
 </script>
-<!-- ===== FORM-WIDTH (75%) PREVIEW OVERLAY ===== -->
 <div id="formPreviewOverlay" hidden>
     <div id="formPreviewModal">
         <div class="form-preview-header">

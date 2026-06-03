@@ -141,6 +141,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $_SESSION['candidate_user_id'] = $candidateUserId;
         $_SESSION['user_name'] = $userName;
         $_SESSION['user_email'] = $userEmail;
+        try {
+            $_SESSION['candidate_login_marker'] = bin2hex(random_bytes(8));
+        } catch (Throwable $e) {
+            $_SESSION['candidate_login_marker'] = (string)time();
+        }
 
         try {
             session_regenerate_id(true);

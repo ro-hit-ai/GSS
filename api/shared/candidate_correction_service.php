@@ -6,6 +6,7 @@ require_once __DIR__ . '/../../includes/mail.php';
 require_once __DIR__ . '/workflow_status_semantics.php';
 require_once __DIR__ . '/workflow_communication_service.php';
 require_once __DIR__ . '/workflow_mode.php';
+require_once __DIR__ . '/case_component_binding.php';
 
 function ccs_role_norm(string $role): string {
     $r = strtolower(trim($role));
@@ -19,13 +20,20 @@ function ccs_role_norm(string $role): string {
 
 function ccs_component_norm(string $k): string {
     $k = strtolower(trim($k));
+    $k = str_replace(['-', ' '], '_', $k);
+    if ($k === 'basic_details' || $k === 'basic_detail') return 'basic';
     if ($k === 'identification') return 'id';
-    if ($k === 'social' || $k === 'social_media' || $k === 'social-media') return 'socialmedia';
+    if ($k === 'contact_information' || $k === 'contact_details' || $k === 'contact_detail') return 'contact';
+    if ($k === 'education_details' || $k === 'education_detail') return 'education';
+    if ($k === 'employment_details' || $k === 'employment_detail') return 'employment';
+    if ($k === 'references') return 'reference';
+    if ($k === 'e_court' || $k === 'ecourt_check') return 'ecourt';
+    if ($k === 'social' || $k === 'social_media') return 'socialmedia';
     return $k;
 }
 
 function ccs_ensure_table(PDO $pdo): void {
-    $pdo->exec("CREATE TABLE IF NOT EXISTS candidate_correction_sessions (
+    $pdo->exec("CREATE TABLE IF NOT EXISTS Vati_Payfiller_Candidate_Correction_Sessions (
         correction_session_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
         request_id VARCHAR(128) NULL,
         case_id BIGINT NOT NULL,
@@ -53,7 +61,7 @@ function ccs_ensure_table(PDO $pdo): void {
         KEY idx_ccs_app (application_id),
         KEY idx_ccs_status_exp (status, expires_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    $pdo->exec("CREATE TABLE IF NOT EXISTS component_correction_cycles (
+    $pdo->exec("CREATE TABLE IF NOT EXISTS Vati_Payfiller_Component_Correction_Cycles (
         correction_cycle_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
         correction_session_id BIGINT UNSIGNED NOT NULL,
         case_id BIGINT NOT NULL,
@@ -76,7 +84,7 @@ function ccs_ensure_table(PDO $pdo): void {
         KEY idx_ccc_session (correction_session_id),
         KEY idx_ccc_app (application_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    $pdo->exec("CREATE TABLE IF NOT EXISTS component_document_versions (
+    $pdo->exec("CREATE TABLE IF NOT EXISTS Vati_Payfiller_Component_Document_Versions (
         document_version_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
         application_id VARCHAR(64) NOT NULL,
         case_id BIGINT NOT NULL,
@@ -135,7 +143,7 @@ function ccs_user_has_verifier_visibility(PDO $pdo, int $caseId, int $userId): b
 }
 
 function ccs_is_role_allowed(string $role): bool {
-    return in_array($role, ['client_admin', 'verifier', 'qa', 'gss_admin'], true);
+    return in_array($role, ['client_admin', 'validator', 'verifier', 'qa', 'gss_admin'], true);
 }
 
 function ccs_get_case(PDO $pdo, int $caseId, string $applicationId): ?array {
@@ -163,6 +171,19 @@ function ccs_component_stage_for_role(string $role): string {
 function ccs_role_allowed_sections(PDO $pdo, int $userId): array {
     $out = ['*' => true];
     if ($userId <= 0) return $out;
+    if (session_status() === PHP_SESSION_NONE) {
+        @session_start();
+    }
+    $sessionRaw = strtolower(trim((string)($_SESSION['auth_allowed_sections'] ?? '')));
+    if ($sessionRaw !== '') {
+        if ($sessionRaw === '*') return ['*' => true];
+        $sessionSet = [];
+        foreach (preg_split('/[\s,|]+/', $sessionRaw) as $p) {
+            $k = ccs_component_norm((string)$p);
+            if ($k !== '') $sessionSet[$k] = true;
+        }
+        if ($sessionSet) return $sessionSet;
+    }
     try {
         $st = $pdo->prepare('SELECT allowed_sections FROM Vati_Payfiller_Users WHERE user_id = ? LIMIT 1');
         $st->execute([$userId]);
@@ -212,15 +233,20 @@ function ccs_can_role_request_component(PDO $pdo, int $caseId, string $component
     }
     if ($role === 'verifier') {
         if (!ccs_user_has_verifier_visibility($pdo, $caseId, $userId)) return false;
-        $group = '';
-        if (in_array($component, ['basic', 'id', 'contact'], true)) $group = 'BASIC';
-        if (in_array($component, ['education', 'employment', 'reference'], true)) $group = 'EDUCATION';
-        if (in_array($component, ['ecourt', 'socialmedia'], true)) $group = 'ADDITIONAL';
-        if ($group !== '') {
-            $q = $pdo->prepare("SELECT assigned_user_id FROM Vati_Payfiller_Verifier_Group_Queue WHERE case_id = ? AND UPPER(TRIM(group_key)) = ? LIMIT 1");
-            $q->execute([$caseId, $group]);
-            $gAssigned = (int)($q->fetchColumn() ?: 0);
-            if ($gAssigned > 0 && $gAssigned !== $userId) return false;
+        $case = ccs_get_case($pdo, $caseId, '');
+        $applicationId = (string)($case['application_id'] ?? '');
+        $c = $pdo->prepare("SELECT assigned_role, assigned_user_id FROM Vati_Payfiller_Case_Components WHERE case_id = ? AND LOWER(TRIM(component_key)) = ? LIMIT 1");
+        $c->execute([$caseId, $component]);
+        $row = $c->fetch(PDO::FETCH_ASSOC) ?: null;
+        if (!$row) return false;
+        $assignedRole = strtolower(trim((string)($row['assigned_role'] ?? '')));
+        $assignedUserId = (int)($row['assigned_user_id'] ?? 0);
+        if ($assignedRole !== '' && $assignedUserId > 0) {
+            if ($assignedRole !== $role || $assignedUserId !== $userId) return false;
+        } else {
+            $configAllowed = case_component_binding_role_allowed($pdo, $caseId, $applicationId, $component, $role);
+            if ($configAllowed === false) return false;
+            if (!isset($allowedSet['*']) && !isset($allowedSet[$component])) return false;
         }
         return ccs_is_actionable_status(ccs_stage_status($pdo, $caseId, $component, 'verifier'));
     }
@@ -296,8 +322,8 @@ function ccs_resume_components_after_candidate_submit(PDO $pdo, int $caseId, str
 }
 
 function ccs_insert_correction_cycles(PDO $pdo, int $sessionId, int $caseId, string $applicationId, array $components, int $userId, string $role, string $reason): void {
-    $sel = $pdo->prepare("SELECT COALESCE(MAX(cycle_number),0) FROM component_correction_cycles WHERE case_id = ? AND LOWER(TRIM(component_key)) = ?");
-    $ins = $pdo->prepare("INSERT INTO component_correction_cycles (correction_session_id, case_id, application_id, component_key, requested_by_user_id, requested_role, cycle_number, previous_status, correction_reason, requested_at, reopened_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), NOW())");
+    $sel = $pdo->prepare("SELECT COALESCE(MAX(cycle_number),0) FROM Vati_Payfiller_Component_Correction_Cycles WHERE case_id = ? AND LOWER(TRIM(component_key)) = ?");
+    $ins = $pdo->prepare("INSERT INTO Vati_Payfiller_Component_Correction_Cycles (correction_session_id, case_id, application_id, component_key, requested_by_user_id, requested_role, cycle_number, previous_status, correction_reason, requested_at, reopened_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), NOW())");
     foreach ($components as $c) {
         $k = ccs_component_norm((string)$c);
         $prev = ccs_stage_status($pdo, $caseId, $k, ccs_component_stage_for_role($role));
@@ -310,7 +336,7 @@ function ccs_insert_correction_cycles(PDO $pdo, int $sessionId, int $caseId, str
 }
 
 function ccs_mark_cycles_candidate_submitted(PDO $pdo, int $sessionId, array $components): void {
-    $up = $pdo->prepare("UPDATE component_correction_cycles SET candidate_submitted_at = NOW(), updated_at = NOW() WHERE correction_session_id = ? AND LOWER(TRIM(component_key)) = ? AND candidate_submitted_at IS NULL");
+    $up = $pdo->prepare("UPDATE Vati_Payfiller_Component_Correction_Cycles SET candidate_submitted_at = NOW(), updated_at = NOW() WHERE correction_session_id = ? AND LOWER(TRIM(component_key)) = ? AND candidate_submitted_at IS NULL");
     foreach ($components as $c) {
         $up->execute([$sessionId, ccs_component_norm((string)$c)]);
     }
@@ -324,7 +350,7 @@ function ccs_progress_component_after_candidate_save(PDO $pdo, string $applicati
     if ($sessionId <= 0) return 0;
 
     $st = $pdo->prepare("SELECT correction_session_id, case_id, application_id, allowed_components_json, status
-                         FROM candidate_correction_sessions
+                         FROM Vati_Payfiller_Candidate_Correction_Sessions
                          WHERE correction_session_id = ?
                          LIMIT 1");
     $st->execute([$sessionId]);
@@ -352,8 +378,8 @@ function ccs_progress_component_after_candidate_save(PDO $pdo, string $applicati
 }
 
 function ccs_snapshot_document_versions(PDO $pdo, int $caseId, string $applicationId, array $components, int $sessionId): void {
-    $selLast = $pdo->prepare("SELECT document_version_id, upload_version FROM component_document_versions WHERE application_id = ? AND component_key = ? ORDER BY upload_version DESC, document_version_id DESC LIMIT 1");
-    $ins = $pdo->prepare("INSERT INTO component_document_versions (application_id, case_id, component_key, file_name, file_url, correction_session_id, correction_cycle_id, upload_version, supersedes_document_id, source_stage, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
+    $selLast = $pdo->prepare("SELECT document_version_id, upload_version FROM Vati_Payfiller_Component_Document_Versions WHERE application_id = ? AND component_key = ? ORDER BY upload_version DESC, document_version_id DESC LIMIT 1");
+    $ins = $pdo->prepare("INSERT INTO Vati_Payfiller_Component_Document_Versions (application_id, case_id, component_key, file_name, file_url, correction_session_id, correction_cycle_id, upload_version, supersedes_document_id, source_stage, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
     foreach ($components as $c) {
         $k = ccs_component_norm((string)$c);
         $selLast->execute([$applicationId, $k]);
@@ -368,16 +394,16 @@ function ccs_log_workflow_communication(PDO $pdo, int $caseId, string $applicati
     wc_ensure_tables($pdo);
     $subject = 'Candidate Correction Requested';
     $body = 'Correction requested for components: ' . implode(', ', $components) . ($reason !== '' ? (' | reason: ' . $reason) : '');
-    $st = $pdo->prepare("INSERT INTO workflow_communications
+    $st = $pdo->prepare("INSERT INTO Vati_Payfiller_Workflow_Communications
         (application_id, case_id, component_key, role_key, action_key, subject, body, notes, sent_by_user_id, sent_by_name, sent_at, delivery_status, communication_type, direction, actor_role, actor_name, workflow_stage, thread_id, source_table, source_message_key)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'sent', 'correction_request', 'outgoing', ?, ?, ?, ?, 'candidate_correction_sessions', ?)");
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'sent', 'correction_request', 'outgoing', ?, ?, ?, ?, 'Vati_Payfiller_Candidate_Correction_Sessions', ?)");
     $srcKey = 'corr:' . $caseId . ':' . sha1($applicationId . '|' . implode(',', $components) . '|' . $reason . '|' . date('YmdHi'));
     $st->execute([$applicationId, $caseId, 'candidate_correction', $role, 'correction_request', $subject, $body, $reason !== '' ? $reason : null, $userId > 0 ? $userId : null, $userName !== '' ? $userName : null, $role, $userName !== '' ? $userName : null, $role, $threadId, $srcKey]);
 }
 
 function ccs_active_session_conflicts(PDO $pdo, int $caseId, array $components): array {
     if (!$components) return [];
-    $st = $pdo->prepare("SELECT correction_session_id, allowed_components_json FROM candidate_correction_sessions WHERE case_id = ? AND status IN ('active','submitted') AND (expires_at IS NULL OR expires_at >= NOW())");
+    $st = $pdo->prepare("SELECT correction_session_id, allowed_components_json FROM Vati_Payfiller_Candidate_Correction_Sessions WHERE case_id = ? AND status IN ('active','submitted') AND (expires_at IS NULL OR expires_at >= NOW())");
     $st->execute([$caseId]);
     $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
     $asked = [];
@@ -394,12 +420,113 @@ function ccs_active_session_conflicts(PDO $pdo, int $caseId, array $components):
     return array_values(array_keys($conf));
 }
 
+function ccs_active_conflict_sessions(PDO $pdo, int $caseId, array $components): array {
+    if (!$components) return [];
+    $asked = [];
+    foreach ($components as $c) {
+        $k = ccs_component_norm((string)$c);
+        if ($k !== '') $asked[$k] = true;
+    }
+    if (!$asked) return [];
+
+    $st = $pdo->prepare("SELECT correction_session_id, case_id, application_id, correction_reason, allowed_components_json, token, requested_role, created_at FROM Vati_Payfiller_Candidate_Correction_Sessions WHERE case_id = ? AND status IN ('active','submitted') AND (expires_at IS NULL OR expires_at >= NOW()) ORDER BY correction_session_id DESC");
+    $st->execute([$caseId]);
+    $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $out = [];
+    foreach ($rows as $row) {
+        $arr = json_decode((string)($row['allowed_components_json'] ?? '[]'), true);
+        if (!is_array($arr)) continue;
+        $overlap = [];
+        foreach ($arr as $componentKey) {
+            $k = ccs_component_norm((string)$componentKey);
+            if ($k !== '' && isset($asked[$k])) {
+                $overlap[$k] = true;
+            }
+        }
+        if ($overlap) {
+            $row['components'] = array_values(array_keys($overlap));
+            $out[] = $row;
+        }
+    }
+    return $out;
+}
+
+function ccs_has_correction_mail_log(PDO $pdo, string $applicationId, int $caseId, string $createdAt = ''): bool {
+    try {
+        $params = [$applicationId, $caseId];
+        $createdFilter = '';
+        if (trim($createdAt) !== '') {
+            $createdFilter = ' AND created_at >= ?';
+            $params[] = $createdAt;
+        }
+        $st = $pdo->prepare(
+            "SELECT 1
+               FROM Vati_Payfiller_GSS_Mail_Logs
+              WHERE status = 'sent'
+                AND (application_id = ? OR case_id = ?)
+                AND (meta_json LIKE '%candidate.correction.request%' OR subject LIKE '%Correction Required%')
+                $createdFilter
+              LIMIT 1"
+        );
+        $st->execute($params);
+        return (bool)$st->fetchColumn();
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+function ccs_resend_existing_session_if_mail_missing(PDO $pdo, array $sessionRow, array $case): array {
+    $sessionId = (int)($sessionRow['correction_session_id'] ?? 0);
+    $caseId = (int)($sessionRow['case_id'] ?? ($case['case_id'] ?? 0));
+    $applicationId = (string)($sessionRow['application_id'] ?? ($case['application_id'] ?? ''));
+    if ($sessionId <= 0 || $caseId <= 0 || $applicationId === '') {
+        return ['attempted' => false, 'sent' => false, 'reason' => 'invalid_session'];
+    }
+    if (ccs_has_correction_mail_log($pdo, $applicationId, $caseId, (string)($sessionRow['created_at'] ?? ''))) {
+        return ['attempted' => false, 'sent' => true, 'reason' => 'already_sent'];
+    }
+    $components = $sessionRow['components'] ?? [];
+    if (!$components) {
+        $components = json_decode((string)($sessionRow['allowed_components_json'] ?? '[]'), true);
+    }
+    if (!is_array($components)) $components = [];
+    $sent = ccs_send_mail(
+        $pdo,
+        $case,
+        $components,
+        (string)($sessionRow['correction_reason'] ?? ''),
+        (string)($sessionRow['token'] ?? ''),
+        (string)($sessionRow['requested_role'] ?? '')
+    );
+    if ($sent) {
+        try {
+            $up = $pdo->prepare("UPDATE Vati_Payfiller_Candidate_Correction_Sessions SET resend_count = resend_count + 1, updated_at = NOW() WHERE correction_session_id = ?");
+            $up->execute([$sessionId]);
+        } catch (Throwable $e) {
+        }
+    }
+    return ['attempted' => true, 'sent' => $sent, 'reason' => $sent ? 'resent' : 'send_failed'];
+}
+
+function ccs_candidate_correction_url(string $token): string {
+    $path = '/modules/candidate/candidate_correction.php?token=' . urlencode($token);
+    $url = app_url($path);
+    if (preg_match('~^https?:///~i', $url) || !preg_match('~^https?://[^/]+/~i', $url)) {
+        $base = trim((string)(env_get('CANDIDATE_PORTAL_BASE_URL', '') ?? ''));
+        if ($base === '') {
+            $base = 'http://localhost/GSS';
+        }
+        $url = rtrim($base, '/') . $path;
+    }
+    return $url;
+}
+
 function ccs_send_mail(PDO $pdo, array $case, array $components, string $reason, string $token, string $role): bool {
     $appId = (string)($case['application_id'] ?? '');
     $name = trim((string)($case['candidate_first_name'] ?? '') . ' ' . (string)($case['candidate_last_name'] ?? ''));
     $to = trim((string)($case['candidate_email'] ?? ''));
     if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL)) return false;
-    $url = app_url('/modules/candidate/candidate_correction.php?token=' . urlencode($token));
+    $url = ccs_candidate_correction_url($token);
     $safeUrl = htmlspecialchars($url);
     $safeName = htmlspecialchars($name !== '' ? $name : 'Candidate');
     $list = htmlspecialchars(implode(', ', $components));

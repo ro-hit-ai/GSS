@@ -1,34 +1,29 @@
 class Reference {
-
     static _initialized = false;
     static _listeners = [];
     static _activeSections = [];
+    static _maxReferences = 3;
     static _sectionConfig = {
         education_reference: {
+            type: 'education',
             label: 'Education Reference',
-            fields: [
-                'education_reference_name',
-                'education_reference_designation',
-                'education_reference_company',
-                'education_reference_relationship',
-                'education_reference_years_known',
-                'education_reference_mobile',
-                'education_reference_email'
-            ]
+            tabId: 'education_reference_tab',
+            hiddenName: 'has_education_reference',
+            visibleName: 'education_reference_visible_count'
         },
         employment_reference: {
+            type: 'employment',
             label: 'Employment Reference',
-            fields: [
-                'employment_reference_name',
-                'employment_reference_designation',
-                'employment_reference_company',
-                'employment_reference_relationship',
-                'employment_reference_years_known',
-                'employment_reference_mobile',
-                'employment_reference_email'
-            ]
+            tabId: 'employment_reference_tab',
+            hiddenName: 'has_employment_reference',
+            visibleName: 'employment_reference_visible_count'
         }
     };
+    static _groups = {
+        education: { rows: [], cards: [], visibleCount: 1, currentIndex: 0 },
+        employment: { rows: [], cards: [], visibleCount: 1, currentIndex: 0 }
+    };
+    static _fields = ['name', 'designation', 'company', 'relationship', 'years_known', 'mobile', 'email'];
 
     static init() {
         return this;
@@ -38,8 +33,9 @@ class Reference {
         if (this._initialized) return;
 
         this._initialized = true;
+        this.loadReferenceData();
         this.applySectionVisibility();
-        this.hydrateFromDB();
+        this.renderAllGroups();
         this.initTabs();
         this.initFormHandling();
     }
@@ -49,6 +45,10 @@ class Reference {
         this._listeners = [];
         this._initialized = false;
         this._activeSections = [];
+        this._groups = {
+            education: { rows: [], cards: [], visibleCount: 1, currentIndex: 0 },
+            employment: { rows: [], cards: [], visibleCount: 1, currentIndex: 0 }
+        };
     }
 
     static on(el, type, fn) {
@@ -118,6 +118,23 @@ class Reference {
         return out;
     }
 
+    static loadReferenceData() {
+        const dataEl = document.getElementById('referenceData');
+        let data = {};
+        try {
+            data = dataEl ? JSON.parse(dataEl.dataset.reference || '{}') : {};
+        } catch (e) {
+            console.error('Reference data parse error', e);
+        }
+
+        ['education', 'employment'].forEach((type) => {
+            const rows = Array.isArray(data[type]) ? data[type] : [];
+            const normalizedRows = rows.length ? rows : [{}];
+            this._groups[type].rows = normalizedRows.slice(0, this._maxReferences);
+            this._groups[type].visibleCount = Math.max(1, Math.min(normalizedRows.length || 1, this._maxReferences));
+        });
+    }
+
     static activateTab(tabId) {
         const form = document.getElementById('referenceForm');
         if (!form) return;
@@ -139,41 +156,30 @@ class Reference {
 
         const form = document.getElementById('referenceForm');
         const noSectionMessage = document.getElementById('referenceNoSectionMessage');
-        const hiddenEducation = form?.querySelector('[name="has_education_reference"]');
-        const hiddenEmployment = form?.querySelector('[name="has_employment_reference"]');
         const tabsWrap = document.getElementById('referenceTabsWrap');
-        const educationTabBtn = document.getElementById('educationReferenceTabBtn');
-        const employmentTabBtn = document.getElementById('employmentReferenceTabBtn');
         const hasEducation = activeSections.indexOf('education_reference') !== -1;
         const hasEmployment = activeSections.indexOf('employment_reference') !== -1;
 
-        if (hiddenEducation) {
-            hiddenEducation.value = hasEducation ? '1' : '0';
-        }
-        if (hiddenEmployment) {
-            hiddenEmployment.value = hasEmployment ? '1' : '0';
-        }
+        Object.entries(this._sectionConfig).forEach(([sectionKey, config]) => {
+            const isActive = activeSections.indexOf(sectionKey) !== -1;
+            const hidden = form?.querySelector(`[name="${config.hiddenName}"]`);
+            const tabButton = document.querySelector(`[data-tab-target="${config.tabId}"]`);
+            const pane = document.getElementById(config.tabId);
 
-        if (educationTabBtn) educationTabBtn.style.display = hasEducation ? '' : 'none';
-        if (employmentTabBtn) employmentTabBtn.style.display = hasEmployment ? '' : 'none';
-        if (tabsWrap) tabsWrap.style.display = (hasEducation && hasEmployment) ? '' : 'none';
-
-        document.querySelectorAll('[data-reference-section]').forEach((sectionEl) => {
-            const key = String(sectionEl.getAttribute('data-reference-section') || '').trim();
-            const isActive = activeSections.indexOf(key) !== -1;
-            sectionEl.style.display = isActive ? '' : 'none';
-            sectionEl.querySelectorAll('input, select, textarea').forEach((input) => {
-                input.disabled = !isActive;
-            });
+            if (hidden) hidden.value = isActive ? '1' : '0';
+            if (tabButton) tabButton.style.display = isActive ? '' : 'none';
+            if (pane) {
+                pane.style.display = isActive ? '' : 'none';
+                pane.querySelectorAll('input, select, textarea, button').forEach((input) => {
+                    input.disabled = !isActive;
+                });
+            }
         });
 
-        if (noSectionMessage) {
-            noSectionMessage.style.display = activeSections.length ? 'none' : 'block';
-        }
+        if (tabsWrap) tabsWrap.style.display = (hasEducation && hasEmployment) ? '' : 'none';
+        if (noSectionMessage) noSectionMessage.style.display = activeSections.length ? 'none' : 'block';
 
-        if (hasEducation && hasEmployment) {
-            this.activateTab('education_reference_tab');
-        } else if (hasEducation) {
+        if (hasEducation) {
             this.activateTab('education_reference_tab');
         } else if (hasEmployment) {
             this.activateTab('employment_reference_tab');
@@ -188,54 +194,157 @@ class Reference {
             this.on(btn, 'click', (e) => {
                 e.preventDefault();
                 const tabId = String(btn.getAttribute('data-tab-target') || '').trim();
-                if (!tabId) return;
-                this.activateTab(tabId);
+                if (tabId) this.activateTab(tabId);
             });
         });
     }
 
-    static hydrateFromDB() {
-        const dataEl = document.getElementById('referenceData');
-        if (!dataEl) return;
+    static renderAllGroups() {
+        this.renderGroup('education');
+        this.renderGroup('employment');
+    }
 
-        try {
-            const data = JSON.parse(dataEl.dataset.reference || '{}');
-            if (Object.keys(data).length) {
-                this.populateForm(data);
-            }
-        } catch (e) {
-            console.error('Reference data parse error', e);
+    static renderGroup(type) {
+        const group = this._groups[type];
+        const list = document.querySelector(`[data-reference-list="${type}"]`);
+        const tabs = document.querySelector(`[data-reference-tabs="${type}"]`);
+        const template = document.getElementById('referenceCardTemplate');
+        const visibleInput = document.querySelector(`[name="${type}_reference_visible_count"]`);
+        if (!group || !list || !tabs || !template) return;
+
+        list.innerHTML = '';
+        tabs.innerHTML = '';
+        group.cards = [];
+
+        const visibleCount = Math.max(1, Math.min(group.visibleCount || 1, this._maxReferences));
+        group.visibleCount = visibleCount;
+        if (visibleInput) visibleInput.value = String(visibleCount);
+
+        for (let index = 0; index < visibleCount; index++) {
+            if (!group.rows[index]) group.rows[index] = {};
+
+            const card = this.createCard(type, index, group.rows[index], template);
+            list.appendChild(card);
+            group.cards[index] = card;
+
+            const tab = document.createElement('div');
+            tab.className = `${type === 'education' ? 'education' : 'employment'}-tab tab-item reference-inner-tab`;
+            tab.dataset.referenceType = type;
+            tab.dataset.index = String(index);
+            tab.innerHTML = `${type === 'education' ? 'Education Ref' : 'Employment Ref'} ${index + 1} <span class="tab-dot">•</span>`;
+            tab.addEventListener('click', () => this.showInnerTab(type, index));
+            tabs.appendChild(tab);
         }
+
+        this.showInnerTab(type, Math.min(group.currentIndex || 0, visibleCount - 1));
+        this.updateContinuation(type);
     }
 
-    static populateForm(data) {
-        Object.keys(this._sectionConfig).forEach((sectionKey) => {
-            const prefix = sectionKey + '_';
-            this._sectionConfig[sectionKey].fields.forEach((field) => {
-                const el = document.querySelector(`[name="${field}"]`);
-                if (!el) return;
+    static createCard(type, index, row, template) {
+        const fragment = template.content.cloneNode(true);
+        const card = fragment.querySelector('[data-reference-card]');
+        const prefix = `${type}_reference`;
+        card.dataset.referenceType = type;
+        card.dataset.referenceIndex = String(index);
 
-                const shortKey = field.replace(prefix, '');
-                let value = data[field];
+        const companyLabel = card.querySelector('[data-company-label]');
+        if (companyLabel) {
+            companyLabel.innerHTML = `${type === 'education' ? 'Institution / Company' : 'Company'} <span class="required">*</span>`;
+        }
 
-                if ((value === null || typeof value === 'undefined' || value === '') && sectionKey === 'employment_reference') {
-                    const legacyMap = {
-                        name: 'reference_name',
-                        designation: 'reference_designation',
-                        company: 'reference_company',
-                        relationship: 'relationship',
-                        years_known: 'years_known',
-                        mobile: 'reference_mobile',
-                        email: 'reference_email'
-                    };
-                    value = data[legacyMap[shortKey] || ''];
-                }
-
-                if (value !== null && typeof value !== 'undefined') {
-                    el.value = value;
-                }
-            });
+        this._fields.forEach((field) => {
+            const input = card.querySelector(`[data-field="${field}"]`);
+            if (!input) return;
+            input.name = `${prefix}_${field}[]`;
+            input.value = row[field] || '';
         });
+
+        const checkbox = card.querySelector('.reference-continuation-checkbox');
+        if (checkbox) {
+            checkbox.addEventListener('change', (event) => this.handleContinuation(type, index, event.target));
+        }
+
+        return card;
+    }
+
+    static showInnerTab(type, index) {
+        const group = this._groups[type];
+        if (!group) return;
+
+        const safeIndex = Math.max(0, Math.min(index, group.visibleCount - 1));
+        group.cards.forEach((card, cardIndex) => {
+            if (card) card.style.display = cardIndex === safeIndex ? '' : 'none';
+        });
+
+        document.querySelectorAll(`[data-reference-tabs="${type}"] .reference-inner-tab`).forEach((tab) => {
+            tab.classList.toggle('active', parseInt(tab.dataset.index || '0', 10) === safeIndex);
+        });
+
+        group.currentIndex = safeIndex;
+    }
+
+    static handleContinuation(type, index, checkbox) {
+        const group = this._groups[type];
+        if (!group) return;
+
+        const isLastVisible = index === group.visibleCount - 1;
+        if (!checkbox.checked || !isLastVisible || group.visibleCount >= this._maxReferences) {
+            checkbox.checked = false;
+            this.updateContinuation(type);
+            return;
+        }
+
+        this.captureGroupValues(type);
+        group.visibleCount += 1;
+        group.currentIndex = group.visibleCount - 1;
+        if (!group.rows[group.currentIndex]) group.rows[group.currentIndex] = {};
+        this.renderGroup(type);
+    }
+
+    static updateContinuation(type) {
+        const group = this._groups[type];
+        if (!group) return;
+
+        group.cards.forEach((card, index) => {
+            const row = card.querySelector('.reference-continuation-row');
+            const checkbox = card.querySelector('.reference-continuation-checkbox');
+            const label = card.querySelector('[data-continuation-label]');
+            const isLast = index === group.visibleCount - 1;
+            const canContinue = isLast && group.visibleCount < this._maxReferences;
+
+            if (row) row.style.display = canContinue ? '' : 'none';
+            if (checkbox) {
+                checkbox.disabled = !canContinue;
+                checkbox.checked = false;
+            }
+            if (label) {
+                label.textContent = type === 'education'
+                    ? 'I have further education references'
+                    : 'I have further employment references';
+            }
+        });
+    }
+
+    static captureAllValues() {
+        this.captureGroupValues('education');
+        this.captureGroupValues('employment');
+    }
+
+    static captureGroupValues(type) {
+        const group = this._groups[type];
+        if (!group) return;
+
+        group.cards.forEach((card, index) => {
+            group.rows[index] = this.getCardValues(card);
+        });
+    }
+
+    static getCardValues(card) {
+        const values = {};
+        this._fields.forEach((field) => {
+            values[field] = card.querySelector(`[data-field="${field}"]`)?.value.trim() || '';
+        });
+        return values;
     }
 
     static initFormHandling() {
@@ -266,87 +375,72 @@ class Reference {
         );
 
         this.on(
-            document.querySelector('.prev-btn[data-form="referenceForm"]'),
+            form.querySelector('.prev-btn'),
             'click',
             (e) => {
                 e.preventDefault();
                 window.Router?.navigateTo
-                    ? Router.navigateTo('employment')
-                    : (location.href = '/candidate/employment.php');
+                    ? Router.navigateTo('social')
+                    : (location.href = '?page=social');
             }
         );
     }
 
-    static getSectionValues(form, sectionKey) {
-        const fields = this._sectionConfig[sectionKey]?.fields || [];
-        const prefix = sectionKey + '_';
-        const values = {};
+    static validateGroup(type, finalSubmit = false, errors = []) {
+        const sectionKey = type === 'education' ? 'education_reference' : 'employment_reference';
+        if (this._activeSections.indexOf(sectionKey) === -1) return true;
 
-        fields.forEach((field) => {
-            const shortKey = field.replace(prefix, '');
-            values[shortKey] = form.querySelector(`[name="${field}"]`)?.value.trim() || '';
-        });
-
-        return values;
-    }
-
-    static validateSection(sectionKey, finalSubmit = false, errors = []) {
-        const form = document.getElementById('referenceForm');
-        if (!form) return false;
-
-        const values = this.getSectionValues(form, sectionKey);
-        const filledCount = Object.values(values).filter((v) => v).length;
-        const totalCount = Object.keys(values).length;
-        const label = this._sectionConfig[sectionKey]?.label || 'Reference';
-        const fields = this._sectionConfig[sectionKey]?.fields || [];
+        const group = this._groups[type];
         const beforeCount = errors.length;
-        const fieldByKey = (key) => {
-            const fieldName = fields.find((name) => name.endsWith(`_${key}`));
-            return fieldName ? form.querySelector(`[name="${fieldName}"]`) : null;
-        };
-        const addError = (field, message) => {
-            if (window.CandidateNotify && typeof window.CandidateNotify.addFieldError === 'function') {
-                window.CandidateNotify.addFieldError(errors, field, message);
-            } else {
-                if (field && field.classList) field.classList.add('is-invalid');
-                errors.push({ field, message });
-            }
-        };
+        const label = type === 'education' ? 'Education Reference' : 'Employment Reference';
 
-        if (!finalSubmit && filledCount === 0) return true;
-        if (!finalSubmit && filledCount > 0 && filledCount < totalCount) {
-            const missingKey = Object.entries(values).find(([, value]) => !String(value || '').trim())?.[0] || '';
-            addError(fieldByKey(missingKey) || form, `Fill all fields or leave all empty for ${label} draft save`);
-            return false;
-        }
-
-        if (finalSubmit) {
-            for (const [key, value] of Object.entries(values)) {
-                if (!value) {
-                    addError(fieldByKey(key) || form, `${label}: ${key.replace(/_/g, ' ')} is required`);
+        group.cards.forEach((card, index) => {
+            const values = this.getCardValues(card);
+            const filledCount = Object.values(values).filter((value) => value).length;
+            const rowLabel = `${label} ${index + 1}`;
+            const addError = (field, message) => {
+                const input = card.querySelector(`[data-field="${field}"]`) || card;
+                if (window.CandidateNotify && typeof window.CandidateNotify.addFieldError === 'function') {
+                    window.CandidateNotify.addFieldError(errors, input, message);
+                } else {
+                    if (input && input.classList) input.classList.add('is-invalid');
+                    errors.push({ field: input, message });
                 }
+            };
+
+            if (!finalSubmit && filledCount === 0) return;
+            if (!finalSubmit && filledCount > 0 && filledCount < this._fields.length) {
+                const missingField = this._fields.find((field) => !values[field]) || 'name';
+                addError(missingField, `Fill all fields or leave all empty for ${rowLabel} draft save`);
+                return;
             }
-        }
 
-        if (values.email && !this.validateEmail(values.email)) {
-            addError(fieldByKey('email') || form, `${label}: Invalid email format`);
-        }
+            if (finalSubmit) {
+                this._fields.forEach((field) => {
+                    if (!values[field]) {
+                        addError(field, `${rowLabel}: ${field.replace(/_/g, ' ')} is required`);
+                    }
+                });
+            }
 
-        if (values.mobile && !this.validateMobile(values.mobile)) {
-            addError(fieldByKey('mobile') || form, `${label}: Mobile must be 10 digits`);
-        }
+            if (values.email && !this.validateEmail(values.email)) {
+                addError('email', `${rowLabel}: Invalid email format`);
+            }
 
-        if (values.years_known && (!this.validateNumber(values.years_known) || parseInt(values.years_known, 10) <= 0)) {
-            addError(fieldByKey('years_known') || form, `${label}: Years known must be a positive number`);
-        }
+            if (values.mobile && !this.validateMobile(values.mobile)) {
+                addError('mobile', `${rowLabel}: Mobile must be 10 digits`);
+            }
+
+            if (values.years_known && (!this.validateNumber(values.years_known) || parseInt(values.years_known, 10) <= 0)) {
+                addError('years_known', `${rowLabel}: Years known must be a positive number`);
+            }
+        });
 
         return errors.length === beforeCount;
     }
 
     static validateForm(finalSubmit = false) {
-        if (!this._activeSections.length) {
-            return true;
-        }
+        if (!this._activeSections.length) return true;
 
         const form = document.getElementById('referenceForm');
         if (window.CandidateNotify && form && typeof window.CandidateNotify.clearValidation === 'function') {
@@ -354,10 +448,8 @@ class Reference {
         }
 
         const errors = [];
-
-        for (const sectionKey of this._activeSections) {
-            this.validateSection(sectionKey, finalSubmit, errors);
-        }
+        this.validateGroup('education', finalSubmit, errors);
+        this.validateGroup('employment', finalSubmit, errors);
 
         if (errors.length > 0) {
             if (window.CandidateNotify && form && typeof window.CandidateNotify.validation === 'function') {
@@ -413,6 +505,13 @@ class Reference {
         const form = document.getElementById('referenceForm');
         if (!form) return;
 
+        this.captureAllValues();
+        Object.entries(this._sectionConfig).forEach(([sectionKey, config]) => {
+            const group = this._groups[config.type];
+            const visibleInput = form.querySelector(`[name="${config.visibleName}"]`);
+            if (visibleInput) visibleInput.value = String(group.visibleCount);
+        });
+
         const fd = new FormData(form);
         fd.set('draft', isDraft ? '1' : '0');
 
@@ -449,4 +548,3 @@ class Reference {
 }
 
 window.Reference = Reference;
-

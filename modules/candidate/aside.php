@@ -21,19 +21,6 @@
             <span class="sidebar-status"></span>
         </a>
 
-                <a href="#" data-page="social" class="sidebar-item">
-            <i class="fas fa-users"></i>
-            <span class="sidebar-label">Social Media</span>
-            <span class="sidebar-status"></span>
-        </a>
-
-         <a href="#" data-page="ecourt" class="sidebar-item">
-            <i class="fas fa-gavel"></i>
-            <span class="sidebar-label">E-Court</span>
-            <span class="sidebar-status"></span>
-        </a>
-
-
         <a href="#" data-page="education" class="sidebar-item">
             <i class="fas fa-graduation-cap"></i>
             <span class="sidebar-label">Education</span>
@@ -46,11 +33,23 @@
             <span class="sidebar-status"></span>
         </a>
 
+        <a href="#" data-page="ecourt" class="sidebar-item">
+            <i class="fas fa-gavel"></i>
+            <span class="sidebar-label">E-Court</span>
+            <span class="sidebar-status"></span>
+        </a>
+
+        <a href="#" data-page="social" class="sidebar-item">
+            <i class="fas fa-users"></i>
+            <span class="sidebar-label">Social Media</span>
+            <span class="sidebar-status"></span>
+        </a>
+
         <a href="#" data-page="reference" class="sidebar-item">
             <i class="fas fa-users"></i>
             <span class="sidebar-label">Reference</span>
             <span class="sidebar-status"></span>
-</a>
+        </a>
 
     </nav>
 </aside>

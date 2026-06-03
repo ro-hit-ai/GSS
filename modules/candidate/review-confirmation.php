@@ -10,7 +10,7 @@ $correctionContext = null;
 if ($correctionMode && !empty($_SESSION['candidate_correction_session_id'])) {
     try {
         $pdo = getDB();
-        $st = $pdo->prepare('SELECT requested_by_name, requested_role, correction_reason, expires_at, allowed_components_json FROM candidate_correction_sessions WHERE correction_session_id = ? LIMIT 1');
+        $st = $pdo->prepare('SELECT requested_by_name, requested_role, correction_reason, expires_at, allowed_components_json FROM Vati_Payfiller_Candidate_Correction_Sessions WHERE correction_session_id = ? LIMIT 1');
         $st->execute([(int)$_SESSION['candidate_correction_session_id']]);
         $cc = $st->fetch(PDO::FETCH_ASSOC) ?: null;
         if ($cc) {

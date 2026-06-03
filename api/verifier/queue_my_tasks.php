@@ -141,7 +141,6 @@ try {
 
     $rows = os_enrich_rows($pdo, $rows, 'verifier');
 
-    // Limit to top 10 tasks
     if (count($rows) > 10) {
         $rows = array_slice($rows, 0, 10);
     }

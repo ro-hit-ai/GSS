@@ -71,7 +71,7 @@ try {
     if ($messageId === '') $messageId = wc_outgoing_message_id($applicationId);
     $referencesHeader = trim((string)($in['references_header'] ?? ''));
 
-    $dup = $pdo->prepare('SELECT communication_id FROM workflow_communications WHERE request_id = ? LIMIT 1');
+    $dup = $pdo->prepare('SELECT communication_id FROM Vati_Payfiller_Workflow_Communications WHERE request_id = ? LIMIT 1');
     $dup->execute([$requestId]);
     $existing = $dup->fetch(PDO::FETCH_ASSOC) ?: null;
     if ($existing) {
@@ -116,7 +116,7 @@ try {
     $delivery = $mode === 'draft' ? 'draft' : 'sent';
     $insJson = !empty($checklist) ? json_encode(array_values($checklist), JSON_UNESCAPED_UNICODE) : null;
 
-    $st = $pdo->prepare('INSERT INTO workflow_communications
+    $st = $pdo->prepare('INSERT INTO Vati_Payfiller_Workflow_Communications
         (application_id, case_id, component_key, role_key, action_key, template_id, subject, body, checklist_json, notes, deadline_label, sent_by_user_id, sent_by_name, sent_at, delivery_status, workflow_version, communication_type, direction, actor_role, actor_name, workflow_stage, request_id, message_id, references_header, thread_id, thread_owner_role, thread_scope, root_outgoing_communication_id)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     $st->execute([
@@ -151,7 +151,7 @@ try {
     ]);
     $communicationId = (int)$pdo->lastInsertId();
     if ($communicationId > 0) {
-        $up = $pdo->prepare('UPDATE workflow_communications
+        $up = $pdo->prepare('UPDATE Vati_Payfiller_Workflow_Communications
                                 SET root_outgoing_communication_id = ?
                               WHERE communication_id = ?
                                 AND COALESCE(root_outgoing_communication_id, 0) = 0');

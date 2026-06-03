@@ -73,7 +73,9 @@ $basicPrefillUsed = (
 $countries = ['India','United States','United Kingdom','Australia','Canada','Germany','France','China','Japan','Other'];
 $hasPermanentData = !empty($row['permanent_address1']) || !empty($row['permanent_city']) || !empty($row['permanent_state']) || !empty($row['permanent_postal_code']);
 $sameAsCurrent = !empty($row['same_as_current']) || !$hasPermanentData;
-$existingCurrentProof = trim((string)($row['proof_file'] ?? $row['current_address_proof'] ?? $row['address_proof'] ?? ''));
+$currentProofOptions = ['Passport', 'Aadhar', 'Voter ID', 'Rental Agreement', 'Gas bill', 'E bill'];
+$permanentProofOptions = ['Passport', 'Aadhar'];
+$existingCurrentProof = trim((string)($row['current_proof_file'] ?? $row['proof_file'] ?? $row['current_address_proof'] ?? $row['address_proof'] ?? ''));
 $existingCurrentProofPath = '';
 if ($existingCurrentProof !== '') {
     if (strpos($existingCurrentProof, '/uploads/') === 0) {
@@ -83,6 +85,8 @@ if ($existingCurrentProof !== '') {
     }
 }
 $existingCurrentProofUrl = $existingCurrentProofPath !== '' ? app_url($existingCurrentProofPath) : '';
+$existingPermanentProof = trim((string)($row['permanent_proof_file'] ?? ''));
+$existingPermanentProofUrl = $existingPermanentProof !== '' ? app_url('/uploads/address/' . ltrim($existingPermanentProof, '/')) : '';
 ?>
 
 <div class="candidate-form compact-form cr-fixed-form bgv-fixed-form create-like-spacing contact-create-compact">
@@ -127,12 +131,12 @@ $existingCurrentProofUrl = $existingCurrentProofPath !== '' ? app_url($existingC
                 <div class="form-field col-span-full">
                     <div class="form-row-2 compact-row">
                         <div class="form-control double-border compact-control">
-                            <label class="compact-label">Current Address Line 1 <span class="required">*</span></label>
+                            <label class="compact-label">Address Line 1 <span class="required">*</span></label>
                             <input type="text" name="current_address1" required class="compact-input"
                                    value="<?= htmlspecialchars($row['address1'] ?? '') ?>">
                         </div>
                         <div class="form-control double-border compact-control">
-                            <label class="compact-label">Current Address Line 2</label>
+                            <label class="compact-label">Address Line 2</label>
                             <input type="text" name="current_address2" class="compact-input"
                                    value="<?= htmlspecialchars($row['address2'] ?? '') ?>">
                         </div>
@@ -179,7 +183,16 @@ $existingCurrentProofUrl = $existingCurrentProofPath !== '' ? app_url($existingC
 
             <div class="form-field mt-3">
                 <div class="form-control double-border compact-control contact-proof-control">
-                    <label class="compact-label">Current Address Proof <span class="required">*</span></label>
+                    <label class="compact-label">Address Proof Type <span class="required">*</span></label>
+                    <select name="current_proof_type" class="compact-select mb-2">
+                        <option value="">Select proof type</option>
+                        <?php foreach ($currentProofOptions as $proofType): ?>
+                            <option value="<?= htmlspecialchars($proofType) ?>" <?= (($row['current_proof_type'] ?? $row['proof_type'] ?? '') === $proofType) ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($proofType) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <label class="compact-label">Address Proof <span class="required">*</span></label>
                     <div class="file-upload-box" data-file-upload>
                         <div class="file-upload-row">
                             <button type="button" class="file-upload-btn" data-file-choose>Choose File</button>
@@ -195,6 +208,9 @@ $existingCurrentProofUrl = $existingCurrentProofPath !== '' ? app_url($existingC
                                 <?php endif; ?>
                             >
                                 <?php echo $existingCurrentProof ? htmlspecialchars($existingCurrentProof) : 'No file chosen'; ?>
+                            </button>
+                            <button type="button" class="file-upload-remove" data-file-remove aria-label="Remove address proof" style="<?php echo $existingCurrentProofUrl ? '' : 'display:none;'; ?>">
+                                <i class="fas fa-times"></i>
                             </button>
                         </div>
                         <div class="file-upload-error" data-file-error></div>
@@ -217,12 +233,12 @@ $existingCurrentProofUrl = $existingCurrentProofPath !== '' ? app_url($existingC
                 <div class="form-field col-span-full">
                     <div class="form-row-2 compact-row">
                         <div class="form-control double-border compact-control">
-                            <label class="compact-label">Permanent Address Line 1 <span class="required">*</span></label>
+                            <label class="compact-label">Address Line 1 <span class="required">*</span></label>
                             <input type="text" name="permanent_address1" class="compact-input"
                                    value="<?= htmlspecialchars($row['permanent_address1'] ?? '') ?>">
                         </div>
                         <div class="form-control double-border compact-control">
-                            <label class="compact-label">Permanent Address Line 2</label>
+                            <label class="compact-label">Address Line 2</label>
                             <input type="text" name="permanent_address2" class="compact-input"
                                    value="<?= htmlspecialchars($row['permanent_address2'] ?? '') ?>">
                         </div>
@@ -267,11 +283,33 @@ $existingCurrentProofUrl = $existingCurrentProofPath !== '' ? app_url($existingC
 
             <div class="form-field mt-3">
                 <div class="form-control double-border compact-control contact-proof-control">
-                    <label class="compact-label">Permanent Address Identity Proof</label>
+                    <label class="compact-label">Address Proof Type</label>
+                    <select name="permanent_proof_type" class="compact-select mb-2">
+                        <option value="">Select proof type</option>
+                        <?php foreach ($permanentProofOptions as $proofType): ?>
+                            <option value="<?= htmlspecialchars($proofType) ?>" <?= (($row['permanent_proof_type'] ?? '') === $proofType) ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($proofType) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <label class="compact-label">Address Proof</label>
                     <div class="file-upload-box" data-file-upload>
                         <div class="file-upload-row">
                             <button type="button" class="file-upload-btn" data-file-choose>Choose File</button>
-                            <button type="button" class="file-upload-name" data-file-name disabled>No file chosen</button>
+                            <button
+                                type="button"
+                                class="file-upload-name<?php echo $existingPermanentProofUrl ? ' preview-btn' : ''; ?>"
+                                data-file-name
+                                <?php echo $existingPermanentProofUrl ? '' : 'disabled'; ?>
+                                <?php if ($existingPermanentProofUrl): ?>
+                                    data-url="<?php echo htmlspecialchars($existingPermanentProofUrl); ?>"
+                                    data-name="<?php echo htmlspecialchars($existingPermanentProof); ?>"
+                                    data-type="<?php echo preg_match('/\.pdf$/i', $existingPermanentProof) ? 'pdf' : 'image'; ?>"
+                                <?php endif; ?>
+                            ><?php echo $existingPermanentProof ? htmlspecialchars($existingPermanentProof) : 'No file chosen'; ?></button>
+                            <button type="button" class="file-upload-remove" data-file-remove aria-label="Remove address proof" style="<?php echo $existingPermanentProofUrl ? '' : 'display:none;'; ?>">
+                                <i class="fas fa-times"></i>
+                            </button>
                         </div>
                         <div class="file-upload-error" data-file-error></div>
                     </div>
@@ -280,6 +318,9 @@ $existingCurrentProofUrl = $existingCurrentProofPath !== '' ? app_url($existingC
                            class="compact-file d-none contact-file-input"
                            accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
                            data-file-input />
+                    <?php if ($existingPermanentProof): ?>
+                        <input type="hidden" name="existing_permanent_address_proof" value="<?= htmlspecialchars($existingPermanentProof) ?>">
+                    <?php endif; ?>
                 </div>
             </div>
         </div>

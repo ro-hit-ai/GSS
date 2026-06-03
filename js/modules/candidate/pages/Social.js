@@ -95,11 +95,10 @@ class Social {
         if (prevBtn) {
             this.on(prevBtn, "click", (e) => {
                 e.preventDefault();
-                // Navigate to contact page (previous in flow)
                 if (window.Router?.navigateTo) {
-                    Router.navigateTo("contact");
+                    Router.navigateTo("ecourt");
                 } else {
-                    window.location.href = "?page=contact";
+                    window.location.href = "?page=ecourt";
                 }
             });
         }
@@ -247,11 +246,10 @@ class Social {
             localStorage.setItem("completed-social", "1");
         }
 
-        // Navigate to ecourt page after successful submission
         if (window.Router?.navigateTo) {
-            Router.navigateTo("ecourt");
+            Router.navigateTo("reference");
         } else {
-            window.location.href = "?page=ecourt";
+            window.location.href = "?page=reference";
         }
     }
 

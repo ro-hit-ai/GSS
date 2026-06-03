@@ -144,14 +144,14 @@ try {
         $q = $pdo->prepare("SELECT COUNT(*) AS total,
             SUM(CASE WHEN status IN ('active','submitted') THEN 1 ELSE 0 END) AS open_cnt,
             SUM(CASE WHEN status IN ('active','submitted') AND created_at < (NOW() - INTERVAL 48 HOUR) THEN 1 ELSE 0 END) AS stale_cnt
-            FROM candidate_correction_sessions WHERE case_id IN (SELECT case_id FROM Vati_Payfiller_Validator_Queue WHERE COALESCE(assigned_user_id,0)=0 OR assigned_user_id=?)");
+            FROM Vati_Payfiller_Candidate_Correction_Sessions WHERE case_id IN (SELECT case_id FROM Vati_Payfiller_Validator_Queue WHERE COALESCE(assigned_user_id,0)=0 OR assigned_user_id=?)");
         $q->execute([$userId]);
         $rw = $q->fetch(PDO::FETCH_ASSOC) ?: [];
         $correctionRequested = (int)($rw['open_cnt'] ?? 0);
         $staleCorrections = (int)($rw['stale_cnt'] ?? 0);
         $q2 = $pdo->prepare("SELECT COUNT(*) FROM (
                 SELECT case_id, component_key, COUNT(*) c
-                FROM component_correction_cycles
+                FROM Vati_Payfiller_Component_Correction_Cycles
                 WHERE case_id IN (SELECT case_id FROM Vati_Payfiller_Validator_Queue WHERE COALESCE(assigned_user_id,0)=0 OR assigned_user_id=?)
                 GROUP BY case_id, component_key
                 HAVING COUNT(*) > 1

@@ -227,20 +227,14 @@ function wf_mode_shadow_validator_and_seed_verifier(PDO $pdo, int $caseId, strin
     $caseQueue = verifier_case_queue_ensure_row($pdo, $caseId);
     if ($caseQueue) {
         $result['case_queue_seeded'] = 1;
-        $assignedUserId = verifier_case_queue_pick_auto_user_id($pdo);
-        if ($assignedUserId > 0) {
-            verifier_case_queue_claim($pdo, $caseId, $assignedUserId, true);
-            $result['case_queue_assigned_user_id'] = $assignedUserId;
-        } else {
-            wf_mode_log_system_event(
-                $pdo,
-                $applicationId,
-                'workflow.auto_assign',
-                'verifier',
-                'No eligible verifier found for case-level verifier ownership; queue left unassigned'
-            );
-        }
-        verifier_case_queue_sync($pdo, $caseId, $assignedUserId > 0 ? $assignedUserId : 0);
+        wf_mode_log_system_event(
+            $pdo,
+            $applicationId,
+            'workflow.queue_seeded',
+            'verifier',
+            'Verifier queue seeded for manual claim'
+        );
+        verifier_case_queue_sync($pdo, $caseId, 0);
     }
 
     return $result;

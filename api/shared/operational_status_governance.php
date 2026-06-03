@@ -322,7 +322,7 @@ function os_mail_sent_map(PDO $pdo, array $applicationIds): array
 
     try {
         $sql = 'SELECT application_id, 1 AS sent
-                  FROM verification_communications
+                  FROM Vati_Payfiller_Verification_Communications
                  WHERE application_id IN (' . $ph . ')
                    AND LOWER(TRIM(COALESCE(communication_status, \'\'))) IN (\'sent\',\'delivered\',\'success\')
                  GROUP BY application_id';
@@ -337,7 +337,7 @@ function os_mail_sent_map(PDO $pdo, array $applicationIds): array
 
     try {
         $sql2 = 'SELECT application_id, 1 AS sent
-                   FROM workflow_communications
+                   FROM Vati_Payfiller_Workflow_Communications
                   WHERE application_id IN (' . $ph . ')
                     AND LOWER(TRIM(COALESCE(delivery_status, \'\'))) IN (\'sent\',\'delivered\',\'success\')
                   GROUP BY application_id';

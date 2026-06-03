@@ -68,10 +68,64 @@ function candidate_page_from_component_key(string $componentKey): string {
         'education' => 'education',
         'employment' => 'employment',
         'reference' => 'reference',
+        'education_reference' => 'reference',
+        'employment_reference' => 'reference',
         'ecourt' => 'ecourt',
         'socialmedia' => 'social',
     ];
     return $map[$k] ?? '';
+}
+
+function candidate_component_gate_matches(string $componentKey, array $requiredCaseComponentSet): bool {
+    if (isset($requiredCaseComponentSet[$componentKey])) {
+        return true;
+    }
+    if ($componentKey === 'reference') {
+        return isset($requiredCaseComponentSet['education_reference'])
+            || isset($requiredCaseComponentSet['employment_reference']);
+    }
+    return false;
+}
+
+function candidate_extract_identification_requirements(array $types, string $country): array {
+    $countryNorm = strtolower(trim($country));
+    $keywords = [];
+    foreach ($types as $type) {
+        $name = strtolower(trim((string)($type['type_name'] ?? $type['raw_type_name'] ?? '')));
+        $cat = strtolower(trim((string)($type['type_category'] ?? '')));
+        $hay = $name . ' ' . $cat;
+        if (strpos($hay, 'ssn') !== false) $keywords['SSN'] = true;
+        if (strpos($hay, 'ofac') !== false) $keywords['OFAC'] = true;
+        if (strpos($hay, 'nin') !== false || strpos($hay, 'national insurance') !== false) $keywords['NIN'] = true;
+        if (strpos($hay, 'passport') !== false) $keywords['Passport'] = true;
+        if (strpos($hay, 'aadhaar') !== false || strpos($hay, 'aadhar') !== false) $keywords['Aadhaar'] = true;
+        if (strpos($hay, 'pan') !== false) $keywords['PAN'] = true;
+        if (strpos($hay, 'voter') !== false) $keywords['Voter ID'] = true;
+        if (strpos($hay, 'driving') !== false || strpos($hay, 'driver') !== false || strpos($hay, 'licence') !== false || strpos($hay, 'license') !== false) {
+            $keywords[$countryNorm === 'usa' || $countryNorm === 'united states' ? 'Driver License' : 'Driving Licence'] = true;
+        }
+    }
+    if ($countryNorm === 'india') {
+        return [
+            ['group_key' => 'core_identity', 'group_label' => 'Driving Licence / Aadhaar', 'types' => ['Driving Licence', 'Aadhaar']],
+            ['group_key' => 'secondary_identity', 'group_label' => 'PAN / Passport / Voter ID', 'types' => ['PAN', 'Passport', 'Voter ID']],
+        ];
+    }
+    $dynamic = array_values(array_keys($keywords));
+    if (empty($dynamic)) {
+        if ($countryNorm === 'usa' || $countryNorm === 'united states') {
+            $dynamic = ['SSN', 'OFAC', 'Passport', 'Driver License'];
+        } elseif ($countryNorm === 'uk' || $countryNorm === 'united kingdom') {
+            $dynamic = ['Passport', 'Driving Licence', 'NIN'];
+        } else {
+            $dynamic = ['Passport', 'National ID'];
+        }
+    }
+    return [[
+        'group_key' => 'international_identity',
+        'group_label' => 'International Identification Uploads',
+        'types' => $dynamic,
+    ]];
 }
 
 try {
@@ -95,13 +149,13 @@ try {
 
     $case = null;
     if ($caseId > 0) {
-        $stmt = $pdo->prepare('SELECT case_id, client_id, job_role, application_id, selected_level, selected_stage FROM Vati_Payfiller_Cases WHERE case_id = ? LIMIT 1');
+        $stmt = $pdo->prepare('SELECT case_id, client_id, job_role, application_id, selected_level, selected_stage, case_status FROM Vati_Payfiller_Cases WHERE case_id = ? LIMIT 1');
         $stmt->execute([$caseId]);
         $case = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     }
 
     if (!$case && $applicationId !== '') {
-        $stmt = $pdo->prepare('SELECT case_id, client_id, job_role, application_id, selected_level, selected_stage FROM Vati_Payfiller_Cases WHERE application_id = ? LIMIT 1');
+        $stmt = $pdo->prepare('SELECT case_id, client_id, job_role, application_id, selected_level, selected_stage, case_status FROM Vati_Payfiller_Cases WHERE application_id = ? LIMIT 1');
         $stmt->execute([$applicationId]);
         $case = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     }
@@ -114,6 +168,25 @@ try {
 
     $clientId = isset($case['client_id']) ? (int)$case['client_id'] : 0;
     $jobRoleName = trim((string)($case['job_role'] ?? ''));
+    $caseStatus = trim((string)($case['case_status'] ?? ''));
+    $applicationStatus = '';
+    $applicationSubmittedAt = '';
+    try {
+        $appStatusStmt = $pdo->prepare(
+            'SELECT status, submitted_at
+               FROM Vati_Payfiller_Candidate_Applications
+              WHERE application_id = ?
+              ORDER BY id DESC
+              LIMIT 1'
+        );
+        $appStatusStmt->execute([(string)($case['application_id'] ?? $applicationId)]);
+        $appStatusRow = $appStatusStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $applicationStatus = trim((string)($appStatusRow['status'] ?? ''));
+        $applicationSubmittedAt = trim((string)($appStatusRow['submitted_at'] ?? ''));
+    } catch (Throwable $e) {
+        $applicationStatus = '';
+        $applicationSubmittedAt = '';
+    }
 
     $jobRoleId = 0;
     if ($clientId > 0 && $jobRoleName !== '') {
@@ -137,6 +210,15 @@ try {
     if ($selectedStageNorm === 'p1') $selectedStageNorm = 'pre_interview';
     if ($selectedStageNorm === 'p2') $selectedStageNorm = 'post_interview';
     if ($selectedStageNorm === 'p3') $selectedStageNorm = 'employee_pool';
+    $candidateCountry = 'India';
+    try {
+        $countryStmt = $pdo->prepare('SELECT country FROM Vati_Payfiller_Candidate_Basic_details WHERE application_id = ? LIMIT 1');
+        $countryStmt->execute([(string)($case['application_id'] ?? $applicationId)]);
+        $candidateCountry = trim((string)($countryStmt->fetchColumn() ?: 'India'));
+        if ($candidateCountry === '') $candidateCountry = 'India';
+    } catch (Throwable $e) {
+        $candidateCountry = 'India';
+    }
 
     $types = [];
     if ($jobRoleId > 0) {
@@ -246,6 +328,7 @@ try {
     ];
     $mappingDebug = [];
     $enabledPagesSkipped = [];
+    $identificationRequirements = [];
 
     // Fallback map for setups where SP does not return required_count.
     $requiredByTypeId = [];
@@ -316,7 +399,7 @@ try {
         if ($requiredCaseComponentSet) {
             $hasGateMatch = false;
             foreach ($resolvedComponents as $gk) {
-                if (isset($requiredCaseComponentSet[$gk])) {
+                if (candidate_component_gate_matches($gk, $requiredCaseComponentSet)) {
                     $hasGateMatch = true;
                     break;
                 }
@@ -360,11 +443,11 @@ try {
                 $candidateSubsection = case_component_binding_contact_subsection($name, $cat);
                 $displayLabel = case_component_binding_contact_display_label($name, $cat);
             }
-            if ($componentKey === 'reference') {
+            if ($componentKey === 'reference' || $componentKey === 'education_reference' || $componentKey === 'employment_reference') {
                 $nameNorm = strtolower(trim($name));
-                if ($nameNorm === 'education reference') {
+                if ($componentKey === 'education_reference' || $nameNorm === 'education reference') {
                     $referenceSections['education_reference'] = true;
-                } elseif ($nameNorm === 'employment reference') {
+                } elseif ($componentKey === 'employment_reference' || $nameNorm === 'employment reference') {
                     $referenceSections['employment_reference'] = true;
                 } else {
                     $referenceSections['education_reference'] = true;
@@ -400,6 +483,29 @@ try {
         }
     }
 
+    if ($requiredCaseComponentSet) {
+        $referenceFromCase = false;
+        if (isset($requiredCaseComponentSet['education_reference'])) {
+            $referenceSections['education_reference'] = true;
+            $referenceFromCase = true;
+        }
+        if (isset($requiredCaseComponentSet['employment_reference'])) {
+            $referenceSections['employment_reference'] = true;
+            $referenceFromCase = true;
+        }
+        if (isset($requiredCaseComponentSet['reference'])) {
+            $referenceSections['education_reference'] = true;
+            $referenceSections['employment_reference'] = true;
+            $referenceFromCase = true;
+        }
+        if ($referenceFromCase) {
+            $enabledPages[] = 'reference';
+            if (!isset($requiredCounts['reference'])) {
+                $requiredCounts['reference'] = 1;
+            }
+        }
+    }
+
     // Correction mode override: candidate should only access targeted pages.
     $correctionMode = !empty($_SESSION['candidate_correction_mode']);
     if ($correctionMode) {
@@ -416,13 +522,17 @@ try {
             if (!in_array('success', $enabledPages, true)) $enabledPages[] = 'success';
         }
     }
+    $submittedLocked = !$correctionMode && (
+        in_array(strtolower($applicationStatus), ['submitted', 'verified', 'approved', 'completed'], true)
+        || in_array(strtoupper($caseStatus), ['PENDING_VALIDATION', 'PENDING_VERIFICATION', 'PENDING_QA', 'APPROVED', 'COMPLETED', 'CLEAR'], true)
+    );
 
     $correctionContext = null;
     if ($correctionMode && !empty($_SESSION['candidate_correction_session_id'])) {
         try {
             ccs_ensure_table($pdo);
             $cid = (int)$_SESSION['candidate_correction_session_id'];
-            $cs = $pdo->prepare('SELECT correction_session_id, requested_by_name, requested_role, correction_reason, expires_at, allowed_components_json, status FROM candidate_correction_sessions WHERE correction_session_id = ? LIMIT 1');
+            $cs = $pdo->prepare('SELECT correction_session_id, requested_by_name, requested_role, correction_reason, expires_at, allowed_components_json, status FROM Vati_Payfiller_Candidate_Correction_Sessions WHERE correction_session_id = ? LIMIT 1');
             $cs->execute([$cid]);
             $cr = $cs->fetch(PDO::FETCH_ASSOC) ?: null;
             if ($cr) {
@@ -483,8 +593,11 @@ try {
             'education_reference' => false,
             'employment_reference' => false,
         ];
+        $identificationRequirements = candidate_extract_identification_requirements([], $candidateCountry);
     }
-
+    if (empty($identificationRequirements)) {
+        $identificationRequirements = candidate_extract_identification_requirements($types, $candidateCountry);
+    }
     $response = [
         'status' => 1,
         'message' => 'ok',
@@ -494,6 +607,11 @@ try {
             'client_id' => $clientId,
             'job_role_id' => $jobRoleId,
             'job_role' => $jobRoleName,
+            'case_status' => $caseStatus,
+            'application_status' => $applicationStatus,
+            'application_submitted_at' => $applicationSubmittedAt,
+            'submitted_locked' => $submittedLocked ? 1 : 0,
+            'login_marker' => (string)($_SESSION['candidate_login_marker'] ?? ''),
             'enabled_pages' => $enabledPages,
             'pages' => $enabledPages,
             'components' => $components,
@@ -505,6 +623,8 @@ try {
             'contact_sections' => $contactSections,
             'reference_sections' => $referenceSections
             ,
+            'identification_requirements' => $identificationRequirements,
+            'candidate_country' => $candidateCountry,
             'correction_mode' => $correctionMode ? 1 : 0
             ,
             'correction_context' => $correctionContext

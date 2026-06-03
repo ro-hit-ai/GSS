@@ -12,6 +12,15 @@
         var kInvalidatedVerifier = document.getElementById('qaKpiInvalidatedVerifier');
         var kInvalidatedQa = document.getElementById('qaKpiInvalidatedQa');
         var kReopenedWorkflows = document.getElementById('qaKpiReopenedWorkflows');
+
+        var aOldestVr = document.getElementById('qaAgingOldestVr');
+        var aOldestDbv = document.getElementById('qaAgingOldestDbv');
+        var aReopenedOverSla = document.getElementById('qaAgingReopenedOverSla');
+        var aAttentionOverSla = document.getElementById('qaAgingAttentionOverSla');
+
+        var sInvalidatedVerifier = document.getElementById('qaSignalInvalidatedVerifier');
+        var sInvalidatedQa = document.getElementById('qaSignalInvalidatedQa');
+
         var vrHost = document.getElementById('qaWorkloadVrBody');
         var dbvHost = document.getElementById('qaWorkloadDbvBody');
         var asgHost = document.getElementById('qaAssignmentsBody');
@@ -22,7 +31,7 @@
         function setMessage(text, type) {
             if (!msgEl) return;
             msgEl.textContent = text || '';
-            msgEl.className = type ? ('alert alert-' + type) : '';
+            msgEl.className = type ? ('alert alert-' + type) : 'alert';
             msgEl.style.display = text ? 'block' : 'none';
         }
 
@@ -42,8 +51,7 @@
 
         function roleCount(map, key) {
             if (!map) return 0;
-            var k = String(key || '').toLowerCase();
-            return n(map[k]);
+            return n(map[String(key || '').toLowerCase()]);
         }
 
         function fmtName(r) {
@@ -51,18 +59,58 @@
             return name || String(r.username || '');
         }
 
+        function setKpi(el, val) {
+            if (!el) return;
+            el.textContent = String(val == null ? '' : val);
+        }
+
+        function formatMinutes(value) {
+            if (value == null || value === '' || !isFinite(Number(value))) return '-';
+            var total = Math.max(0, parseInt(value, 10) || 0);
+            var days = Math.floor(total / 1440);
+            var hours = Math.floor((total % 1440) / 60);
+            var minutes = total % 60;
+            if (days > 0) return String(days) + 'd ' + String(hours) + 'h';
+            if (hours > 0) return String(hours) + 'h ' + String(minutes) + 'm';
+            return String(minutes) + 'm';
+        }
+
+        function emptyRow(colspan, title, detail) {
+            return '<tr><td colspan="' + colspan + '"><div class="qa-empty"><strong>' + esc(title) + '</strong>' + esc(detail) + '</div></td></tr>';
+        }
+
+        function statusTone(label) {
+            var txt = String(label || '').toLowerCase();
+            if (!txt) return 'muted';
+            if (txt.indexOf('complete') !== -1 || txt.indexOf('approved') !== -1 || txt.indexOf('closed') !== -1) return 'success';
+            if (txt.indexOf('invalid') !== -1 || txt.indexOf('reject') !== -1 || txt.indexOf('reopen') !== -1) return 'danger';
+            if (txt.indexOf('hold') !== -1 || txt.indexOf('follow') !== -1 || txt.indexOf('need') !== -1 || txt.indexOf('insuff') !== -1 || txt.indexOf('wait') !== -1) return 'attention';
+            if (txt.indexOf('pending') !== -1 || txt.indexOf('review') !== -1 || txt.indexOf('progress') !== -1) return 'info';
+            return 'muted';
+        }
+
+        function queueTone(queueType) {
+            var q = String(queueType || '').toUpperCase();
+            return q === 'DBV' ? 'dbv' : 'vr';
+        }
+
         function renderWorkload(host, rows) {
             if (!host) return;
             rows = Array.isArray(rows) ? rows : [];
             if (!rows.length) {
-                host.innerHTML = '<tr><td colspan="3" style="color:#64748b;">No active workload.</td></tr>';
+                host.innerHTML = emptyRow(3, 'No active workload right now.', 'This support panel will populate when queue ownership becomes active.');
                 return;
             }
             host.innerHTML = rows.map(function (r) {
+                var stageLabel = String((r && (r.stage_status_label || r.operational_status_label)) ? (r.stage_status_label || r.operational_status_label) : ((window.WF_UI && typeof window.WF_UI.labelByRole === 'function') ? window.WF_UI.labelByRole('pending', 'qa') : 'QA Pending'));
+                var tone = statusTone(stageLabel);
                 return '<tr>' +
-                    '<td><div style="font-weight:800; color:#0f172a;">' + esc(fmtName(r)) + '</div><div style="font-size:11px; color:#64748b;">' + esc(String(r.username || '')) + ' • ' + esc(String(r.role || '')) + '</div></td>' +
-                    '<td style="white-space:nowrap;"><span class="badge" style="background:#0ea5e9; color:#fff;">' + esc(String(r.open_items || '0')) + '</span></td>' +
-                    '<td style="font-size:12px; color:#64748b;">' + esc(String((r && (r.stage_status_label || r.operational_status_label)) ? (r.stage_status_label || r.operational_status_label) : ((window.WF_UI && typeof window.WF_UI.labelByRole === 'function') ? window.WF_UI.labelByRole('pending', 'qa') : 'QA PENDING'))) + '</td>' +
+                    '<td>' +
+                        '<div class="qa-name">' + esc(fmtName(r)) + '</div>' +
+                        '<div class="qa-meta">' + esc(String(r.username || '')) + ' | ' + esc(String(r.role || '')) + '</div>' +
+                    '</td>' +
+                    '<td><span class="qa-count-badge">' + esc(String(r.open_items || '0')) + '</span></td>' +
+                    '<td><span class="qa-status-badge qa-status-badge--' + esc(tone) + '">' + esc(stageLabel) + '</span></td>' +
                 '</tr>';
             }).join('');
         }
@@ -71,12 +119,12 @@
             if (!host) return;
             rows = Array.isArray(rows) ? rows : [];
             if (!rows.length) {
-                host.innerHTML = '<tr><td colspan="6" style="color:#64748b;">No active assignments.</td></tr>';
+                host.innerHTML = emptyRow(6, 'No live assignments at the moment.', 'Once work is assigned, this table becomes the main ownership view for the dashboard.');
                 return;
             }
             host.innerHTML = rows.map(function (r) {
                 var who = fmtName(r);
-                var q = String(r.queue_type || '');
+                var queue = String(r.queue_type || '').toUpperCase();
                 var group = r.group_key ? String(r.group_key) : '-';
                 var st = String((r && (r.stage_status_label || r.operational_status_label)) ? (r.stage_status_label || r.operational_status_label) : '');
                 if (!st) {
@@ -85,20 +133,22 @@
                         ? String(window.WF_UI.labelByRole(raw || 'pending', 'qa'))
                         : (raw || '-');
                 }
+                var stageLabel = String(r.stage_status_label || r.operational_status_label || r.case_status || '-');
                 return '<tr>' +
-                    '<td style="font-weight:800;">' + esc(q) + '</td>' +
-                    '<td>' + esc(String(r.application_id || '')) + '<div style="font-size:11px; color:#64748b;">Case #' + esc(String(r.case_id || '')) + '</div></td>' +
-                    '<td>' + esc(group) + '</td>' +
-                    '<td><span class="badge" style="background:#f1f5f9; color:#0f172a; border:1px solid rgba(148,163,184,0.28);">' + esc(st) + '</span></td>' +
-                    '<td><div style="font-weight:800; color:#0f172a;">' + esc(who) + '</div><div style="font-size:11px; color:#64748b;">' + esc(String(r.role || '')) + '</div></td>' +
-                    '<td style="font-size:12px; color:#64748b;">' + esc(String(r.stage_status_label || r.operational_status_label || r.case_status || '')) + '</td>' +
+                    '<td><span class="qa-queue-badge qa-queue-badge--' + esc(queueTone(queue)) + '">' + esc(queue || 'VR') + '</span></td>' +
+                    '<td>' +
+                        '<div class="qa-app-id">' + esc(String(r.application_id || '')) + '</div>' +
+                        '<div class="qa-meta">Case #' + esc(String(r.case_id || '')) + '</div>' +
+                    '</td>' +
+                    '<td><span class="qa-group-badge">' + esc(group) + '</span></td>' +
+                    '<td><span class="qa-status-badge qa-status-badge--' + esc(statusTone(st)) + '">' + esc(st) + '</span></td>' +
+                    '<td>' +
+                        '<div class="qa-name">' + esc(who) + '</div>' +
+                        '<div class="qa-meta">' + esc(String(r.role || '')) + '</div>' +
+                    '</td>' +
+                    '<td><span class="qa-status-badge qa-status-badge--' + esc(statusTone(stageLabel)) + '">' + esc(stageLabel) + '</span></td>' +
                 '</tr>';
             }).join('');
-        }
-
-        function setKpi(el, val) {
-            if (!el) return;
-            el.textContent = String(val == null ? '' : val);
         }
 
         function load() {
@@ -111,6 +161,7 @@
 
                     var d = data.data || {};
                     var kpis = d.kpis || {};
+                    var aging = d.aging || {};
 
                     setKpi(kUsersTotal, n(kpis.users_total));
                     setKpi(kQaUsers, roleCount(kpis.users_by_role, 'qa'));
@@ -120,6 +171,14 @@
                     setKpi(kInvalidatedVerifier, n(kpis.invalidated_verifier_total));
                     setKpi(kInvalidatedQa, n(kpis.invalidated_qa_total));
                     setKpi(kReopenedWorkflows, n(kpis.reopened_workflows_total));
+
+                    setKpi(aOldestVr, formatMinutes(aging.oldest_vr_pending_minutes));
+                    setKpi(aOldestDbv, formatMinutes(aging.oldest_dbv_pending_minutes));
+                    setKpi(aReopenedOverSla, n(aging.reopened_over_sla_count));
+                    setKpi(aAttentionOverSla, n(aging.qa_attention_over_sla_count));
+
+                    setKpi(sInvalidatedVerifier, n(kpis.invalidated_verifier_total));
+                    setKpi(sInvalidatedQa, n(kpis.invalidated_qa_total));
 
                     renderWorkload(vrHost, d.workload && d.workload.vr ? d.workload.vr : []);
                     renderWorkload(dbvHost, d.workload && d.workload.dbv ? d.workload.dbv : []);

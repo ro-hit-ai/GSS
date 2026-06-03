@@ -5,6 +5,7 @@ require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../config/env.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/mail.php';
+require_once __DIR__ . '/../shared/verifier_routing.php';
 
 auth_require_login('gss_admin');
 
@@ -109,12 +110,24 @@ try {
     $role = post_str('role');
     $sendEmail = post_bool('send_email');
     $allowedSections = post_allowed_sections();
+    $routingCapabilities = verifier_routing_parse_capability_payload(post_str('routing_capabilities_json'));
 
     $allowedRoles = ['gss_admin', 'verifier', 'db_verifier', 'qa', 'team_lead'];
     if (!in_array($role, $allowedRoles, true)) {
         http_response_code(400);
         echo json_encode(['status' => 0, 'message' => 'Invalid staff role']);
         exit;
+    }
+    if (verifier_routing_role_uses_capabilities($role)) {
+        $derivedAllowedSections = verifier_routing_capabilities_to_allowed_sections($routingCapabilities);
+        if ($derivedAllowedSections === '') {
+            http_response_code(400);
+            echo json_encode(['status' => 0, 'message' => 'Select at least one verifier routing priority component.']);
+            exit;
+        }
+        $allowedSections = $derivedAllowedSections;
+    } else {
+        $routingCapabilities = [];
     }
 
     $locations = post_locations();
@@ -181,6 +194,11 @@ try {
                 while ($add->nextRowset()) {
                 }
             }
+        }
+
+        try {
+            verifier_routing_save_user_capabilities($pdo, $userId, $routingCapabilities);
+        } catch (Throwable $e) {
         }
 
         $emailSent = 0;

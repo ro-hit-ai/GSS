@@ -18,16 +18,29 @@ class EmploymentManager extends TabManager {
         this.lastNonFresherCount = 1;
         this.fullEmploymentCount = 0;
         this.visibleEmploymentCount = 0;
+        this.maxEmploymentCount = 5;
+        this.deferVisibleEmploymentPersistence = false;
+        this.activeEmploymentTimelineWarnings = new Set();
         this.docTypeOptions = {
-            yes: [
-                { value: 'payslip', label: 'Payslip' },
-                { value: 'appointment_letter', label: 'Appointment Letter' },
-                { value: 'resignation_letter', label: 'Resignation Letter' }
+            currently_employed: [
+                { value: 'offer_letter', label: 'Offer Letter' },
+                { value: 'payslips', label: 'Payslips' },
+                { value: 'appointment_letter', label: 'Appointment Letter' }
             ],
-            no: [
+            serving_notice: [
+                { value: 'resignation_acceptance', label: 'Resignation Acceptance' },
+                { value: 'latest_payslip', label: 'Latest Payslip' },
+                { value: 'payslips', label: 'Payslips' }
+            ],
+            resigned: [
+                { value: 'relieving_letter', label: 'Relieving Letter' },
+                { value: 'experience_letter', label: 'Experience Letter' }
+            ],
+            other: [
                 { value: 'experience_letter', label: 'Experience Letter' },
                 { value: 'service_letter', label: 'Service Letter' },
-                { value: 'relieving_letter', label: 'Relieving Letter' }
+                { value: 'appointment_letter', label: 'Appointment Letter' },
+                { value: 'contract_letter', label: 'Contract Letter' }
             ]
         };
     }
@@ -49,8 +62,10 @@ class EmploymentManager extends TabManager {
                 : this.configuredRequiredCount;
 
             if (initialCount > 0 && this.countSelect) {
+                this.deferVisibleEmploymentPersistence = true;
                 this.countSelect.value = String(initialCount);
                 this.handleCountChange();
+                this.deferVisibleEmploymentPersistence = false;
             }
 
             if (this.countSelect) {
@@ -70,20 +85,25 @@ class EmploymentManager extends TabManager {
                 }
             }
         } catch (e) {
+            this.deferVisibleEmploymentPersistence = false;
         }
 
         this.setupFormHandlers();
         this.setupFileHandlers();
         this.setupRelievingDateHandlers();
+        this.setupEmploymentIntelligenceHandlers();
         this.setupNoFurtherEmploymentController();
         this.loadFromLocalStorage();
         this.fullEmploymentCount = this.cards.filter(Boolean).length;
-        this.visibleEmploymentCount = this.fullEmploymentCount;
+        this.maxEmploymentCount = this.getMaxEmploymentCount();
+        this.visibleEmploymentCount = this.isFresher ? 1 : Math.max(1, this.savedRows.length || 1);
         this.restoreVisibleEmploymentCount();
         this.refreshEmploymentState();
+        this.applyEmploymentLayoutReset();
         this.lastNonFresherCount = Math.max(this.cards.length, this.configuredRequiredCount || 0, 1);
         this.setupRadioHandlers();
         this.applyFresherUI(this.isFresher);
+        this.applyEmploymentLayoutReset();
 
         console.log('✅ Employment module initialized successfully');
         console.log(`📊 Cards loaded: ${this.cards.length}, Data rows: ${this.savedRows.length}, Fresher: ${this.isFresher}, Currently Employed: ${this.currentlyEmployed}, Contact Employer: ${this.contactEmployer}`);
@@ -105,6 +125,7 @@ class EmploymentManager extends TabManager {
         this.visibleEmploymentCount = this.fullEmploymentCount;
         this.persistVisibleEmploymentCount();
         this.refreshEmploymentState();
+        this.applyEmploymentLayoutReset();
     }
 
     showTab(index) {
@@ -145,21 +166,17 @@ class EmploymentManager extends TabManager {
     populateCard(card, data = {}, index) {
         console.log(` EmploymentManager.populateCard() for card ${index}`, data);
         
-        // Set index
         const idx = this.findInput(card, 'employment_index[]');
         if (idx) idx.value = index + 1;
         
-        // Set record ID if exists
         if (data.id) {
             this.findOrCreateInput(card, `id[${index}]`, 'hidden').value = data.id;
             console.log(`   Set record ID: ${data.id}`);
         }
 
-        // Handle employment document
         const employmentDoc = data.employment_doc || data.employment_doc_path;
         if (employmentDoc) {
             let fileName = employmentDoc;
-            // Extract just the filename from path
             if (fileName.includes('uploads/employment/')) {
                 fileName = fileName.split('uploads/employment/').pop();
             } else if (fileName.includes('/')) {
@@ -168,10 +185,8 @@ class EmploymentManager extends TabManager {
             
             console.log(`   Extracted file name: ${fileName}`);
             
-            // Store old file reference
             this.findOrCreateInput(card, `old_employment_doc[${index}]`, 'hidden').value = fileName;
             
-            // Show file info if it's a real file
             if (fileName !== 'INSUFFICIENT_DOCUMENTS') {
                 const input = card.querySelector('input[name="employment_doc[]"]');
                 const box = this.getUploadBoxFromInput(input);
@@ -182,12 +197,17 @@ class EmploymentManager extends TabManager {
             }
         }
 
-        // Populate form fields
         const fieldMap = {
             'employer_name[]': data.employer_name,
             'job_title[]': data.job_title,
             'employee_id[]': data.employee_id,
+            'employment_status[]': data.employment_status || this.inferEmploymentStatus(data, index),
+            'tentative_relieving_note[]': data.tentative_relieving_note,
+            'gap_reason[]': data.gap_reason,
+            'gap_explanation[]': data.gap_explanation,
+            'overlap_explanation[]': data.overlap_explanation,
             'reason_leaving[]': data.reason_leaving,
+            'job_location[]': data.job_location,
             'hr_manager_name[]': data.hr_manager_name,
             'hr_manager_phone[]': data.hr_manager_phone,
             'hr_manager_email[]': data.hr_manager_email,
@@ -205,7 +225,6 @@ class EmploymentManager extends TabManager {
         const savedEmploymentDocType = data.employment_doc_type || "";
 
         
-        // Set dates
         if (data.joining_date) {
             const joiningInput = card.querySelector('[name="joining_date[]"]');
             if (joiningInput) {
@@ -229,22 +248,23 @@ class EmploymentManager extends TabManager {
             }
         }
 
-        // Handle insufficient documents checkbox
-        // Handle radio buttons for first card only
+        if (data.tentative_relieving_date) {
+            const tentativeInput = card.querySelector('[name="tentative_relieving_date[]"]');
+            if (tentativeInput) tentativeInput.value = data.tentative_relieving_date.substring(0, 10);
+        }
+
         const radioBlock = card.querySelector('.first-employer-fields');
         if (radioBlock) {
             if (index === 0) {
                 radioBlock.style.display = 'block';
                 console.log('   📻 Showing radio block for first card');
                 
-                // Set radio values
                 const fresherValue = data.is_fresher || (this.isFresher ? 'yes' : 'no');
                 const currentlyEmployedValue = data.currently_employed || this.currentlyEmployed || 'no';
                 const contactEmployerValue = data.contact_employer || this.contactEmployer || 'no';
                 
                 console.log(`   Radio values to set: is_fresher=${fresherValue}, currently_employed=${currentlyEmployedValue}, contact_employer=${contactEmployerValue}`);
                 
-                // Set radio buttons
                 this.setRadio(card, 'is_fresher[0]', fresherValue);
                 this.isFresher = fresherValue === 'yes';
                 
@@ -254,17 +274,66 @@ class EmploymentManager extends TabManager {
                 this.setRadio(card, 'contact_employer[0]', contactEmployerValue);
                 this.contactEmployer = contactEmployerValue;
                 
-                // Update UI based on current employment status
                 this.updateContactEmployer(card, true);
-                this.updateEmploymentProofOptions(card, this.currentlyEmployed, savedEmploymentDocType);
+                this.updateEmploymentStatusUI(card, savedEmploymentDocType);
             } else {
                 radioBlock.style.display = 'none';
                 console.log('   Hiding radio block for card ' + index);
-                this.updateEmploymentProofOptions(card, "no", savedEmploymentDocType);
+                this.updateEmploymentStatusUI(card, savedEmploymentDocType);
             }
         }
 
+        this.refreshTimelineIntelligence();
+        this.applyEmploymentLayoutReset();
         console.log(`✅ Card ${index} populated successfully`);
+    }
+
+    applyEmploymentLayoutReset() {
+        const cards = document.querySelectorAll('.employment-create-compact .employment-card');
+        cards.forEach((card) => {
+            const body = card.querySelector('.employment-card-body');
+            if (!body) return;
+
+            body.style.setProperty('display', 'block', 'important');
+            body.style.setProperty('grid-template-columns', 'none', 'important');
+
+            const rows = body.querySelectorAll(':scope > .compact-row');
+            rows.forEach((row) => {
+                if (row.classList.contains('no-further-employment-row') || row.classList.contains('form-row-1')) {
+                    row.style.setProperty('display', 'block', 'important');
+                    row.style.setProperty('width', '100%', 'important');
+                } else if (row.classList.contains('form-row-2')) {
+                    row.style.setProperty('display', 'grid', 'important');
+                    row.style.setProperty('grid-template-columns', 'repeat(2, minmax(0, 1fr))', 'important');
+                    row.style.setProperty('gap', '8px 14px', 'important');
+                    row.style.setProperty('width', '100%', 'important');
+                    row.style.setProperty('margin-bottom', '8px', 'important');
+                } else {
+                    row.style.setProperty('display', 'grid', 'important');
+                    row.style.setProperty('grid-template-columns', 'repeat(3, minmax(0, 1fr))', 'important');
+                    row.style.setProperty('gap', '8px 14px', 'important');
+                    row.style.setProperty('width', '100%', 'important');
+                    row.style.setProperty('margin-bottom', '8px', 'important');
+                }
+
+                row.querySelectorAll(':scope > .form-field').forEach((field) => {
+                    field.style.setProperty('display', 'block', 'important');
+                    field.style.setProperty('grid-column', 'auto', 'important');
+                    field.style.setProperty('grid-row', 'auto', 'important');
+                    field.style.setProperty('width', 'auto', 'important');
+                    field.style.setProperty('max-width', 'none', 'important');
+                    field.style.setProperty('min-width', '0', 'important');
+                    field.style.setProperty('margin', '0', 'important');
+                });
+            });
+        });
+    }
+    inferEmploymentStatus(data = {}, index = 0) {
+        if (data.employment_status) return data.employment_status;
+        if (index === 0 && (data.currently_employed || this.currentlyEmployed) === 'yes') {
+            return 'currently_employed';
+        }
+        return 'resigned';
     }
 
     setRadio(card, name, value) {
@@ -282,7 +351,6 @@ class EmploymentManager extends TabManager {
                 radio.checked = radio.value === value;
             });
             
-            // Trigger change event
             radios.forEach(radio => {
                 if (radio.value === value) {
                     const event = new Event('change', { bubbles: true });
@@ -307,20 +375,26 @@ class EmploymentManager extends TabManager {
         const index = parseInt(card.dataset.cardIndex || '-1', 10);
         if (index < 0) return;
 
-        const canCutoff = index < this.fullEmploymentCount - 1;
-        if (!canCutoff) {
+        const lastVisibleIndex = Math.max(0, (this.visibleEmploymentCount || 1) - 1);
+        const canContinue = !this.isFresher && index === lastVisibleIndex && index < this.maxEmploymentCount - 1;
+        if (!trigger.checked || !canContinue) {
             trigger.checked = false;
+            this.refreshEmploymentState();
+            return;
         }
 
-        if (trigger.checked) {
-            this.cards.forEach((otherCard, otherIndex) => {
-                if (!otherCard || otherIndex === index) return;
-                const otherCheckbox = otherCard.querySelector('.no-further-employment-checkbox');
-                if (otherCheckbox) otherCheckbox.checked = false;
-            });
+        if (!this.cards[index + 1]) {
+            this.addCard(index + 1, null);
+            this.fullEmploymentCount = this.cards.filter(Boolean).length;
         }
 
-        this.visibleEmploymentCount = trigger.checked ? (index + 1) : this.fullEmploymentCount;
+        this.cards.forEach((otherCard) => {
+            const otherCheckbox = otherCard?.querySelector('.no-further-employment-checkbox');
+            if (otherCheckbox) otherCheckbox.checked = false;
+        });
+
+        this.visibleEmploymentCount = Math.min(index + 2, this.maxEmploymentCount);
+        this.currentTab = this.visibleEmploymentCount - 1;
         this.persistVisibleEmploymentCount();
         this.refreshEmploymentState();
     }
@@ -334,7 +408,6 @@ class EmploymentManager extends TabManager {
             return;
         }
 
-        // Prevent default form submission
         form.onsubmit = (e) => {
             e.preventDefault();
             e.stopImmediatePropagation();
@@ -342,10 +415,8 @@ class EmploymentManager extends TabManager {
             return false;
         };
 
-        // Handle Next button
         const nextBtn = document.querySelector('.external-submit-btn[data-form="employmentForm"]');
         if (nextBtn) {
-            // Remove existing listeners
             const newNextBtn = nextBtn.cloneNode(true);
             nextBtn.parentNode.replaceChild(newNextBtn, nextBtn);
             
@@ -357,10 +428,8 @@ class EmploymentManager extends TabManager {
             });
         }
 
-        // Handle Previous button
         const prevBtn = document.querySelector('.prev-btn');
         if (prevBtn) {
-            // Remove existing listeners
             const newPrevBtn = prevBtn.cloneNode(true);
             prevBtn.parentNode.replaceChild(newPrevBtn, prevBtn);
             
@@ -374,7 +443,6 @@ class EmploymentManager extends TabManager {
             });
         }
 
-        // Handle Save Draft button
         this.addEventListener(document, 'click', (e) => {
             const draftBtn = e.target.closest('.save-draft-btn[data-page="employment"]');
             if (draftBtn) {
@@ -399,6 +467,19 @@ class EmploymentManager extends TabManager {
             const control = box ? box.closest('.form-control') : null;
             const input = control ? control.querySelector('input[type="file"][data-file-input]') : null;
             if (input) input.click();
+        });
+
+        this.addEventListener(document, 'click', (e) => {
+            const remove = e.target.closest('[data-file-remove]');
+            if (!remove) return;
+            const box = remove.closest('[data-file-upload]');
+            const control = box ? box.closest('.form-control') : null;
+            const input = control ? control.querySelector('input[name="employment_doc[]"]') : null;
+            const card = remove.closest('.employment-card');
+            e.preventDefault();
+            if (input) input.value = '';
+            this.clearUploadBox(box);
+            if (card) this.updateTabStatus();
         });
 
         this.addEventListener(document, 'change', (e) => {
@@ -503,6 +584,128 @@ class EmploymentManager extends TabManager {
         });
     }
 
+    setupEmploymentIntelligenceHandlers() {
+        this.addEventListener(document, 'change', (e) => {
+            if (e.target.matches('[name="employment_status[]"], [name="joining_date[]"], [name="relieving_date[]"]')) {
+                const card = e.target.closest('.employment-card');
+                if (card) this.updateEmploymentStatusUI(card);
+                this.refreshTimelineIntelligence();
+            }
+        });
+
+        this.addEventListener(document, 'input', (e) => {
+            if (e.target.matches('[name="joining_date[]"], [name="relieving_date[]"]')) {
+                this.refreshTimelineIntelligence();
+            }
+        });
+    }
+
+    showEmploymentTimelineNotification(id, message) {
+        if (!id || !message || this.activeEmploymentTimelineWarnings.has(id)) return;
+        this.activeEmploymentTimelineWarnings.add(id);
+
+        if (window.CandidateNotify && typeof window.CandidateNotify.warn === 'function') {
+            window.CandidateNotify.warn(message, {
+                id: `employment-timeline-${id}`,
+                title: 'Employment timeline needs review',
+                timeout: 4200
+            });
+        } else if (window.Router && typeof window.Router.showNotification === 'function') {
+            window.Router.showNotification(message, 'warning');
+        }
+    }
+
+    clearEmploymentTimelineNotification(id) {
+        const toastKey = `employment-timeline-${id}`;
+        try {
+            const toast = Array.from(document.querySelectorAll('[data-toast-key]'))
+                .find((node) => node && node.dataset && node.dataset.toastKey === toastKey);
+            if (toast) {
+                toast.classList.add('is-closing');
+                window.setTimeout(() => toast.remove(), 160);
+            }
+        } catch (_e) {
+        }
+    }
+
+    syncEmploymentTimelineNotifications(currentWarnings) {
+        const activeIds = currentWarnings instanceof Set ? currentWarnings : new Set();
+        this.activeEmploymentTimelineWarnings.forEach((id) => {
+            if (!activeIds.has(id)) {
+                this.clearEmploymentTimelineNotification(id);
+                this.activeEmploymentTimelineWarnings.delete(id);
+            }
+        });
+    }
+
+    normalizeEmploymentStatus(status) {
+        if (status === 'currently_employed' || status === 'serving_notice' || status === 'resigned') {
+            return status;
+        }
+        return 'other';
+    }
+
+    updateEmploymentStatusUI(card, preferredDocType = null) {
+        if (!card) return;
+        const statusSelect = card.querySelector('[name="employment_status[]"]');
+        const status = statusSelect && statusSelect.value
+            ? statusSelect.value
+            : this.inferEmploymentStatus({}, this.cards.indexOf(card));
+        if (statusSelect && !statusSelect.value) {
+            statusSelect.value = status;
+        }
+
+        const currentLike = ['currently_employed', 'serving_notice'].includes(status);
+        const relievingInput = card.querySelector('[name="relieving_date[]"]');
+        if (relievingInput) {
+            relievingInput.required = !currentLike;
+            if (currentLike) relievingInput.value = '';
+        }
+
+        const tentativeRow = card.querySelector('.employment-tentative-row');
+        if (tentativeRow) tentativeRow.style.display = currentLike ? '' : 'none';
+
+        this.updateEmploymentProofOptions(card, status, preferredDocType);
+    }
+
+    refreshTimelineIntelligence() {
+        const periods = [];
+        const currentWarnings = new Set();
+        this.cards.forEach((card, index) => {
+            if (!card) return;
+            card.dataset.timelineOverlap = '0';
+            if (card.dataset.suppressed === '1') return;
+
+            const startRaw = card.querySelector('[name="joining_date[]"]')?.value || '';
+            const endRaw = card.querySelector('[name="relieving_date[]"]')?.value || '';
+            if (!startRaw) return;
+            const start = this.parseEmploymentDate(startRaw);
+            const end = endRaw ? this.parseEmploymentDate(endRaw) : new Date();
+            if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return;
+            periods.push({ card, index, start, end });
+        });
+
+        for (let i = 0; i < periods.length - 1; i++) {
+            const newer = periods[i];
+            const older = periods[i + 1];
+            const targetCard = older.card;
+
+            if (older.end > newer.start) {
+                targetCard.dataset.timelineOverlap = '1';
+                const warningId = `overlap-${newer.index}-${older.index}`;
+                currentWarnings.add(warningId);
+                this.showEmploymentTimelineNotification(
+                    warningId,
+                    `Employer ${older.index + 1} overlaps with Employer ${newer.index + 1}. Check the date order.`
+                );
+                continue;
+            }
+
+        }
+
+        this.syncEmploymentTimelineNotifications(currentWarnings);
+    }
+
     convertIsoToDisplayDate(value) {
         const raw = String(value || '').trim();
         if (!raw) return '';
@@ -515,9 +718,43 @@ class EmploymentManager extends TabManager {
         const raw = String(value || '').trim();
         if (!raw) return '';
         if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-        const match = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+        const match = raw.match(/^(\d{2})\s*[\/-]\s*(\d{2})\s*[\/-]\s*(\d{4})$/);
         if (!match) return raw;
         return `${match[3]}-${match[2]}-${match[1]}`;
+    }
+
+    parseEmploymentDate(value) {
+        const raw = String(value || '').trim();
+        if (!raw) return new Date(NaN);
+
+        let year;
+        let month;
+        let day;
+
+        const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (isoMatch) {
+            year = Number(isoMatch[1]);
+            month = Number(isoMatch[2]);
+            day = Number(isoMatch[3]);
+        } else {
+            const displayMatch = raw.match(/^(\d{2})\s*[\/-]\s*(\d{2})\s*[\/-]\s*(\d{4})$/);
+            if (!displayMatch) return new Date(NaN);
+            day = Number(displayMatch[1]);
+            month = Number(displayMatch[2]);
+            year = Number(displayMatch[3]);
+        }
+
+        const parsed = new Date(year, month - 1, day);
+        if (
+            parsed.getFullYear() !== year ||
+            parsed.getMonth() !== month - 1 ||
+            parsed.getDate() !== day
+        ) {
+            return new Date(NaN);
+        }
+
+        parsed.setHours(0, 0, 0, 0);
+        return parsed;
     }
 
     getDesiredVisibleEmploymentCount() {
@@ -525,14 +762,6 @@ class EmploymentManager extends TabManager {
             1,
             Math.min(this.visibleEmploymentCount || this.fullEmploymentCount || 1, this.fullEmploymentCount || 1)
         );
-
-        this.cards.forEach((card, index) => {
-            if (!card || index >= visibleCount) return;
-            const checkbox = card.querySelector('.no-further-employment-checkbox');
-            if (checkbox && checkbox.checked) {
-                visibleCount = index + 1;
-            }
-        });
 
         return Math.max(1, Math.min(visibleCount || 1, this.fullEmploymentCount || 1));
     }
@@ -543,26 +772,43 @@ class EmploymentManager extends TabManager {
         this.persistVisibleEmploymentCount();
         this.applyVisibleEmploymentCount();
         this.updateNoFurtherEmploymentVisibility();
+        this.refreshTimelineIntelligence();
+    }
+
+    getEmploymentStoragePrefix() {
+        const applicationId = String(window.CANDIDATE_APP_ID || '').trim();
+        return applicationId ? `candidate:${applicationId}:` : 'candidate:';
     }
 
     getNoFurtherEmploymentStorageKey() {
-        return 'employment_visible_count';
+        return `${this.getEmploymentStoragePrefix()}employment_visible_count`;
+    }
+
+    getEmploymentDraftStorageKey() {
+        return `${this.getEmploymentStoragePrefix()}employment_draft`;
     }
 
     persistVisibleEmploymentCount() {
         try {
+            if (this.deferVisibleEmploymentPersistence) return;
             const visibleCount = Math.max(
                 1,
                 Math.min(this.visibleEmploymentCount || this.fullEmploymentCount || 1, this.fullEmploymentCount || 1)
             );
             localStorage.setItem(this.getNoFurtherEmploymentStorageKey(), String(visibleCount));
+            localStorage.removeItem('employment_visible_count');
         } catch (_e) {
         }
     }
 
     restoreVisibleEmploymentCount() {
         try {
-            const raw = localStorage.getItem(this.getNoFurtherEmploymentStorageKey());
+            const scopedKey = this.getNoFurtherEmploymentStorageKey();
+            let raw = localStorage.getItem(scopedKey);
+            localStorage.removeItem('employment_visible_count');
+            if (!raw) {
+                raw = document.getElementById('employmentForm')?.dataset?.serverVisibleCount || '';
+            }
             if (!raw) return;
             const parsed = parseInt(raw, 10);
             if (!parsed || parsed < 1) return;
@@ -574,6 +820,11 @@ class EmploymentManager extends TabManager {
     applyVisibleEmploymentCount() {
         const visibleCount = Math.max(1, this.visibleEmploymentCount || this.cards.filter(Boolean).length || 1);
         const tabs = document.querySelectorAll('.employment-tab');
+        const visibleCountInput = document.getElementById('visibleEmploymentCount');
+
+        if (visibleCountInput) {
+            visibleCountInput.value = String(visibleCount);
+        }
 
         this.cards.forEach((card, index) => {
             if (!card) return;
@@ -613,12 +864,19 @@ class EmploymentManager extends TabManager {
             const checkbox = card.querySelector('.no-further-employment-checkbox');
             if (!row || !checkbox) return;
 
-            const isVisible = index < total;
-            const canCutoff = !this.isFresher && isVisible && index < this.fullEmploymentCount - 1;
-            row.style.display = canCutoff ? '' : 'none';
-            checkbox.disabled = !canCutoff;
-            checkbox.checked = canCutoff && total < this.fullEmploymentCount && total === (index + 1);
+            const isLastVisible = index === total - 1;
+            const canContinue = !this.isFresher && isLastVisible && index < this.maxEmploymentCount - 1;
+            row.style.display = canContinue ? '' : 'none';
+            checkbox.disabled = !canContinue;
+            checkbox.checked = false;
         });
+    }
+
+    getMaxEmploymentCount() {
+        const optionValues = this.countSelect
+            ? Array.from(this.countSelect.options || []).map((option) => parseInt(option.value || '0', 10)).filter(Boolean)
+            : [];
+        return Math.max(1, optionValues.length ? Math.max(...optionValues) : this.maxEmploymentCount || 5);
     }
 
     updateContactEmployer(card, preserveExistingDate = false) {
@@ -658,7 +916,7 @@ class EmploymentManager extends TabManager {
             }
         }
 
-        this.updateEmploymentProofOptions(card, this.currentlyEmployed);
+        this.updateEmploymentStatusUI(card);
     }
 
     updateEmploymentProofOptions(card, employmentStatus, preferredValue = null) {
@@ -667,7 +925,7 @@ class EmploymentManager extends TabManager {
         const docTypeSelect = card.querySelector('[name="employment_doc_type[]"]');
         if (!docTypeSelect) return;
 
-        const normalizedStatus = employmentStatus === "yes" ? "yes" : "no";
+        const normalizedStatus = this.normalizeEmploymentStatus(employmentStatus === "yes" ? "currently_employed" : employmentStatus);
         const currentValue = preferredValue !== null ? preferredValue : docTypeSelect.value;
         const options = this.docTypeOptions[normalizedStatus] || [];
 
@@ -777,6 +1035,7 @@ class EmploymentManager extends TabManager {
         if (window.CandidateNotify && form) {
             window.CandidateNotify.clearValidation(form);
         }
+        this.refreshTimelineIntelligence();
         if (this.isFresher) {
             console.log("Skipping employment validation because fresher is selected");
             return true;
@@ -793,6 +1052,10 @@ class EmploymentManager extends TabManager {
             }
             isValid = false;
         };
+        const addBlockingNotice = (field, message) => {
+            errors.push({ field, message });
+            isValid = false;
+        };
         
         const requiredEmploymentCount = Math.max(
             Math.min(this.visibleEmploymentCount || this.cards.length || 1, this.cards.length || 1),
@@ -803,17 +1066,14 @@ class EmploymentManager extends TabManager {
             const card = this.cards[i];
             if (!card) continue;
             
-            // Skip validation for extra cards if fresher
             if (this.isFresher && i > 0) {
                 continue;
             }
             
-            // Skip validation for first card if fresher
             if (this.isFresher && i === 0) {
                 continue;
             }
 
-            // Validate non-fresher cards
             if (!this.isFresher) {
                 const requiredFields = [
                     { selector: '[name="employer_name[]"]', label: 'Employer Name' },
@@ -823,9 +1083,8 @@ class EmploymentManager extends TabManager {
                     { selector: '[name="reason_leaving[]"]', label: 'Reason for Leaving' }
                 ];
 
-                const shouldRequireRelievingDate = i === 0
-                    ? this.currentlyEmployed === 'no'
-                    : true;
+                const employmentStatus = this.inferEmploymentStatus({}, i);
+                const shouldRequireRelievingDate = !['currently_employed', 'serving_notice'].includes(employmentStatus);
 
                 if (shouldRequireRelievingDate) {
                     requiredFields.push({ 
@@ -834,7 +1093,6 @@ class EmploymentManager extends TabManager {
                     });
                 }
 
-                // Check required fields
                 requiredFields.forEach(field => {
                     const input = card.querySelector(field.selector);
                     if (input && !input.value.trim() && !input.disabled) {
@@ -878,9 +1136,9 @@ class EmploymentManager extends TabManager {
                     }
                 }
 
-                // Validate dates
                 const joiningInput = card.querySelector('[name="joining_date[]"]');
                 const relievingInput = card.querySelector('[name="relieving_date[]"]');
+                const tentativeInput = card.querySelector('[name="tentative_relieving_date[]"]');
                 
                 if (
                     shouldRequireRelievingDate &&
@@ -890,13 +1148,32 @@ class EmploymentManager extends TabManager {
                     relievingInput.value &&
                     !relievingInput.disabled
                 ) {
-                    const joiningDate = new Date(joiningInput.value);
-                    const relievingDate = new Date(relievingInput.value);
+                    const joiningDate = this.parseEmploymentDate(joiningInput.value);
+                    const relievingDate = this.parseEmploymentDate(relievingInput.value);
                     
                     if (relievingDate <= joiningDate) {
                         addError(relievingInput, `Employer ${i + 1}: Relieving date must be after joining date`);
                     }
                 }
+
+                if (tentativeInput && tentativeInput.value && ['currently_employed', 'serving_notice'].includes(employmentStatus)) {
+                    const tentativeDate = this.parseEmploymentDate(tentativeInput.value);
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    if (tentativeDate <= today) {
+                        addError(tentativeInput, `Employer ${i + 1}: Tentative relieving date must be a future date`);
+                    }
+                }
+
+                const overlapDetected = card.dataset.timelineOverlap === '1';
+                if (overlapDetected) {
+                    const targetField = card.querySelector('[name="joining_date[]"]') || card;
+                    addBlockingNotice(
+                        targetField,
+                        `Employer ${i + 1}: Employment dates overlap or are out of order. Correct the timeline before continuing.`
+                    );
+                }
+
             }
         }
         
@@ -941,6 +1218,7 @@ class EmploymentManager extends TabManager {
 
             if (data.success) {
                 this.showNotification('✅ Employment Draft saved successfully!');
+                localStorage.removeItem(this.getEmploymentDraftStorageKey());
                 localStorage.removeItem('employment_draft');
             } else {
                 this.showNotification((data.message || 'Save failed'), true);
@@ -956,7 +1234,8 @@ class EmploymentManager extends TabManager {
 
     loadFromLocalStorage() {
         try {
-            const raw = localStorage.getItem('employment_draft');
+            localStorage.removeItem('employment_draft');
+            const raw = localStorage.getItem(this.getEmploymentDraftStorageKey());
             if (!raw) {
                 console.log('📭 No employment draft found in localStorage');
                 return;
@@ -991,8 +1270,15 @@ class EmploymentManager extends TabManager {
                         employer_name: data['employer_name[]']?.[i],
                         job_title: data['job_title[]']?.[i],
                         employee_id: data['employee_id[]']?.[i],
+                        employment_status: data['employment_status[]']?.[i],
+                        tentative_relieving_date: data['tentative_relieving_date[]']?.[i],
+                        tentative_relieving_note: data['tentative_relieving_note[]']?.[i],
+                        gap_reason: data['gap_reason[]']?.[i],
+                        gap_explanation: data['gap_explanation[]']?.[i],
+                        overlap_explanation: data['overlap_explanation[]']?.[i],
                         employment_doc_type: data["employment_doc_type[]"]?.[i],
                         reason_leaving: data['reason_leaving[]']?.[i],
+                        job_location: data['job_location[]']?.[i],
                         hr_manager_name: data['hr_manager_name[]']?.[i],
                         hr_manager_phone: data['hr_manager_phone[]']?.[i],
                         hr_manager_email: data['hr_manager_email[]']?.[i],
@@ -1039,7 +1325,7 @@ class EmploymentManager extends TabManager {
                     window.Router.markCompleted("employment");
                 }
                 if (window.Router.navigateTo) {
-                    window.Router.navigateTo("reference");
+                    window.Router.navigateTo("ecourt");
                     return;
                 }
             }
@@ -1082,29 +1368,31 @@ class EmploymentManager extends TabManager {
 
             if (data.success) {
                 if (!isDraft) {
-                    // Use Router for navigation
+                    localStorage.removeItem(this.getEmploymentDraftStorageKey());
+                    localStorage.removeItem('employment_draft');
+                    if (window.Router && window.Router.pageCache && typeof window.Router.pageCache.delete === 'function') {
+                        window.Router.pageCache.delete('employment');
+                    }
+
                     if (window.Router) {
                         if (window.Router.markCompleted) {
                             window.Router.markCompleted('employment');
                         }
                         
-                        // Navigate to next page using Router
                         if (window.Router.navigateTo) {
-                            window.Router.navigateTo('reference');
+                            window.Router.navigateTo('ecourt');
                         } else {
-                            window.location.href = `${window.APP_BASE_URL}/modules/candidate/reference.php`;
+                            window.location.href = `${window.APP_BASE_URL}/modules/candidate/ecourt.php`;
                         }
                     } else {
-                        window.location.href = `${window.APP_BASE_URL}/modules/candidate/reference.php`;
+                        window.location.href = `${window.APP_BASE_URL}/modules/candidate/ecourt.php`;
                     }
                     
-                    // Clear draft
                     if (window.Forms && typeof window.Forms.clearDraft === 'function') {
                         window.Forms.clearDraft('employment');
                     }
                 }
                 
-                // Show success message
                 this.showNotification(data.message || '✅ Employment details saved successfully!');
             } else {
                 const errorMessage = data.message || 'Save failed';
@@ -1137,7 +1425,6 @@ class EmploymentManager extends TabManager {
     }
 
     cardHasData(card) {
-        // Check if card has any data
         const inputs = card.querySelectorAll('input:not([type="hidden"]):not([type="file"]), select, textarea');
         for (const input of inputs) {
             if (input.value && input.value.trim() !== '' && !input.disabled) {
@@ -1145,13 +1432,11 @@ class EmploymentManager extends TabManager {
             }
         }
         
-        // Check for file input
         const fileInput = card.querySelector('input[type="file"]');
         if (fileInput && fileInput.files.length > 0) {
             return true;
         }
         
-        // Check for old file
         const oldFileInput = card.querySelector('input[name^="old_"]');
         if (oldFileInput && oldFileInput.value && oldFileInput.value !== 'INSUFFICIENT_DOCUMENTS') {
             return true;
@@ -1164,7 +1449,6 @@ class EmploymentManager extends TabManager {
         console.log('🧹 Cleaning up EmploymentManager');
         super.cleanup();
         
-        // Remove event listeners
         const form = document.getElementById('employmentForm');
         if (form) {
             form.replaceWith(form.cloneNode(true));

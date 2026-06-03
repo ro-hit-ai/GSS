@@ -28,12 +28,12 @@ try {
     $pdo = getDB();
     ccs_ensure_table($pdo);
     if ($token !== '') {
-        $st = $pdo->prepare('SELECT * FROM candidate_correction_sessions WHERE token = ? LIMIT 1');
+        $st = $pdo->prepare('SELECT * FROM Vati_Payfiller_Candidate_Correction_Sessions WHERE token = ? LIMIT 1');
         $st->execute([$token]);
     } else {
         auth_require_login();
         auth_session_start();
-        $st = $pdo->prepare('SELECT * FROM candidate_correction_sessions WHERE correction_session_id = ? LIMIT 1');
+        $st = $pdo->prepare('SELECT * FROM Vati_Payfiller_Candidate_Correction_Sessions WHERE correction_session_id = ? LIMIT 1');
         $st->execute([$id]);
     }
     $row = $st->fetch(PDO::FETCH_ASSOC) ?: null;
@@ -46,7 +46,7 @@ try {
     $expiresAt = trim((string)($row['expires_at'] ?? ''));
     $expired = $expiresAt !== '' && strtotime($expiresAt) < time();
     if ($status !== 'completed' && $expired && $status !== 'expired') {
-        $u = $pdo->prepare("UPDATE candidate_correction_sessions SET status = 'expired', updated_at = NOW() WHERE correction_session_id = ?");
+        $u = $pdo->prepare("UPDATE Vati_Payfiller_Candidate_Correction_Sessions SET status = 'expired', updated_at = NOW() WHERE correction_session_id = ?");
         $u->execute([(int)$row['correction_session_id']]);
         $row['status'] = 'expired';
     }

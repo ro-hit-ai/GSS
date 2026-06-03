@@ -122,7 +122,7 @@ try {
     try {
         $q = $pdo->prepare("SELECT SUM(CASE WHEN status IN ('active','submitted') THEN 1 ELSE 0 END) AS open_cnt,
             SUM(CASE WHEN status IN ('active','submitted') AND created_at < (NOW() - INTERVAL 48 HOUR) THEN 1 ELSE 0 END) AS stale_cnt
-            FROM candidate_correction_sessions
+            FROM Vati_Payfiller_Candidate_Correction_Sessions
             WHERE case_id IN (SELECT case_id FROM Vati_Payfiller_Verifier_Group_Queue WHERE assigned_user_id = ?)");
         $q->execute([$userId]);
         $rw = $q->fetch(PDO::FETCH_ASSOC) ?: [];
@@ -130,7 +130,7 @@ try {
         $corrStale = (int)($rw['stale_cnt'] ?? 0);
         $q2 = $pdo->prepare("SELECT COUNT(*) FROM (
             SELECT case_id, component_key, COUNT(*) c
-            FROM component_correction_cycles
+            FROM Vati_Payfiller_Component_Correction_Cycles
             WHERE case_id IN (SELECT case_id FROM Vati_Payfiller_Verifier_Group_Queue WHERE assigned_user_id = ?)
             GROUP BY case_id, component_key HAVING COUNT(*) > 1
         ) t");
@@ -273,7 +273,7 @@ try {
             'evaluated_statuses_detected' => array_values(array_keys($evaluatedStatuses)),
             'projection_reason' => 'verifier_queue_stats_semantic_helpers',
             'visibility_classification' => 'active_vs_evaluated',
-            'participation_source' => 'workflow_transitions',
+            'participation_source' => 'Vati_Payfiller_Workflow_Transitions',
             'participated_metrics' => $participated
         ];
     }

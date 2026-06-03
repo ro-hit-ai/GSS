@@ -169,6 +169,12 @@ try {
         'invalidated_qa_total' => 0,
         'reopened_workflows_total' => 0,
     ];
+    $aging = [
+        'oldest_vr_pending_minutes' => null,
+        'oldest_dbv_pending_minutes' => null,
+        'reopened_over_sla_count' => 0,
+        'qa_attention_over_sla_count' => 0,
+    ];
     try {
         $gov = $pdo->query(
             "SELECT
@@ -193,6 +199,58 @@ try {
     } catch (Throwable $e) {
     }
 
+    try {
+        $vrAgeStmt = $pdo->query(
+            "SELECT
+                MIN(TIMESTAMPDIFF(MINUTE, COALESCE(q.claimed_at, c.created_at), NOW())) AS oldest_vr_pending_minutes,
+                SUM(CASE
+                        WHEN COALESCE(q.claimed_at, c.created_at) <= (NOW() - INTERVAL 24 HOUR)
+                        THEN 1 ELSE 0
+                    END) AS vr_attention_over_sla_count
+             FROM Vati_Payfiller_Verifier_Group_Queue q
+             JOIN Vati_Payfiller_Cases c ON c.case_id = q.case_id
+             WHERE q.assigned_user_id IS NOT NULL
+               AND q.completed_at IS NULL"
+        );
+        $vrAge = $vrAgeStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $aging['oldest_vr_pending_minutes'] = isset($vrAge['oldest_vr_pending_minutes']) && $vrAge['oldest_vr_pending_minutes'] !== null
+            ? (int)$vrAge['oldest_vr_pending_minutes']
+            : null;
+        $aging['qa_attention_over_sla_count'] += (int)($vrAge['vr_attention_over_sla_count'] ?? 0);
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $dbvAgeStmt = $pdo->query(
+            "SELECT
+                MIN(TIMESTAMPDIFF(MINUTE, COALESCE(c.dbv_claimed_at, c.created_at), NOW())) AS oldest_dbv_pending_minutes,
+                SUM(CASE
+                        WHEN COALESCE(c.dbv_claimed_at, c.created_at) <= (NOW() - INTERVAL 24 HOUR)
+                        THEN 1 ELSE 0
+                    END) AS dbv_attention_over_sla_count
+             FROM Vati_Payfiller_Cases c
+             WHERE c.dbv_assigned_user_id IS NOT NULL
+               AND c.dbv_completed_at IS NULL"
+        );
+        $dbvAge = $dbvAgeStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $aging['oldest_dbv_pending_minutes'] = isset($dbvAge['oldest_dbv_pending_minutes']) && $dbvAge['oldest_dbv_pending_minutes'] !== null
+            ? (int)$dbvAge['oldest_dbv_pending_minutes']
+            : null;
+        $aging['qa_attention_over_sla_count'] += (int)($dbvAge['dbv_attention_over_sla_count'] ?? 0);
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $reopenedAgeStmt = $pdo->query(
+            "SELECT COUNT(*) AS reopened_over_sla_count
+             FROM Vati_Payfiller_Case_Component_Workflow
+             WHERE LOWER(TRIM(COALESCE(status, ''))) = 'reopened'
+               AND COALESCE(updated_at, completed_at, created_at) <= (NOW() - INTERVAL 24 HOUR)"
+        );
+        $aging['reopened_over_sla_count'] = (int)($reopenedAgeStmt->fetchColumn() ?: 0);
+    } catch (Throwable $e) {
+    }
+
     echo json_encode([
         'status' => 1,
         'message' => 'ok',
@@ -207,6 +265,7 @@ try {
                 'invalidated_qa_total' => (int)$governance['invalidated_qa_total'],
                 'reopened_workflows_total' => (int)$governance['reopened_workflows_total'],
             ],
+            'aging' => $aging,
             'workload' => [
                 'vr' => $vrWorkload,
                 'dbv' => $dbvWorkload,
