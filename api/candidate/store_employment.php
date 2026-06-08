@@ -301,6 +301,14 @@ try {
         $count = min($count, $visibleEmploymentCount);
     }
 
+    error_log('[Employment date debug] received ' . json_encode([
+        'application_id' => $applicationId,
+        'visibleEmploymentCount' => $visibleEmploymentCount,
+        'joining_date' => $joiningDates,
+        'relieving_date' => $relievingDates,
+        'employment_status' => $employmentStatuses,
+    ]));
+
     for ($i = 0; $i < $count; $i++) {
         $index = $i + 1;
 
@@ -392,6 +400,15 @@ try {
 
         $relieving = $isCurrentlyEmployedForRow ? null : ($data['relieving_date'] ?: null);
         $tentativeRelieving = $isCurrentlyEmployedForRow ? ($data['tentative_relieving_date'] ?: null) : null;
+
+        error_log('[Employment date debug] db-write ' . json_encode([
+            'application_id' => $applicationId,
+            'index' => $index,
+            'joining_date' => $data['joining_date'],
+            'relieving_date' => $relieving,
+            'employment_status' => $employmentStatus,
+            'currently_employed_for_row' => $isCurrentlyEmployedForRow,
+        ]));
 
         $stmt->execute([
             ':application_id'         => $applicationId,

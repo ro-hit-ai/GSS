@@ -9,6 +9,7 @@ require_once __DIR__ . '/workflow_status_semantics.php';
 require_once __DIR__ . '/workflow/WorkflowLockService.php';
 require_once __DIR__ . '/workflow_mode.php';
 require_once __DIR__ . '/verifier_case_queue.php';
+require_once __DIR__ . '/../../services/candidate/ReferenceService.php';
 
 integration_bootstrap_json_api();
 
@@ -256,7 +257,122 @@ function report_debug_enabled(): bool {
 }
 
 function registered_section_keys(): array {
-    return ['basic', 'id', 'contact', 'education', 'employment', 'reference', 'socialmedia', 'ecourt', 'reports'];
+    return ['basic', 'id', 'contact', 'education', 'education_reference', 'employment', 'employment_reference', 'reference', 'socialmedia', 'ecourt', 'reports'];
+}
+
+function report_reference_component_key(array $referenceRow): string {
+    $type = strtolower(trim((string)($referenceRow['reference_type'] ?? ($referenceRow['type'] ?? ''))));
+    if ($type === '') return '';
+    if (strpos($type, 'education') !== false) return 'education_reference';
+    if (strpos($type, 'employment') !== false) return 'employment_reference';
+    return '';
+}
+
+function report_filter_reference_payload_by_components($reference, array $visibleSections) {
+    if (!is_array($reference)) return $reference;
+    $visible = [];
+    foreach ($visibleSections as $section) {
+        $key = ws_norm_component_key((string)$section);
+        if ($key !== '') $visible[$key] = true;
+    }
+    if (isset($visible['reference']) || (isset($visible['education_reference']) && isset($visible['employment_reference']))) {
+        return $reference;
+    }
+    $wantsEducation = isset($visible['education_reference']);
+    $wantsEmployment = isset($visible['employment_reference']);
+    if (!$wantsEducation && !$wantsEmployment) return $reference;
+
+    if (isset($reference[0]) && is_array($reference[0])) {
+        return array_values(array_filter($reference, function ($item) use ($wantsEducation, $wantsEmployment) {
+            $key = report_reference_component_key((array)$item);
+            if ($key === '') return true;
+            if ($key === 'education_reference') return $wantsEducation;
+            if ($key === 'employment_reference') return $wantsEmployment;
+            return true;
+        }));
+    }
+
+    $key = report_reference_component_key($reference);
+    if ($key === 'education_reference' && !$wantsEducation) return [];
+    if ($key === 'employment_reference' && !$wantsEmployment) return [];
+    return $reference;
+}
+
+function report_component_key_for_timeline(string $key): string {
+    $k = strtolower(trim($key));
+    $k = str_replace(['-', ' '], '_', $k);
+    if ($k === 'identification') return 'id';
+    if ($k === 'address') return 'contact';
+    if ($k === 'social_media') return 'socialmedia';
+    return $k;
+}
+
+function report_status_from_timeline_event(string $eventType, string $message): string {
+    $text = strtolower(trim($eventType . ' ' . $message));
+    if ($text === '') return '';
+    if (strpos($text, 'reject') !== false) return 'Rejected';
+    if (strpos($text, 'hold') !== false) return 'Hold';
+    if (strpos($text, 'insufficient') !== false || strpos($text, 'need docs') !== false || strpos($text, 'correction') !== false) return 'Insufficiency';
+    if (strpos($text, 'mail') !== false || strpos($text, 'email') !== false) return 'Mail Sent';
+    if (strpos($text, 'approve') !== false) return 'Approved';
+    if (strpos($text, 'complete') !== false) return 'Completed';
+    return '';
+}
+
+function report_component_timeline_history(PDO $pdo, string $applicationId): array {
+    $out = [];
+    if ($applicationId === '') return $out;
+    try {
+        $st = $pdo->prepare(
+            "SELECT section_key, event_type, message, created_at
+               FROM Vati_Payfiller_Case_Timeline
+              WHERE application_id = ?
+              ORDER BY created_at ASC"
+        );
+        $st->execute([$applicationId]);
+        foreach (($st->fetchAll(PDO::FETCH_ASSOC) ?: []) as $row) {
+            $key = report_component_key_for_timeline((string)($row['section_key'] ?? ''));
+            if ($key === '' || $key === 'timeline') continue;
+            $eventType = (string)($row['event_type'] ?? '');
+            $message = (string)($row['message'] ?? '');
+            $out[$key][] = [
+                'at' => (string)($row['created_at'] ?? ''),
+                'event' => $eventType,
+                'message' => $message,
+                'status' => report_status_from_timeline_event($eventType, $message),
+            ];
+        }
+    } catch (Throwable $e) {
+        return [];
+    }
+    return $out;
+}
+
+function report_component_history_for_key(array $history, string $componentKey): array {
+    $key = report_component_key_for_timeline($componentKey);
+    $items = $history[$key] ?? [];
+    if (!$items && ($key === 'education_reference' || $key === 'employment_reference')) {
+        $items = $history['reference'] ?? [];
+    } elseif (!$items && $key === 'contact') {
+        $items = $history['address'] ?? [];
+    } elseif (!$items && $key === 'id') {
+        $items = $history['identification'] ?? [];
+    }
+    return $items;
+}
+
+function report_component_display_status(array $history, string $state): string {
+    for ($i = count($history) - 1; $i >= 0; $i--) {
+        $status = trim((string)($history[$i]['status'] ?? ''));
+        if ($status !== '') return $status;
+    }
+    $s = strtolower(trim($state));
+    if ($s === 'context') return 'Context';
+    if ($s === 'completed') return 'Completed';
+    if ($s === 'owned_active') return 'Active';
+    if ($s === 'claimable_next') return 'Ready';
+    if ($s === 'locked_future') return 'Locked';
+    return '';
 }
 
 function validator_operational_template_sections(): array {
@@ -543,6 +659,11 @@ try {
     $uploadedDocs = sp_fetch_all($bundle);
     sp_drain($bundle);
 
+    try {
+        $reference = ReferenceService::fetchGrouped($pdo, $applicationId);
+    } catch (Throwable $e) {
+    }
+
     $socialMedia = null;
     $ecourt = null;
     try {
@@ -615,17 +736,19 @@ try {
     $selectedLevel = strtolower(trim((string)($case['selected_level'] ?? '')));
     $selectedStage = norm_case_stage((string)($case['selected_stage'] ?? ''));
 
-    if (is_array($reference) && isset($reference[0]) && is_array($reference[0])) {
+    $referencePriorityBucketParam = strtolower(trim(get_str('priority_bucket', '')));
+    $referenceHasPriorityBucket = preg_match('/^p?([1-9][0-9]*)$/', $referencePriorityBucketParam) === 1;
+    if (!$referenceHasPriorityBucket && is_array($reference) && isset($reference[0]) && is_array($reference[0])) {
         $reference = array_values(array_filter($reference, function ($item) use ($selectedStage) {
             $type = strtolower(trim((string)($item['reference_type'] ?? ($item['type'] ?? ''))));
             if ($selectedStage === 'p1') {
-                return $type === '' || $type === 'education reference';
+                return $type === '' || strpos($type, 'education') !== false;
             }
             return true;
         }));
-    } elseif (is_array($reference)) {
+    } elseif (!$referenceHasPriorityBucket && is_array($reference)) {
         $type = strtolower(trim((string)($reference['reference_type'] ?? ($reference['type'] ?? ''))));
-        if ($selectedStage === 'p1' && $type !== '' && $type !== 'education reference') {
+        if ($selectedStage === 'p1' && $type !== '' && strpos($type, 'education') === false) {
             $reference = [];
         }
     }
@@ -1058,18 +1181,30 @@ try {
     $lockedMap = [];
     $lockReasons = [];
     $verifierRoutingState = [];
+    $selectedPriorityBucket = '';
     foreach ($outAssigned as $it0) {
         $k0 = ws_norm_component_key((string)($it0['component_key'] ?? ''));
         if ($k0 === '') continue;
         $actionableMap[$k0] = true;
     }
     if ($role === 'verifier') {
+        $rawPriorityBucket = strtolower(trim(get_str('priority_bucket', '')));
+        if (preg_match('/^p?([1-9][0-9]*)$/', $rawPriorityBucket, $priorityMatch)) {
+            $selectedPriorityBucket = 'p' . $priorityMatch[1];
+        }
         $verifierRoutingState = verifier_routing_case_state($pdo, (int)($case['case_id'] ?? 0), (int)$userId);
+        $reportTimelineHistory = report_component_timeline_history($pdo, $applicationId);
+        foreach (($verifierRoutingState['components'] ?? []) as $componentKey => $componentState) {
+            $history = report_component_history_for_key($reportTimelineHistory, (string)$componentKey);
+            $verifierRoutingState['components'][$componentKey]['history'] = $history;
+            $verifierRoutingState['components'][$componentKey]['display_status'] = report_component_display_status(
+                $history,
+                (string)($componentState['state'] ?? '')
+            );
+        }
         $verifierVisibleRaw = $verifierRoutingState['visible_sections'] ?? ['basic'];
         $visibleSections = array_values(array_filter(array_map(static function ($key) {
-            $nk = ws_norm_component_key((string)$key);
-            if ($nk === 'education_reference' || $nk === 'employment_reference') return 'reference';
-            return $nk;
+            return ws_norm_component_key((string)$key);
         }, $verifierVisibleRaw), static function ($key) use ($registeredSectionsMap) {
             $nk = ws_norm_component_key((string)$key);
             return $nk !== '' && isset($registeredSectionsMap[$nk]);
@@ -1077,17 +1212,14 @@ try {
         $actionableMap = [];
         foreach (($verifierRoutingState['owned_active_components'] ?? []) as $ownedKey) {
             $nk = ws_norm_component_key((string)$ownedKey);
-            if ($nk === 'education_reference' || $nk === 'employment_reference') $nk = 'reference';
             if ($nk !== '') $actionableMap[$nk] = true;
         }
         foreach (($verifierRoutingState['completed_components'] ?? []) as $completedKey) {
             $nk = ws_norm_component_key((string)$completedKey);
-            if ($nk === 'education_reference' || $nk === 'employment_reference') $nk = 'reference';
             if ($nk !== '') $readonlyMap[$nk] = true;
         }
         foreach (($verifierRoutingState['claimable_next_components'] ?? []) as $claimableKey) {
             $nk = ws_norm_component_key((string)$claimableKey);
-            if ($nk === 'education_reference' || $nk === 'employment_reference') $nk = 'reference';
             if ($nk !== '') {
                 $visibleSections[] = $nk;
                 $lockedMap[$nk] = true;
@@ -1097,12 +1229,46 @@ try {
         }
         foreach (($verifierRoutingState['locked_future_components'] ?? []) as $lockedKey) {
             $nk = ws_norm_component_key((string)$lockedKey);
-            if ($nk === 'education_reference' || $nk === 'employment_reference') $nk = 'reference';
             if ($nk !== '') {
                 $lockedMap[$nk] = true;
                 $lockReasons[$nk] = (string)(($verifierRoutingState['components'][$lockedKey]['reason'] ?? 'Locked by routing priority'));
             }
         }
+        if ($selectedPriorityBucket !== '') {
+            $selectedPriority = (int)substr($selectedPriorityBucket, 1);
+            $bucketComponentMap = [];
+            $filteredRoutingComponents = [];
+
+            foreach (($verifierRoutingState['components'] ?? []) as $componentKey => $componentState) {
+                $nk = ws_norm_component_key((string)$componentKey);
+                if ($nk === '') {
+                    continue;
+                }
+                $stateNow = strtolower(trim((string)($componentState['state'] ?? '')));
+                $priorityNow = isset($componentState['priority']) ? (int)$componentState['priority'] : 0;
+
+                if ($nk === 'basic') {
+                    $filteredRoutingComponents[$componentKey] = $componentState;
+                    continue;
+                }
+                if ($priorityNow === $selectedPriority && $stateNow !== 'hidden_unrelated' && isset($registeredSectionsMap[$nk])) {
+                    $bucketComponentMap[$nk] = true;
+                    $filteredRoutingComponents[$componentKey] = $componentState;
+                }
+            }
+
+            $visibleSections = array_merge(['basic'], array_keys($bucketComponentMap));
+            $actionableMap = array_intersect_key($actionableMap, $bucketComponentMap);
+            $readonlyMap = array_intersect_key($readonlyMap, $bucketComponentMap);
+            $lockedMap = array_intersect_key($lockedMap, $bucketComponentMap);
+            $lockReasons = array_intersect_key($lockReasons, $bucketComponentMap);
+            $verifierRoutingState['components'] = $filteredRoutingComponents;
+            $verifierRoutingState['visible_sections'] = $visibleSections;
+            $verifierRoutingState['selected_priority_bucket'] = $selectedPriorityBucket;
+        }
+        unset($actionableMap['basic']);
+        $readonlyMap['basic'] = true;
+        $reference = report_filter_reference_payload_by_components($reference, $visibleSections);
     } else {
         $visibleSections = wf_operational_visible_sections($role, $allowedSet, $clientRequiredMap, $operationalPoolMap);
     }
@@ -1177,6 +1343,9 @@ try {
     $verifierCaseOwnedForAccess = ($role === 'verifier') && !empty($verifierRoutingState['can_open']);
     if ($verifierCaseOwnedForAccess || $role === 'verifier') {
         $visibleSectionsMap['basic'] = true;
+        if (!in_array('basic', $visibleSections, true)) {
+            $visibleSections[] = 'basic';
+        }
     }
 
     if (($role === 'verifier' || $role === 'db_verifier' || $role === 'validator')
@@ -1279,7 +1448,7 @@ try {
         if (!isset($visibleSectionsMap['employment'])) {
             $employment = [];
         }
-        if (!isset($visibleSectionsMap['reference'])) {
+        if (!isset($visibleSectionsMap['reference']) && !isset($visibleSectionsMap['education_reference']) && !isset($visibleSectionsMap['employment_reference'])) {
             $reference = null;
         }
         if (!isset($visibleSectionsMap['socialmedia'])) {
@@ -1299,9 +1468,7 @@ try {
             $k = ws_norm_component_key((string)($it['component_key'] ?? ''));
             if ($k !== '') $visibleMap[$k] = true;
         }
-        if (!isset($visibleMap['basic'])) {
-            $basic = null;
-        }
+        $visibleMap['basic'] = true;
         if (!isset($visibleMap['id'])) {
             $identification = [];
         }
@@ -1314,7 +1481,13 @@ try {
         if (!isset($visibleMap['employment'])) {
             $employment = [];
         }
-        if (!isset($visibleMap['reference'])) {
+        $referenceVisible = isset($visibleMap['reference'])
+            || isset($visibleMap['education_reference'])
+            || isset($visibleMap['employment_reference'])
+            || isset($visibleSectionsMap['reference'])
+            || isset($visibleSectionsMap['education_reference'])
+            || isset($visibleSectionsMap['employment_reference']);
+        if (!$referenceVisible) {
             $reference = null;
         }
         if (!isset($visibleMap['socialmedia'])) {
@@ -1331,7 +1504,7 @@ try {
     if (!isset($allowed['contact'])) $contact = null;
     if (!isset($allowed['education'])) $education = [];
     if (!isset($allowed['employment'])) $employment = [];
-    if (!isset($allowed['reference'])) $reference = null;
+    if (!isset($allowed['reference']) && !isset($allowed['education_reference']) && !isset($allowed['employment_reference'])) $reference = null;
     if (!isset($allowed['socialmedia'])) $socialMedia = null;
     if (!isset($allowed['ecourt'])) $ecourt = null;
 

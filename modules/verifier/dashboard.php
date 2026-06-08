@@ -30,13 +30,9 @@ ob_start();
     .vr-chip{border:1px solid rgba(148,163,184,0.32);background:#fff;border-radius:999px;padding:9px 16px;font-size:12px;font-weight:900;color:#334155;cursor:pointer;transition:.16s ease;box-shadow:0 6px 16px rgba(15,23,42,0.05);}
     .vr-chip:hover{transform:translateY(-1px);border-color:rgba(96,165,250,0.45);color:#1d4ed8;}
     .vr-chip.active{background:linear-gradient(135deg,#2563eb 0%,#1d4ed8 100%);color:#fff;border-color:#2563eb;box-shadow:0 10px 22px rgba(37,99,235,0.24);}
-    .vr-state-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
-    .vr-state-chip{border:1px solid rgba(148,163,184,0.24);background:rgba(255,255,255,0.86);border-radius:999px;padding:7px 12px;font-size:12px;font-weight:800;color:#475569;cursor:pointer;transition:.16s ease;}
-    .vr-state-chip:hover{border-color:rgba(96,165,250,0.36);color:#1d4ed8;background:#fff;}
-    .vr-state-chip.active{background:#dbeafe;color:#1d4ed8;border-color:#93c5fd;box-shadow:0 6px 14px rgba(59,130,246,0.12);}
     .vr-board-panel{margin-top:16px;border:1px solid rgba(148,163,184,0.2);border-radius:18px;overflow:hidden;background:rgba(255,255,255,0.94);box-shadow:0 18px 34px rgba(15,23,42,0.07);}
     .vr-board-grid{width:100%;}
-    .vr-board-row{display:grid;grid-template-columns:minmax(130px,1.05fr) minmax(180px,1.3fr) minmax(220px,1.6fr) minmax(120px,.9fr) minmax(145px,1fr) minmax(165px,1.05fr) 130px;align-items:center;min-height:66px;border-top:1px solid rgba(148,163,184,0.16);}
+    .vr-board-row{display:grid;grid-template-columns:minmax(130px,1fr) minmax(170px,1.15fr) minmax(360px,2.45fr) minmax(105px,.75fr) minmax(125px,.85fr) minmax(150px,.95fr) 120px;align-items:center;min-height:66px;border-top:1px solid rgba(148,163,184,0.16);}
     .vr-board-row:first-child{border-top:none;}
     .vr-board-head-row{background:linear-gradient(180deg,#f8fbff 0%,#eef5fc 100%);font-size:11px;font-weight:900;color:#64748b;letter-spacing:.08em;text-transform:uppercase;min-height:54px;}
     .vr-board-cell{padding:12px 14px;word-break:break-word;}
@@ -46,20 +42,48 @@ ob_start();
     .vr-board-data-row.is-mine{background:#eef6ff;}
     .vr-board-data-row.is-locked{background:#f8fafc;color:#64748b;}
     .vr-board-data-row.is-completed{background:#f5fbf7;}
+    .vr-board-child-row{min-height:48px;background:#fff;border-top:1px solid rgba(148,163,184,0.12);}
+    .vr-board-child-row .vr-board-cell{padding-top:9px;padding-bottom:9px;}
+    .vr-board-child-state{font-weight:950;color:#64748b;text-transform:capitalize;}
     .vr-board-case{font-weight:900;color:#1d4ed8;}
     .vr-board-name{font-weight:800;color:#0f172a;}
     .vr-board-muted{font-size:12px;color:#64748b;}
+    .vr-component-strip{display:flex;flex-direction:column;gap:6px;margin-top:7px;max-width:100%;}
+    .vr-component-strip.vr-work-components{flex-direction:row;align-items:center;gap:6px;margin-top:0;}
+    .vr-priority-line{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0;}
+    .vr-board-child-row .vr-component-strip{margin-top:0;}
+    .vr-component-context{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+    .vr-component-group{display:flex;align-items:flex-start;gap:8px;min-height:24px;max-width:100%;}
+    .vr-board-child-row .vr-component-group{min-height:24px;}
+    .vr-component-group-head{display:flex;align-items:center;gap:6px;line-height:1;}
+    .vr-component-tier{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;padding:4px 7px;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;font-size:11px;font-weight:950;white-space:nowrap;}
+    .vr-component-group-items{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;}
+    .vr-component-pill{display:inline-flex;align-items:center;gap:5px;max-width:210px;border-radius:999px;padding:5px 8px;font-size:11px;font-weight:850;border:1px solid #e2e8f0;background:#fff;color:#475569;line-height:1.1;white-space:nowrap;}
+    .vr-component-pill.vr-work-component{max-width:260px;padding:6px 10px;box-shadow:0 4px 10px rgba(15,23,42,0.03);}
+    .vr-component-name{min-width:0;overflow:hidden;text-overflow:ellipsis;}
+    .vr-component-state{font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:.03em;opacity:.86;}
+    .vr-component-status{font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:.03em;color:#0f172a;}
+    .vr-component-pill .vr-component-priority{font-weight:950;color:#1d4ed8;}
+    .vr-component-pill .vr-component-reason{display:none;}
+    .vr-component-pill.is-context{background:#f8fafc;color:#64748b;}
+    .vr-component-pill.is-owned_active{background:#dbeafe;border-color:#93c5fd;color:#1d4ed8;}
+    .vr-component-pill.is-claimable_next{background:#ecfdf5;border-color:#86efac;color:#166534;}
+    .vr-component-pill.is-locked_future{background:#f8fafc;border-color:#cbd5e1;color:#64748b;}
+    .vr-component-pill.is-completed{background:#f0fdf4;border-color:#bbf7d0;color:#15803d;}
     .vr-badge{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;padding:5px 10px;font-size:11px;font-weight:900;white-space:nowrap;border:1px solid transparent;}
     .vr-badge.pending{background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe;}
+    .vr-badge.owned_active{background:#dbeafe;color:#1d4ed8;border-color:#93c5fd;}
+    .vr-badge.claimable_next{background:#ecfdf5;color:#166534;border-color:#86efac;}
     .vr-badge.followup{background:#fff7ed;color:#c2410c;border-color:#fed7aa;}
     .vr-badge.insuff_docs{background:#fffbeb;color:#b45309;border-color:#fde68a;}
     .vr-badge.completed{background:#ecfdf3;color:#166534;border-color:#bbf7d0;}
     .vr-badge.available{background:#f8fafc;color:#475569;border-color:#cbd5e1;}
+    .vr-badge.locked_future{background:#f8fafc;color:#64748b;border-color:#cbd5e1;}
     .vr-badge.mine_active{background:#dbeafe;color:#1d4ed8;border-color:#93c5fd;}
     .vr-badge.claimed_by_other{background:#f1f5f9;color:#64748b;border-color:#cbd5e1;}
     .vr-badge.followup_state{background:#fff7ed;color:#c2410c;border-color:#fed7aa;}
     .vr-badge.completed_state{background:#ecfdf3;color:#166534;border-color:#bbf7d0;}
-    .vr-action-btn{border:none;border-radius:10px;padding:8px 12px;font-size:12px;font-weight:900;cursor:pointer;box-shadow:0 8px 18px rgba(15,23,42,0.06);transition:.16s ease;}
+    .vr-action-btn{border:none;border-radius:999px;padding:7px 13px;font-size:12px;font-weight:900;cursor:pointer;box-shadow:0 8px 18px rgba(15,23,42,0.06);transition:.16s ease;display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;width:auto;min-width:0;}
     .vr-action-btn:hover:not([disabled]){transform:translateY(-1px);}
     .vr-action-btn.claim{background:linear-gradient(135deg,#2563eb 0%,#1d4ed8 100%);color:#fff;}
     .vr-action-btn.open{background:linear-gradient(135deg,#0f766e 0%,#0d9488 100%);color:#fff;}
@@ -105,18 +129,18 @@ ob_start();
         <div class="vr-kpis">
             <div class="vr-kpi">
                 <div class="n" id="vrKpiPending">0</div>
-                <div class="l">Awaiting Review</div>
-                <div class="t">Cases ready to be claimed</div>
+                <div class="l">To Be Claimed</div>
+                <div class="t">Components ready to claim</div>
             </div>
             <div class="vr-kpi">
                 <div class="n" id="vrKpiInProgress">0</div>
-                <div class="l">Under Review</div>
-                <div class="t">Cases currently owned by you</div>
+                <div class="l">Active</div>
+                <div class="t">Components owned by you</div>
             </div>
             <div class="vr-kpi">
                 <div class="n" id="vrKpiFollowUp">0</div>
-                <div class="l">Follow Up</div>
-                <div class="t">Cases needing rework or candidate follow-up</div>
+                <div class="l">All</div>
+                <div class="t">Visible work and context</div>
             </div>
             <div class="vr-kpi">
                 <div class="n" id="vrKpiCompleted">0</div>
@@ -126,8 +150,8 @@ ob_start();
         </div>
 
         <div class="vr-summary-strip">
-            <span class="vr-summary-pill"><strong>Case Board</strong> One application per row</span>
-            <span class="vr-summary-pill"><strong>Claim Model</strong> Component ownership</span>
+            <span class="vr-summary-pill"><strong>Component Worklist</strong> One application per row</span>
+            <span class="vr-summary-pill"><strong>Claim Model</strong> Component-level claims</span>
             <span class="vr-summary-pill"><strong>Work Surface</strong> Priority-gated components</span>
         </div>
 
@@ -135,18 +159,10 @@ ob_start();
         <div id="vrBoardCompatNote" class="alert vr-board-note">Completed rows are readonly. Active rows claimed by another verifier cannot be opened from this board.</div>
 
         <div class="vr-chip-row" id="vrBucketChips">
-            <button type="button" class="vr-chip active" data-bucket="pending">PENDING</button>
+            <button type="button" class="vr-chip active" data-bucket="claimable">TO BE CLAIMED</button>
+            <button type="button" class="vr-chip" data-bucket="active">ACTIVE</button>
             <button type="button" class="vr-chip" data-bucket="completed">COMPLETED</button>
-            <button type="button" class="vr-chip" data-bucket="followup">FOLLOW UP</button>
-            <button type="button" class="vr-chip" data-bucket="insuff_docs">INSUFF. DOCS</button>
-        </div>
-
-        <div class="vr-state-row" id="vrStateChips">
-            <button type="button" class="vr-state-chip active" data-state="all">All</button>
-            <button type="button" class="vr-state-chip" data-state="owned_active">Owned Active</button>
-            <button type="button" class="vr-state-chip" data-state="claimable_next">Claimable</button>
-            <button type="button" class="vr-state-chip" data-state="locked_future">Locked</button>
-            <button type="button" class="vr-state-chip" data-state="completed">Completed</button>
+            <button type="button" class="vr-chip" data-bucket="all">ALL</button>
         </div>
 
         <div class="vr-board-panel">

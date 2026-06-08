@@ -39,7 +39,7 @@
             }, 220);
         }, 3000);
     }
-    var ACTIONABLE_COMPONENTS = ['basic', 'id', 'contact', 'education', 'employment', 'reference', 'socialmedia', 'ecourt', 'reports'];
+    var ACTIONABLE_COMPONENTS = ['basic', 'id', 'contact', 'education', 'education_reference', 'employment', 'employment_reference', 'reference', 'socialmedia', 'ecourt', 'reports'];
     var REPORT_PAYLOAD = null;
     var CURRENT_APP_ID = '';
     var CURRENT_SECTION_KEY = '';
@@ -51,6 +51,7 @@
     var EMAIL_REPLIES_LAST_SYNC_AT = 0;
     var EMAIL_REPLIES_LAST_SYNC_APP_ID = '';
     var EMAIL_REPLIES_LAST_SCOPE_KEY = '';
+    var EMAIL_REPLIES_SCOPE_CACHE = {};
     var EMAIL_REPLIES_INFLIGHT = null;
     var EMAIL_REPLIES_INFLIGHT_KEY = '';
     var EMAIL_REPLIES_LAST_RENDER_KEY = '';
@@ -387,7 +388,9 @@ function closeBsModal(id) {
             if (k === 'socialmedia') return 'Social Media';
             if (k === 'ecourt') return 'E-Court';
             if (k === 'education') return 'Education';
+            if (k === 'education_reference') return 'Education Reference';
             if (k === 'employment') return 'Employment';
+            if (k === 'employment_reference') return 'Employment Reference';
             if (k === 'reference') return 'Reference';
             return k;
         }
@@ -527,6 +530,7 @@ function closeBsModal(id) {
     function isActionableComponent(section) {
         var s = normSection(section);
         if (ACTIONABLE_COMPONENTS.indexOf(s) === -1) return false;
+        if (s === 'basic') return false;
         var role = getRole();
         if (role === 'validator') {
             if (ROLE_ACTIONABLE_COMPONENTS && Object.prototype.hasOwnProperty.call(ROLE_ACTIONABLE_COMPONENTS, s)) {
@@ -559,6 +563,9 @@ function closeBsModal(id) {
         if (!section || ACTIONABLE_COMPONENTS.indexOf(section) === -1) {
             return { actionable: false, readonly: true, denied_reason: 'invalid_component' };
         }
+        if (section === 'basic') {
+            return { actionable: false, readonly: true, denied_reason: 'context_only' };
+        }
         if (ROLE_READONLY_COMPONENTS && ROLE_READONLY_COMPONENTS[section]) {
             return { actionable: false, readonly: true, denied_reason: 'validator_readonly_unassigned' };
         }
@@ -574,7 +581,7 @@ function closeBsModal(id) {
         var role = getRole();
         var section = normSection(componentKey);
         var access = getValidatorComponentAccess(section);
-        var blocked = (role === 'validator' && !access.actionable);
+        var blocked = ((role === 'validator' || section === 'basic') && !access.actionable);
         var evt = {
             ts: new Date().toISOString(),
             attempted_action: String(actionType || ''),
@@ -586,7 +593,9 @@ function closeBsModal(id) {
         };
         pushValidatorActionDebug(evt);
         if (blocked) {
-            var msg = 'Action unavailable for this component in the current view.';
+            var msg = access.denied_reason === 'context_only'
+                ? 'Basic Details is readonly context for verifier review.'
+                : 'Action unavailable for this component in the current view.';
             if (uiMessageTarget === 'split') setSplitPaneMessage(msg, 'error');
             else if (uiMessageTarget === 'pdf') setPdfViewerMessage(msg, 'error');
             else if (uiMessageTarget === 'upload') setBoxMessage('cvUploadMessage', msg, 'warning');
@@ -653,6 +662,14 @@ function closeBsModal(id) {
         if (role === 'db_verifier') return 'verifier';
         if (role === 'team_lead') return 'qa';
         return role;
+    }
+
+    function currentReportApplicationId() {
+        var fromCurrent = String(CURRENT_APP_ID || '').trim();
+        if (fromCurrent) return fromCurrent;
+        var fromPayload = REPORT_PAYLOAD && REPORT_PAYLOAD.case ? String(REPORT_PAYLOAD.case.application_id || '').trim() : '';
+        if (fromPayload) return fromPayload;
+        return String(qs('application_id') || '').trim();
     }
 
     function getResponsiveReportMode() {
@@ -1725,14 +1742,18 @@ if (uploadInput) {
                         actor_role: role,
                         component_key: componentKey
                     };
-                    EMAIL_REPLIES_CACHE = [optimisticRow].concat(Array.isArray(EMAIL_REPLIES_CACHE) ? EMAIL_REPLIES_CACHE : []);
-                    EMAIL_REPLIES_META = Object.assign({}, EMAIL_REPLIES_META || {}, { pending_local_send: true });
-                    var hostModal = document.getElementById('cvEmailReplies');
-                    var hostSidebar = document.getElementById('emailReplies');
-                    var countEl = document.getElementById('cvEmailRepliesCount');
-                    if (hostModal) hostModal.innerHTML = emailRepliesHtml(EMAIL_REPLIES_CACHE, { role: role, componentKey: componentKey, meta: EMAIL_REPLIES_META });
-                    if (hostSidebar) hostSidebar.innerHTML = emailRepliesHtml(EMAIL_REPLIES_CACHE.slice(0, 8), { role: role, componentKey: componentKey, meta: EMAIL_REPLIES_META });
-                    if (countEl) countEl.textContent = String(EMAIL_REPLIES_CACHE.length);
+                    var optimisticScopeKey = repliesScopeKey(ctx.application_id || '', componentKey, role);
+                    var optimisticCache = getRepliesScopeCache(optimisticScopeKey);
+                    var optimisticRows = [optimisticRow].concat(optimisticCache && Array.isArray(optimisticCache.rows) ? optimisticCache.rows : []);
+                    var optimisticMeta = Object.assign({}, optimisticCache && optimisticCache.meta ? optimisticCache.meta : EMAIL_REPLIES_META || {}, { pending_local_send: true });
+                    setRepliesScopeCache(optimisticScopeKey, optimisticRows, optimisticMeta, emailRepliesRequestKey(ctx.application_id || '', componentKey, false, role));
+                    if (optimisticScopeKey === repliesScopeKey(currentReportApplicationId(), currentRepliesScopeComponent(), getReplyViewerRole())) {
+                        EMAIL_REPLIES_CACHE = optimisticRows;
+                        EMAIL_REPLIES_META = optimisticMeta;
+                        EMAIL_REPLIES_LAST_SCOPE_KEY = optimisticScopeKey;
+                        EMAIL_REPLIES_CACHE_READY = true;
+                        renderRepliesState(role, componentKey);
+                    }
                 }
                 setBoxMessage('cvMailMessage', mode === 'draft' ? 'Draft saved.' : 'Sent successfully.', 'success');
                 lastHistory = await loadHistory();
@@ -2138,7 +2159,7 @@ if (uploadInput) {
                 loadEmailReplies(appId || '', { componentKey: lockedComponent, sync: true }).catch(function () {});
                 loadTimeline(appId || '', { sync: false }).catch(function () {});
             } catch (e) {
-                setBoxMessage('cvVerificationMailMessage', (e && e.message) ? e.message : 'Failed to send verification mail.', 'danger');
+                setBoxMessage('cvVerificationMailMessage', friendlyMailError(e && e.message), 'danger');
             } finally {
                 sendBtn.disabled = false;
                 sendBtn.textContent = original || 'Send';
@@ -2278,6 +2299,21 @@ if (uploadInput) {
         el.className = type ? ('alert alert-' + type) : 'alert';
     }
 
+    function friendlyMailError(message) {
+        var text = String(message || '').trim();
+        var lower = text.toLowerCase();
+        if (
+            lower.indexOf('node communication failed') !== -1 ||
+            lower.indexOf('smtp') !== -1 ||
+            lower.indexOf('temporary lookup failure') !== -1 ||
+            lower.indexOf('recipients were rejected') !== -1 ||
+            lower.indexOf('mail provider') !== -1
+        ) {
+            return 'Mail provider temporarily rejected the send. Please retry. If it continues, contact admin to check SMTP configuration.';
+        }
+        return text || 'Failed to send verification mail.';
+    }
+
     function allowedSectionsSet() {
         var role = getRole();
         var raw = (window.ALLOWED_SECTIONS || '').toString().toLowerCase().trim();
@@ -2357,7 +2393,9 @@ if (uploadInput) {
         if (section === 'basic') return 'Basic';
         if (section === 'id') return 'Identification';
         if (section === 'education') return 'Education';
+        if (section === 'education_reference') return 'Education Reference';
         if (section === 'employment') return 'Employment';
+        if (section === 'employment_reference') return 'Employment Reference';
         if (section === 'reference') return 'Reference';
         if (section === 'socialmedia') return 'Social Media';
         if (section === 'ecourt') return 'E-court';
@@ -2385,6 +2423,94 @@ if (uploadInput) {
         Array.prototype.slice.call(host.querySelectorAll('[data-comp]')).forEach(function (b) {
             b.classList.toggle('active', String(b.getAttribute('data-comp') || '') === section);
         });
+    }
+
+    function panelSectionForComponent(section) {
+        section = normSection(section);
+        if (section === 'education_reference' || section === 'employment_reference') return 'reference';
+        return section;
+    }
+
+    function referenceTypeForSection(section) {
+        section = normSection(section);
+        if (section === 'education_reference') return 'education';
+        if (section === 'employment_reference') return 'employment';
+        return '';
+    }
+
+    function normalizeReferenceRow(row) {
+        row = row && typeof row === 'object' ? row : {};
+        return {
+            reference_name: row.reference_name || row.name || '',
+            reference_designation: row.reference_designation || row.designation || '',
+            reference_company: row.reference_company || row.company || '',
+            reference_mobile: row.reference_mobile || row.mobile || '',
+            reference_email: row.reference_email || row.email || '',
+            relationship: row.relationship || row.reference_relationship || '',
+            years_known: row.years_known || row.reference_years_known || ''
+        };
+    }
+
+    function legacyReferenceRowForType(referencePayload, type) {
+        var legacy = referencePayload && referencePayload.legacy && typeof referencePayload.legacy === 'object'
+            ? referencePayload.legacy
+            : referencePayload;
+        legacy = legacy && typeof legacy === 'object' ? legacy : {};
+        if (type === 'education') {
+            return normalizeReferenceRow({
+                name: legacy.education_reference_name || '',
+                designation: legacy.education_reference_designation || '',
+                company: legacy.education_reference_company || '',
+                mobile: legacy.education_reference_mobile || '',
+                email: legacy.education_reference_email || '',
+                relationship: legacy.education_reference_relationship || '',
+                years_known: legacy.education_reference_years_known || ''
+            });
+        }
+        if (type === 'employment') {
+            return normalizeReferenceRow({
+                name: legacy.employment_reference_name || legacy.reference_name || '',
+                designation: legacy.employment_reference_designation || legacy.reference_designation || '',
+                company: legacy.employment_reference_company || legacy.reference_company || '',
+                mobile: legacy.employment_reference_mobile || legacy.reference_mobile || '',
+                email: legacy.employment_reference_email || legacy.reference_email || '',
+                relationship: legacy.employment_reference_relationship || legacy.relationship || '',
+                years_known: legacy.employment_reference_years_known || legacy.years_known || ''
+            });
+        }
+        return normalizeReferenceRow(legacy);
+    }
+
+    function referenceRowForSection(referencePayload, section) {
+        var type = referenceTypeForSection(section);
+        if (!referencePayload) return {};
+        if (Array.isArray(referencePayload)) {
+            if (type) {
+                for (var i = 0; i < referencePayload.length; i++) {
+                    var rowType = String(referencePayload[i] && (referencePayload[i].reference_type || referencePayload[i].type || '') || '').toLowerCase();
+                    if (rowType.indexOf(type) !== -1) return normalizeReferenceRow(referencePayload[i]);
+                }
+            }
+            return normalizeReferenceRow(referencePayload[0] || {});
+        }
+        if (type && Array.isArray(referencePayload[type]) && referencePayload[type].length) {
+            return normalizeReferenceRow(referencePayload[type][0]);
+        }
+        if (type && referencePayload[type] && typeof referencePayload[type] === 'object' && !Array.isArray(referencePayload[type])) {
+            return normalizeReferenceRow(referencePayload[type]);
+        }
+        return legacyReferenceRowForType(referencePayload, type);
+    }
+
+    function renderReferencePanelForSection(payload, section) {
+        var ref = referenceRowForSection(payload && payload.reference, section);
+        setVal('cv_reference_name', ref.reference_name || '');
+        setVal('cv_reference_designation', ref.reference_designation || '');
+        setVal('cv_reference_company', ref.reference_company || '');
+        setVal('cv_reference_mobile', ref.reference_mobile || '');
+        setVal('cv_reference_email', ref.reference_email || '');
+        setVal('cv_reference_relationship', ref.relationship || '');
+        setVal('cv_reference_years_known', ref.years_known || '');
     }
 
     function canShowComponentToolbar(section) {
@@ -2577,6 +2703,56 @@ if (uploadInput) {
         }
     }
 
+    function verifierRoutingNavEntries(payload) {
+        payload = payload || {};
+        var d = payload.data || payload;
+        var routing = d && d.verifier_routing_state ? d.verifier_routing_state : null;
+        var components = routing && routing.components && typeof routing.components === 'object' ? routing.components : {};
+        var priorityMap = { owned_active: 1, claimable_next: 2, locked_future: 3, completed: 4, context: 5 };
+        var bySection = {};
+
+        Object.keys(components).forEach(function (key) {
+            var item = components[key] || {};
+            var state = String(item.state || '').toLowerCase().trim();
+            if (!state || state === 'hidden_unrelated') return;
+            var section = normSection(key);
+            if (!section) return;
+            var entry = {
+                section: section,
+                componentKey: section,
+                state: state,
+                label: sectionLabel(section),
+                priority: item.priority ? parseInt(String(item.priority), 10) || 0 : 0,
+                reason: String(item.reason || '').trim(),
+                displayStatus: String(item.display_status || '').trim(),
+                history: Array.isArray(item.history) ? item.history : []
+            };
+            var current = bySection[section];
+            if (!current || (priorityMap[entry.state] || 99) < (priorityMap[current.state] || 99)) {
+                bySection[section] = entry;
+            }
+        });
+
+        return Object.keys(bySection).map(function (section) {
+            return bySection[section];
+        }).sort(function (a, b) {
+            if (a.section === 'basic' && b.section !== 'basic') return -1;
+            if (b.section === 'basic' && a.section !== 'basic') return 1;
+            if (a.priority !== b.priority) return a.priority - b.priority;
+            return a.label.localeCompare(b.label);
+        });
+    }
+
+    function reportNavStateLabel(state) {
+        state = String(state || '').toLowerCase().trim();
+        if (state === 'context') return 'Context';
+        if (state === 'owned_active') return 'Owned';
+        if (state === 'claimable_next') return 'Claimable';
+        if (state === 'locked_future') return 'Locked';
+        if (state === 'completed') return 'Completed';
+        return '';
+    }
+
     function renderComponentNav(payload) {
         var role = getRole();
         if (!canTakeActionRole(role)) return;
@@ -2585,12 +2761,26 @@ if (uploadInput) {
         var host = document.getElementById('cvComponentNavItems');
         if (!wrap || !host) return;
 
+        var routingEntries = role === 'verifier' ? verifierRoutingNavEntries(payload) : [];
         var keys = getAssignedComponentKeys(payload);
-        // Keep only real component keys we support in UI; ignore empty.
         keys = (keys || []).filter(function (k) { return !!k; });
+        var entries = routingEntries.length ? routingEntries : keys.map(function (k) {
+            return { section: k, state: '', label: sectionLabel(k), priority: 0, reason: '' };
+        });
 
-        host.innerHTML = keys.map(function (k) {
-            return '<button type="button" class="cr-compnav-btn" data-comp="' + esc(k) + '">' + esc(sectionLabel(k)) + '</button>';
+        host.innerHTML = entries.map(function (entry) {
+            var stateText = reportNavStateLabel(entry.state);
+            if (entry.displayStatus) stateText = entry.displayStatus;
+            var disabled = entry.state === 'locked_future';
+            var historyTitle = entry.history.length
+                ? entry.history.map(function (it) {
+                    return [String(it.at || '').trim(), String(it.status || it.event || '').trim(), String(it.message || '').trim()].filter(Boolean).join(' - ');
+                }).join('\n')
+                : '';
+            return '<button type="button" class="cr-compnav-btn" data-comp="' + esc(entry.section) + '" data-state="' + esc(entry.state || '') + '" data-lock-reason="' + esc(entry.reason || '') + '" title="' + esc(historyTitle || entry.reason || '') + '"' + (disabled ? ' disabled' : '') + '>' +
+                esc(entry.label) +
+                (stateText ? '<span class="cr-compnav-state">' + esc(stateText) + '</span>' : '') +
+            '</button>';
         }).join('');
 
         if (!host.dataset.bound) {
@@ -2600,8 +2790,11 @@ if (uploadInput) {
                 var btn = t && t.closest ? t.closest('[data-comp]') : null;
                 if (!btn) return;
                 var sec = btn.getAttribute('data-comp') || '';
+                if (btn.disabled || String(btn.getAttribute('data-state') || '') === 'locked_future') {
+                    setBoxMessage('cvTopMessage', btn.getAttribute('data-lock-reason') || 'This component is locked by routing priority.', 'info');
+                    return;
+                }
 
-                // Reuse existing sidebar button handler (even if sidebar is hidden)
                 var sidebarBtn = document.querySelector('.list-group-item[data-section="' + sec.replace(/"/g, '') + '"]');
                 if (sidebarBtn) {
                     sidebarBtn.click();
@@ -2610,10 +2803,94 @@ if (uploadInput) {
             });
         }
 
-        // Sync initial active from sidebar
         var activeSidebar = document.querySelector('.list-group-item[data-section].active');
-        var activeSection = activeSidebar ? (activeSidebar.getAttribute('data-section') || '') : (keys[0] || 'basic');
+        var firstEnabled = entries.find(function (entry) { return entry.state !== 'locked_future'; });
+        var activeSection = activeSidebar ? (activeSidebar.getAttribute('data-section') || '') : ((firstEnabled && firstEnabled.section) || (keys[0] || 'basic'));
         setCompNavActive(activeSection);
+    }
+
+    function renderVerifierWorkflowSidebar(payload) {
+        var d = payload && payload.data ? payload.data : (payload || {});
+        var routing = d && d.verifier_routing_state ? d.verifier_routing_state : null;
+        var components = routing && routing.components && typeof routing.components === 'object' ? routing.components : {};
+        var nav = document.querySelector('.cr-nav');
+        if (!nav || !components || !Object.keys(components).length) return false;
+
+        var entries = verifierRoutingNavEntries(d).filter(function (entry) {
+            return entry && entry.section && entry.state !== 'hidden_unrelated';
+        });
+        var contextEntries = [];
+        var componentEntries = [];
+        entries.forEach(function (entry) {
+            if (entry.section === 'basic' || entry.state === 'context') {
+                contextEntries.push(entry);
+                return;
+            }
+            componentEntries.push(entry);
+        });
+
+        function navStatus(entry) {
+            var label = String(entry.displayStatus || reportNavStateLabel(entry.state) || '').trim();
+            if (!label) return '';
+            return '<span class="badge status-badge bg-secondary cr-dynamic-nav-badge">' + escHtml(label) + '</span>';
+        }
+
+        function navButton(entry) {
+            var section = normSection(entry.section);
+            var label = entry.label || sectionLabel(section);
+            var disabled = entry.state === 'locked_future';
+            return '<button type="button" class="list-group-item section-row cr-dynamic-nav-item" data-section="' + escHtml(section) + '" data-component-key="' + escHtml(section) + '" style="text-align:left;"' + (disabled ? ' data-locked="1" disabled' : '') + '>' +
+                '<span class="section-left">' +
+                    '<span class="section-title">' + escHtml(label) + '</span>' +
+                '</span>' +
+                '<span class="section-right">' + navStatus(entry) + '</span>' +
+            '</button>';
+        }
+
+        function orderedBucketEntries(items) {
+            var bySection = {};
+            items.forEach(function (entry) {
+                bySection[entry.section] = entry;
+            });
+            var out = [];
+            ['education', 'employment', 'id', 'contact', 'ecourt', 'socialmedia', 'reports'].forEach(function (section) {
+                if (bySection[section]) {
+                    out.push({ entry: bySection[section] });
+                    if (section === 'education' && bySection.education_reference) {
+                        out.push({ entry: bySection.education_reference });
+                    }
+                    if (section === 'employment' && bySection.employment_reference) {
+                        out.push({ entry: bySection.employment_reference });
+                    }
+                }
+            });
+            ['education_reference', 'employment_reference'].forEach(function (section) {
+                if (bySection[section]) {
+                    var hasParent = section === 'education_reference' ? !!bySection.education : !!bySection.employment;
+                    if (!hasParent) out.push({ entry: bySection[section] });
+                }
+            });
+            items.forEach(function (entry) {
+                var exists = out.some(function (row) { return row.entry.section === entry.section; });
+                if (!exists) out.push({ entry: entry });
+            });
+            return out;
+        }
+
+        var html = [];
+        var basicEntry = contextEntries.find(function (entry) { return entry.section === 'basic'; }) || {
+            section: 'basic',
+            label: 'Basic Details',
+            state: 'context',
+            displayStatus: 'Context'
+        };
+        html.push(navButton(basicEntry));
+        orderedBucketEntries(componentEntries).forEach(function (row) {
+            html.push(navButton(row.entry));
+        });
+
+        nav.innerHTML = html.join('');
+        return true;
     }
 
     function getAssignedComponentKeys(payload) {
@@ -2861,7 +3138,7 @@ if (uploadInput) {
         else if (role === 'verifier' || role === 'db_verifier') roleLabel = 'verifier';
         else if (role === 'qa' || role === 'team_lead') roleLabel = 'QA';
 
-        var componentLabel = componentKey ? sectionTitle(componentKey) : 'this component';
+        var componentLabel = componentKey ? sectionLabel(componentKey) : 'this component';
         if (meta.sync_failed) {
             return '<div style="color:#6b7280; font-size:13px;">No replies available yet for ' + esc(componentLabel) + '.</div>';
         }
@@ -3024,6 +3301,121 @@ if (uploadInput) {
         }).join('');
     }
 
+    function isRequestActionReplyRow(item) {
+        if (!item) return false;
+        var direction = String(item.direction || '').toLowerCase().trim();
+        if (direction === 'incoming') return false;
+        var subject = String(item.subject || '').toLowerCase();
+        var type = String(item.communication_type || '').toLowerCase().trim();
+        var action = String(item.action_key || '').toLowerCase().trim();
+        return type === 'insufficient_documents'
+            || action === 'insufficient_documents'
+            || type === 'correction_request'
+            || action === 'correction_request'
+            || type === 'candidate_access_request'
+            || action === 'candidate_access_request'
+            || action === 'resend_candidate_access'
+            || subject.indexOf('insufficient documents') !== -1
+            || subject.indexOf('need docs') !== -1
+            || subject.indexOf('candidate correction') !== -1
+            || subject.indexOf('candidate access') !== -1;
+    }
+
+    function requestActionLabel(item) {
+        var subject = String(item && item.subject ? item.subject : '').toLowerCase();
+        var type = String(item && item.communication_type ? item.communication_type : '').toLowerCase().trim();
+        var action = String(item && item.action_key ? item.action_key : '').toLowerCase().trim();
+        if (type === 'insufficient_documents' || action === 'insufficient_documents' || subject.indexOf('need docs') !== -1 || subject.indexOf('insufficient documents') !== -1) {
+            return 'Need Docs sent';
+        }
+        if (type === 'correction_request' || action === 'correction_request' || subject.indexOf('candidate correction') !== -1) {
+            return 'Correction request sent';
+        }
+        if (type === 'candidate_access_request' || action === 'candidate_access_request' || action === 'resend_candidate_access' || subject.indexOf('candidate access') !== -1) {
+            return 'Candidate access sent';
+        }
+        return 'Request sent';
+    }
+
+    function emailRequestActionsHtml(items) {
+        var rows = Array.isArray(items) ? items.slice() : [];
+        if (!rows.length) return '';
+        rows.sort(function (a, b) { return rowTimeMsLocal(b) - rowTimeMsLocal(a); });
+        return ''
+            + '<div style="margin-bottom:10px;">'
+            + '<div style="font-size:11px; font-weight:800; color:#475569; text-transform:uppercase; letter-spacing:.04em; margin:0 0 6px;">Requests / Actions</div>'
+            + rows.map(function (it) {
+                var sender = it && it.sender ? String(it.sender) : 'Operations';
+                var msg = String(it && it.message ? it.message : '').trim();
+                var when = it && it.created_at ? String(it.created_at) : '';
+                var ts = '';
+                try {
+                    ts = when ? window.GSS_DATE.formatDbDateTime(when) : '';
+                } catch (_e) {
+                    ts = when;
+                }
+                return ''
+                    + '<div style="border:1px solid rgba(251,146,60,0.45); border-radius:10px; padding:9px 10px; background:#fff7ed; margin-bottom:8px;">'
+                    + '<div style="display:flex; justify-content:space-between; gap:8px; align-items:center; margin-bottom:5px;">'
+                    + '<b style="font-size:12px; color:#9a3412;">' + esc(requestActionLabel(it)) + '</b>'
+                    + '<span style="font-size:11px; color:#9a3412;">' + esc(ts) + '</span>'
+                    + '</div>'
+                    + '<div style="font-size:11px; color:#64748b; margin-bottom:' + (msg ? '5px' : '0') + ';">By ' + esc(sender) + '</div>'
+                    + (msg ? '<div style="font-size:12px; color:#7c2d12; line-height:1.45;">' + esc(msg).replace(/\n/g, '<br>') + '</div>' : '')
+                    + '</div>';
+            }).join('')
+            + '</div>';
+    }
+
+    function emailRepliesPanelHtml(items, opts) {
+        var all = Array.isArray(items) ? items : [];
+        var requestRows = all.filter(isRequestActionReplyRow);
+        var mailRows = all.filter(function (row) { return !isRequestActionReplyRow(row); });
+        if (!requestRows.length && !mailRows.length) {
+            return emailRepliesEmptyHtml(opts);
+        }
+        var out = emailRequestActionsHtml(requestRows);
+        if (mailRows.length) {
+            out += emailRepliesHtml(mailRows, opts);
+        } else {
+            out += '<div style="color:#6b7280; font-size:13px;">No mail replies yet.</div>';
+        }
+        return out;
+    }
+
+    function replyRowIdentity(row) {
+        if (!row) return '';
+        var communicationId = String(row.communication_id || '').trim();
+        if (communicationId && communicationId !== '0') return 'comm:' + communicationId;
+        var id = String(row.id || '').trim();
+        if (id) return 'id:' + id;
+        var messageId = String(row.message_id || '').trim().toLowerCase();
+        if (messageId) return 'msg:' + messageId;
+        return [
+            normSection(row.component_key || ''),
+            String(row.communication_type || '').toLowerCase().trim(),
+            String(row.action_key || '').toLowerCase().trim(),
+            String(row.direction || '').toLowerCase().trim(),
+            String(row.created_at || '').trim(),
+            String(row.message || '').trim().slice(0, 120)
+        ].join('|');
+    }
+
+    function mergeReplyRows(primaryRows, extraRows) {
+        var merged = [];
+        var seen = {};
+        function add(row) {
+            if (!row) return;
+            var key = replyRowIdentity(row);
+            if (key && seen[key]) return;
+            if (key) seen[key] = true;
+            merged.push(row);
+        }
+        (Array.isArray(primaryRows) ? primaryRows : []).forEach(add);
+        (Array.isArray(extraRows) ? extraRows : []).forEach(add);
+        return merged;
+    }
+
     function emailRepliesRequestKey(applicationId, componentKey, shouldSync, viewerRole) {
         return [
             String(applicationId || '').trim(),
@@ -3039,6 +3431,33 @@ if (uploadInput) {
             String(componentKey || '').trim(),
             String(viewerRole || '').trim()
         ].join('|');
+    }
+
+    function getRepliesScopeCache(scopeKey) {
+        var key = String(scopeKey || '');
+        return key && EMAIL_REPLIES_SCOPE_CACHE[key] ? EMAIL_REPLIES_SCOPE_CACHE[key] : null;
+    }
+
+    function setRepliesScopeCache(scopeKey, rows, meta, renderKey) {
+        var key = String(scopeKey || '');
+        if (!key) return;
+        EMAIL_REPLIES_SCOPE_CACHE[key] = {
+            rows: Array.isArray(rows) ? rows : [],
+            meta: meta && typeof meta === 'object' ? meta : {},
+            renderKey: String(renderKey || ''),
+            syncedAt: Date.now()
+        };
+    }
+
+    function applyRepliesScopeCache(scopeKey) {
+        var cached = getRepliesScopeCache(scopeKey);
+        if (!cached) return false;
+        EMAIL_REPLIES_CACHE = Array.isArray(cached.rows) ? cached.rows : [];
+        EMAIL_REPLIES_META = cached.meta && typeof cached.meta === 'object' ? cached.meta : {};
+        EMAIL_REPLIES_LAST_RENDER_KEY = String(cached.renderKey || '');
+        EMAIL_REPLIES_LAST_SCOPE_KEY = String(scopeKey || '');
+        EMAIL_REPLIES_CACHE_READY = true;
+        return true;
     }
 
     function formatRepliesSyncStamp(value) {
@@ -3092,10 +3511,17 @@ if (uploadInput) {
         var countEl = document.getElementById('cvEmailRepliesCount');
         var rows = Array.isArray(EMAIL_REPLIES_CACHE) ? EMAIL_REPLIES_CACHE : [];
         var meta = EMAIL_REPLIES_META && typeof EMAIL_REPLIES_META === 'object' ? EMAIL_REPLIES_META : {};
-        if (hostModal) hostModal.innerHTML = emailRepliesHtml(rows, { role: roleNow, componentKey: componentKey, meta: meta });
-        if (hostSidebar) hostSidebar.innerHTML = emailRepliesHtml(rows.slice(0, 8), { role: roleNow, componentKey: componentKey, meta: meta });
-        if (countEl) countEl.textContent = String(rows.length);
-        setRepliesSyncMeta(meta, false);
+        try {
+            if (hostModal) hostModal.innerHTML = emailRepliesPanelHtml(rows, { role: roleNow, componentKey: componentKey, meta: meta });
+            if (hostSidebar) hostSidebar.innerHTML = emailRepliesPanelHtml(rows.slice(0, 8), { role: roleNow, componentKey: componentKey, meta: meta });
+            if (countEl) countEl.textContent = String(rows.length);
+            setRepliesSyncMeta(meta, false);
+        } catch (_e) {
+            if (hostModal) hostModal.innerHTML = emailRepliesEmptyHtml({ role: roleNow, componentKey: componentKey, meta: meta });
+            if (hostSidebar) hostSidebar.innerHTML = emailRepliesEmptyHtml({ role: roleNow, componentKey: componentKey, meta: meta });
+            if (countEl) countEl.textContent = '0';
+            setRepliesSyncMeta(meta, false);
+        }
     }
 
     function normalizeNodeWorkflowRole(value) {
@@ -3117,7 +3543,7 @@ if (uploadInput) {
         var meta = nodePayload.meta && typeof nodePayload.meta === 'object' ? nodePayload.meta : {};
         var fallbackReason = String(meta.fallbackReason || '').toUpperCase().trim();
         if (nodePayload.hasThread === false && nodePayload.hasMessages === false && fallbackReason === 'THREAD_NOT_FOUND') {
-            return false;
+            return true;
         }
         if (meta.fallbackRecommended === true) return true;
         return false;
@@ -3127,6 +3553,8 @@ if (uploadInput) {
         if (!Array.isArray(rows) || rows.length === 0) return false;
         var wantedComponent = normSection(componentKey || '');
         var allowedMsgIds = {};
+        var referenceThreadId = '';
+        var referenceComponent = '';
         var outgoingForRole = 0;
         for (var i = 0; i < rows.length; i += 1) {
             var row = rows[i] || {};
@@ -3138,6 +3566,12 @@ if (uploadInput) {
             }
             if (direction === 'outgoing' && rowRole === roleNow) {
                 outgoingForRole += 1;
+                if (!referenceThreadId) {
+                    referenceThreadId = String(row.thread_id || '').toLowerCase().trim();
+                }
+                if (!referenceComponent && rowComponent) {
+                    referenceComponent = rowComponent;
+                }
                 var msgId = normMsgIdLocal(row.message_id || '');
                 if (msgId) {
                     allowedMsgIds[msgId] = true;
@@ -3145,7 +3579,7 @@ if (uploadInput) {
             }
         }
         if ((roleNow === 'validator' || roleNow === 'verifier' || roleNow === 'qa') && outgoingForRole <= 0) {
-            return false;
+            return !!wantedComponent && nodeRowsHaveInboundCandidate(rows);
         }
         for (var j = 0; j < rows.length; j += 1) {
             var current = rows[j] || {};
@@ -3153,15 +3587,50 @@ if (uploadInput) {
             if (currentDirection !== 'incoming') continue;
             var inReplyTo = normMsgIdLocal(current.in_reply_to || '');
             var refs = extractMsgIdsLocal(current.references_header || '');
+            var hasHeaders = !!inReplyTo || refs.length > 0;
+            var currentThreadId = String(current.thread_id || '').toLowerCase().trim();
+            var currentComponent = normSection(String(current.component_key || ''));
             var linked = (!!inReplyTo && !!allowedMsgIds[inReplyTo]);
             if (!linked && refs.length) {
                 linked = refs.some(function (id) { return !!allowedMsgIds[id]; });
+            }
+            if (!linked && referenceThreadId && currentThreadId === referenceThreadId) {
+                linked = true;
+            }
+            if (!linked && !hasHeaders && referenceComponent && currentComponent === referenceComponent) {
+                linked = true;
             }
             if (!linked) {
                 return false;
             }
         }
         return true;
+    }
+
+    function inferNodeReplyComponentKeyFromText(value) {
+        var text = String(value || '').toLowerCase();
+        if (!text) return '';
+        if (text.indexOf('employment_reference') !== -1
+            || text.indexOf('employment reference') !== -1
+            || text.indexOf('employment referee') !== -1) {
+            return 'employment_reference';
+        }
+        if (text.indexOf('education_reference') !== -1
+            || text.indexOf('education reference') !== -1
+            || text.indexOf('academic reference') !== -1) {
+            return 'education_reference';
+        }
+        if (text.indexOf('employment verification') !== -1
+            || text.indexOf('employer verification') !== -1
+            || text.indexOf('employment proof') !== -1) {
+            return 'employment';
+        }
+        if (text.indexOf('education verification') !== -1
+            || text.indexOf('institution verification') !== -1
+            || text.indexOf('college verification') !== -1) {
+            return 'education';
+        }
+        return '';
     }
 
     function nodePayloadHasMixedOutboundRoles(nodePayload) {
@@ -3199,13 +3668,19 @@ if (uploadInput) {
     function nodeMessageComponentKey(msg) {
         var meta = msg && msg.metadata && typeof msg.metadata === 'object' ? msg.metadata : {};
         var workflow = meta.workflow && typeof meta.workflow === 'object' ? meta.workflow : {};
-        return normSection(
+        var tagged = normSection(
             workflow.componentKey
             || workflow.component_key
             || meta.componentKey
             || meta.component_key
             || ''
         );
+        if (tagged) return tagged;
+        return inferNodeReplyComponentKeyFromText([
+            msg && msg.subject ? msg.subject : '',
+            msg && msg.body ? msg.body : '',
+            msg && msg.bodyHtml ? msg.bodyHtml : ''
+        ].join('\n'));
     }
 
     function nodePayloadHasAnyComponentTag(nodePayload) {
@@ -3302,6 +3777,7 @@ if (uploadInput) {
             actor_role: actorRole,
             communication_type: 'node_reply',
             component_key: nodeMessageComponentKey(msg) || normSection(rawWorkflow.componentKey || rawWorkflow.component_key || ''),
+            thread_id: String(msg && (msg.threadId || msg.thread_id || '') || ''),
             message_id: msgId,
             in_reply_to: inReplyTo,
             references_header: referencesHeader,
@@ -3313,7 +3789,10 @@ if (uploadInput) {
         if (!Array.isArray(rows) || rows.length === 0) return rows || [];
         if (!(roleNow === 'validator' || roleNow === 'verifier' || roleNow === 'qa')) return rows;
 
-        var outgoing = rows.filter(function (r) {
+        var requestRows = rows.filter(isRequestActionReplyRow);
+        var conversationRows = rows.filter(function (row) { return !isRequestActionReplyRow(row); });
+
+        var outgoing = conversationRows.filter(function (r) {
             var dir = String(r && r.direction ? r.direction : '').toLowerCase().trim();
             var role = normalizeNodeWorkflowRole(String(r && r.actor_role ? r.actor_role : ''));
             return dir === 'outgoing' && role === roleNow;
@@ -3324,6 +3803,8 @@ if (uploadInput) {
         var anchor = outgoing[0];
         var anchorIds = {};
         var anchorMsgId = normMsgIdLocal(anchor && anchor.message_id ? anchor.message_id : '');
+        var anchorThreadId = String(anchor && anchor.thread_id ? anchor.thread_id : '').toLowerCase().trim();
+        var anchorComponent = normSection(anchor && anchor.component_key ? anchor.component_key : '');
         if (anchorMsgId) anchorIds[anchorMsgId] = true;
         extractMsgIdsLocal(anchor && anchor.references_header ? anchor.references_header : '').forEach(function (id) {
             anchorIds[id] = true;
@@ -3332,18 +3813,23 @@ if (uploadInput) {
         var selected = [];
         selected.push(anchor);
 
-        rows.forEach(function (r) {
+        conversationRows.forEach(function (r) {
             if (!r || r.id === anchor.id) return;
             var dir = String(r.direction || '').toLowerCase().trim();
             if (dir !== 'incoming') return;
             var inReplyTo = normMsgIdLocal(r.in_reply_to || '');
             var refs = extractMsgIdsLocal(r.references_header || '');
+            var hasHeaders = !!inReplyTo || refs.length > 0;
+            var rowThreadId = String(r.thread_id || '').toLowerCase().trim();
+            var rowComponent = normSection(r.component_key || '');
             var linked = (inReplyTo && anchorIds[inReplyTo]) || refs.some(function (id) { return !!anchorIds[id]; });
+            if (!linked && anchorThreadId && rowThreadId === anchorThreadId) linked = true;
+            if (!linked && !hasHeaders && anchorComponent && rowComponent === anchorComponent) linked = true;
             if (linked) selected.push(r);
         });
 
         selected.sort(function (a, b) { return rowTimeMsLocal(a) - rowTimeMsLocal(b); });
-        return selected;
+        return requestRows.concat(selected);
     }
 
     function adaptNodeReplies(nodePayload, componentKey) {
@@ -3368,44 +3854,95 @@ if (uploadInput) {
         return out;
     }
 
+    function replyComponentAliases(componentKey) {
+        var key = normSection(componentKey || '');
+        var aliases = {};
+        if (!key) return aliases;
+        aliases[key] = true;
+        if (key === 'reference') {
+            aliases.education_reference = true;
+            aliases.employment_reference = true;
+        }
+        return aliases;
+    }
+
+    function filterRepliesForComponent(rows, componentKey) {
+        if (!Array.isArray(rows)) return [];
+        var key = normSection(componentKey || '');
+        if (!key) return rows;
+        var aliases = replyComponentAliases(key);
+        return rows.filter(function (row) {
+            var rowKey = normSection(row && row.component_key ? row.component_key : '');
+            if (rowKey && aliases[rowKey]) return true;
+            var inferred = inferNodeReplyComponentKeyFromText([
+                row && row.subject ? row.subject : '',
+                row && row.message ? row.message : '',
+                row && row.body ? row.body : '',
+                row && row.bodyHtml ? row.bodyHtml : ''
+            ].join('\n'));
+            return !!inferred && !!aliases[inferred];
+        });
+    }
+
     function setRepliesSyncButtonState(isBusy) {
         var btn = document.getElementById('cvRepliesSyncBtn');
         if (!btn) return;
-        btn.disabled = !!isBusy;
-        btn.style.opacity = isBusy ? '0.65' : '1';
-        btn.style.cursor = isBusy ? 'wait' : 'pointer';
-        btn.innerHTML = isBusy
-            ? '<span aria-hidden="true" style="font-size:15px; line-height:1; display:inline-block; animation:cvRepliesSpin 0.9s linear infinite;">↻</span>'
-            : '<span aria-hidden="true" style="font-size:16px; line-height:1; font-weight:700;">↻</span>';
         if (!document.getElementById('cvRepliesSpinStyle')) {
             var style = document.createElement('style');
             style.id = 'cvRepliesSpinStyle';
-            style.textContent = '@keyframes cvRepliesSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}';
+            style.textContent = '@keyframes cvRepliesSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}#cvRepliesSyncBtn.cv-replies-syncing span{animation:cvRepliesSpin 0.85s linear infinite;transform-origin:center center;}';
             document.head.appendChild(style);
         }
+        btn.disabled = !!isBusy;
+        btn.style.opacity = isBusy ? '0.65' : '1';
+        btn.style.cursor = isBusy ? 'wait' : 'pointer';
+        btn.classList.toggle('cv-replies-syncing', !!isBusy);
+        btn.innerHTML = isBusy
+            ? '<span aria-hidden="true" style="font-size:15px; line-height:1; display:inline-block; animation:cvRepliesSpin 0.85s linear infinite; transform-origin:center center;">&#8635;</span>'
+            : '<span aria-hidden="true" style="font-size:16px; line-height:1; font-weight:700;">&#8635;</span>';
         setRepliesSyncMeta(EMAIL_REPLIES_META, !!isBusy);
     }
 
     function bindRepliesSyncButton() {
-        var btn = document.getElementById('cvRepliesSyncBtn');
-        if (!btn || btn.dataset.bound === '1') return;
-        btn.dataset.bound = '1';
-        btn.addEventListener('click', function () {
-            if (!CURRENT_APP_ID) return;
-            // Manual refresh should always force a new request and avoid stale in-flight reuse.
+        setRepliesSyncButtonState(false);
+        function handleRefreshClick(event) {
+            var btn = event && event.target && event.target.closest ? event.target.closest('#cvRepliesSyncBtn') : document.getElementById('cvRepliesSyncBtn');
+            if (!btn) return;
+            event.preventDefault();
+            event.stopPropagation();
+            if (btn.disabled) return;
+            var applicationId = currentReportApplicationId();
+            if (!applicationId) {
+                EMAIL_REPLIES_META = { sync_warning: true };
+                setRepliesSyncMeta(EMAIL_REPLIES_META, false);
+                return;
+            }
             EMAIL_REPLIES_INFLIGHT = null;
             EMAIL_REPLIES_INFLIGHT_KEY = '';
-            EMAIL_REPLIES_CACHE_READY = false;
+            var roleNow = getReplyViewerRole();
+            var scopeKey = repliesScopeKey(applicationId, currentRepliesScopeComponent(), roleNow);
+            delete EMAIL_REPLIES_SCOPE_CACHE[scopeKey];
+            if (scopeKey === EMAIL_REPLIES_LAST_SCOPE_KEY) {
+                EMAIL_REPLIES_CACHE_READY = false;
+            }
             EMAIL_REPLIES_FORCE_SYNC_ONCE = true;
             setRepliesSyncButtonState(true);
-            loadEmailReplies(CURRENT_APP_ID, {
+            loadEmailReplies(applicationId, {
                 componentKey: currentRepliesScopeComponent(),
                 sync: true
             }).catch(function () {
             }).finally(function () {
                 setRepliesSyncButtonState(false);
             });
-        });
+        }
+        var directBtn = document.getElementById('cvRepliesSyncBtn');
+        if (directBtn && directBtn.dataset.repliesSyncBound !== '1') {
+            directBtn.dataset.repliesSyncBound = '1';
+            directBtn.addEventListener('click', handleRefreshClick);
+        }
+        if (document.body.dataset.repliesSyncDelegated === '1') return;
+        document.body.dataset.repliesSyncDelegated = '1';
+        document.addEventListener('click', handleRefreshClick, true);
     }
 
     function bindRepliesAutoRefresh() {
@@ -3413,19 +3950,20 @@ if (uploadInput) {
         EMAIL_REPLIES_AUTO_REFRESH_TIMER = setInterval(function () {
             try {
                 if (document.hidden) return;
-                if (!CURRENT_APP_ID) return;
+                var applicationId = currentReportApplicationId();
+                if (!applicationId) return;
                 if (EMAIL_REPLIES_INFLIGHT) return;
                 var roleNow = getReplyViewerRole();
                 var componentKey = currentRepliesScopeComponent();
                 var now = Date.now();
-                var scopeKey = repliesScopeKey(CURRENT_APP_ID, componentKey, roleNow);
+                var scopeKey = repliesScopeKey(applicationId, componentKey, roleNow);
                 var sameScope = scopeKey === EMAIL_REPLIES_LAST_SCOPE_KEY;
                 var stale = !EMAIL_REPLIES_LAST_SYNC_AT || (now - EMAIL_REPLIES_LAST_SYNC_AT) >= EMAIL_REPLIES_STALE_SYNC_MS;
                 var shouldHeavySync = EMAIL_REPLIES_FORCE_SYNC_ONCE
                     || !sameScope
                     || stale
                     || !!(EMAIL_REPLIES_META && (EMAIL_REPLIES_META.viewer_thread_exists || EMAIL_REPLIES_META.scope_has_thread) && !(Array.isArray(EMAIL_REPLIES_CACHE) && EMAIL_REPLIES_CACHE.length));
-                loadEmailReplies(CURRENT_APP_ID, {
+                loadEmailReplies(applicationId, {
                     componentKey: componentKey,
                     sync: shouldHeavySync
                 }).catch(function () {});
@@ -3445,6 +3983,9 @@ if (uploadInput) {
         var scopeKey = repliesScopeKey(applicationId, componentKey, roleNow);
         var sameScope = scopeKey === EMAIL_REPLIES_LAST_SCOPE_KEY;
         var requestKey = emailRepliesRequestKey(applicationId, componentKey, shouldSync, roleNow);
+        if (!sameScope && applyRepliesScopeCache(scopeKey)) {
+            sameScope = true;
+        }
 
         function renderTarget(el, html) {
             if (el) el.innerHTML = html;
@@ -3492,13 +4033,13 @@ if (uploadInput) {
             }
         }
 
-        async function fetchNodeReplies(baseUrl) {
+        async function fetchNodeReplies(baseUrl, forceCaseScope) {
             var nodeUrl = baseUrl + '/api/shared/node_replies_proxy.php?application_id=' + encodeURIComponent(applicationId);
-            if (componentKey) {
+            if (componentKey && !forceCaseScope) {
                 nodeUrl += '&component_key=' + encodeURIComponent(componentKey);
             }
             if (shouldSync) {
-                nodeUrl += (nodeUrl.indexOf('?') >= 0 ? '&' : '?') + '_ts=' + String(Date.now());
+                nodeUrl += (nodeUrl.indexOf('?') >= 0 ? '&' : '?') + 'sync=1&_ts=' + String(Date.now());
             }
             var out = await fetchJson(nodeUrl, shouldSync ? 12000 : 8000);
             var response = out.response;
@@ -3532,12 +4073,20 @@ if (uploadInput) {
             }
             var useFallback = shouldFallbackToPhpReplies(payload);
             var roleNow = getReplyViewerRole();
-            var adaptedRows = adaptNodeReplies(payload, componentKey);
+            var adaptedRows = adaptNodeReplies(payload, forceCaseScope ? '' : componentKey);
             adaptedRows = pickConversationRowsForRole(adaptedRows, roleNow);
+            if (payload.hasMessages === true && Array.isArray(payload.messages) && payload.messages.length > 0 && (!Array.isArray(adaptedRows) || adaptedRows.length === 0)) {
+                var rawRows = payload.messages.map(function (msg) { return adaptNodeReplyMessage(msg); });
+                var scopedRows = (componentKey && !forceCaseScope) ? filterRepliesForComponent(rawRows, componentKey) : rawRows;
+                adaptedRows = pickConversationRowsForRole(scopedRows, roleNow);
+            }
             if (!useFallback && componentKey && (roleNow === 'validator' || roleNow === 'verifier' || roleNow === 'qa')) {
                 if (nodePayloadHasMixedOutboundRoles(payload) || !nodePayloadHasAnyComponentTag(payload) || !nodeRowsAreSafeForScopedReplies(adaptedRows, roleNow, componentKey)) {
                     useFallback = true;
                 }
+            }
+            if (payload.hasMessages === true && Array.isArray(adaptedRows) && adaptedRows.length > 0) {
+                useFallback = false;
             }
             return {
                 ok: payload.success !== false,
@@ -3547,10 +4096,10 @@ if (uploadInput) {
             };
         }
 
-        async function fetchPhpReplies(baseUrl) {
+        async function fetchPhpReplies(baseUrl, forceCaseScope) {
             var phpSync = shouldSync;
             var caseUrl = baseUrl + '/api/get_replies.php?application_id=' + encodeURIComponent(applicationId) + '&scope=case&sync=' + (phpSync ? '1' : '0');
-            if (componentKey) {
+            if (componentKey && !forceCaseScope) {
                 caseUrl = baseUrl + '/api/get_replies.php?application_id=' + encodeURIComponent(applicationId)
                     + '&scope=component&component_key=' + encodeURIComponent(componentKey) + '&sync=' + (phpSync ? '1' : '0');
             }
@@ -3560,6 +4109,19 @@ if (uploadInput) {
             var out = await fetchJson(caseUrl, shouldSync ? 60000 : 15000);
             if (out.error) return null;
             return parsePhpPayload(out.data);
+        }
+
+        async function fetchPhpRequestActionRows(baseUrl) {
+            var phpPayload = await fetchPhpReplies(baseUrl);
+            var rows = phpPayload && Array.isArray(phpPayload.rows) ? phpPayload.rows : [];
+            if (componentKey && rows.filter(isRequestActionReplyRow).length === 0) {
+                var casePayload = await fetchPhpReplies(baseUrl, true);
+                var caseRows = casePayload && Array.isArray(casePayload.rows)
+                    ? filterRepliesForComponent(casePayload.rows, componentKey)
+                    : [];
+                if (caseRows.length > 0) rows = caseRows;
+            }
+            return rows.filter(isRequestActionReplyRow);
         }
 
         if (!applicationId) {
@@ -3592,8 +4154,8 @@ if (uploadInput) {
             var steadyMeta = sameScope && EMAIL_REPLIES_META && typeof EMAIL_REPLIES_META === 'object'
                 ? EMAIL_REPLIES_META
                 : { sync_failed: false };
-            renderTarget(hostModal, emailRepliesHtml(steadyRows, { role: roleNow, componentKey: componentKey, meta: steadyMeta }));
-            renderTarget(hostSidebar, emailRepliesHtml(steadyRows.slice(0, 8), { role: roleNow, componentKey: componentKey, meta: steadyMeta }));
+            renderTarget(hostModal, emailRepliesPanelHtml(steadyRows, { role: roleNow, componentKey: componentKey, meta: steadyMeta }));
+            renderTarget(hostSidebar, emailRepliesPanelHtml(steadyRows.slice(0, 8), { role: roleNow, componentKey: componentKey, meta: steadyMeta }));
             if (countEl) countEl.textContent = String(steadyRows.length);
         }
         setRepliesSyncButtonState(true);
@@ -3615,11 +4177,47 @@ if (uploadInput) {
                 };
                 var reviewerRole = (roleNow === 'validator' || roleNow === 'verifier' || roleNow === 'qa');
                 if (!nodeAttempt.useFallback && reviewerRole && componentKey && (!Array.isArray(finalRows) || finalRows.length === 0)) {
-                    nodeAttempt.useFallback = true;
+                    var caseNodeAttempt = await fetchNodeReplies(base, true);
+                    var caseNodeRows = Array.isArray(caseNodeAttempt.rows)
+                        ? filterRepliesForComponent(caseNodeAttempt.rows, componentKey)
+                        : [];
+                    if (caseNodeRows.length > 0) {
+                        nodeAttempt = Object.assign({}, caseNodeAttempt, {
+                            rows: caseNodeRows,
+                            useFallback: false
+                        });
+                        finalRows = caseNodeRows;
+                        finalMeta = Object.assign({}, finalMeta, {
+                            scope_relaxed: true,
+                            resolved_component_key: componentKey
+                        });
+                    } else {
+                        nodeAttempt.useFallback = true;
+                    }
+                }
+
+                if (!nodeAttempt.useFallback) {
+                    var phpRequestRows = await fetchPhpRequestActionRows(base);
+                    finalRows = mergeReplyRows(finalRows, phpRequestRows);
                 }
 
                 if (nodeAttempt.useFallback) {
                     var phpPayload = await fetchPhpReplies(base);
+                    if (phpPayload && componentKey && Array.isArray(phpPayload.rows) && phpPayload.rows.length === 0) {
+                        var casePayload = await fetchPhpReplies(base, true);
+                        var scopedCaseRows = casePayload && Array.isArray(casePayload.rows)
+                            ? filterRepliesForComponent(casePayload.rows, componentKey)
+                            : [];
+                        if (scopedCaseRows.length > 0) {
+                            phpPayload = {
+                                rows: scopedCaseRows,
+                                meta: Object.assign({}, casePayload.meta || {}, {
+                                    scope_relaxed: true,
+                                    resolved_component_key: componentKey
+                                })
+                            };
+                        }
+                    }
                     if (!phpPayload) {
                         finalRows = [];
                         finalMeta = {
@@ -3650,6 +4248,7 @@ if (uploadInput) {
                         EMAIL_REPLIES_LAST_RENDER_KEY = requestKey;
                         EMAIL_REPLIES_LAST_SCOPE_KEY = scopeKey;
                         EMAIL_REPLIES_CACHE_READY = true;
+                        setRepliesScopeCache(scopeKey, finalRows, finalMeta, requestKey);
                         renderRepliesState(roleNow, componentKey);
                         return;
                     }
@@ -3660,6 +4259,7 @@ if (uploadInput) {
                 EMAIL_REPLIES_LAST_RENDER_KEY = requestKey;
                 EMAIL_REPLIES_LAST_SCOPE_KEY = scopeKey;
                 EMAIL_REPLIES_CACHE_READY = true;
+                setRepliesScopeCache(scopeKey, finalRows, finalMeta, requestKey);
                 if (shouldSync) {
                     EMAIL_REPLIES_LAST_SYNC_AT = Date.now();
                     EMAIL_REPLIES_LAST_SYNC_APP_ID = String(applicationId || '');
@@ -3673,8 +4273,8 @@ if (uploadInput) {
                     sync_warning: true,
                     sync_mode: shouldSync ? 'canonical_sync' : 'read_only_refresh'
                 };
-                renderTarget(hostModal, emailRepliesHtml([], { role: roleNow, componentKey: componentKey, meta: EMAIL_REPLIES_META }));
-                renderTarget(hostSidebar, emailRepliesHtml([], { role: roleNow, componentKey: componentKey, meta: EMAIL_REPLIES_META }));
+                renderTarget(hostModal, emailRepliesPanelHtml([], { role: roleNow, componentKey: componentKey, meta: EMAIL_REPLIES_META }));
+                renderTarget(hostSidebar, emailRepliesPanelHtml([], { role: roleNow, componentKey: componentKey, meta: EMAIL_REPLIES_META }));
                 if (countEl) countEl.textContent = '0';
                 setRepliesSyncMeta(EMAIL_REPLIES_META, false);
             } finally {
@@ -3682,13 +4282,8 @@ if (uploadInput) {
                 try {
                     var fallbackRows = Array.isArray(EMAIL_REPLIES_CACHE) ? EMAIL_REPLIES_CACHE : [];
                     var fallbackMeta = EMAIL_REPLIES_META && typeof EMAIL_REPLIES_META === 'object' ? EMAIL_REPLIES_META : {};
-                    var loadingText = /Loading email replies/i;
-                    if (hostModal && loadingText.test(String(hostModal.textContent || ''))) {
-                        hostModal.innerHTML = emailRepliesHtml(fallbackRows, { role: roleNow, componentKey: componentKey, meta: fallbackMeta });
-                    }
-                    if (hostSidebar && loadingText.test(String(hostSidebar.textContent || ''))) {
-                        hostSidebar.innerHTML = emailRepliesHtml(fallbackRows.slice(0, 8), { role: roleNow, componentKey: componentKey, meta: fallbackMeta });
-                    }
+                    if (hostModal) hostModal.innerHTML = emailRepliesPanelHtml(fallbackRows, { role: roleNow, componentKey: componentKey, meta: fallbackMeta });
+                    if (hostSidebar) hostSidebar.innerHTML = emailRepliesPanelHtml(fallbackRows.slice(0, 8), { role: roleNow, componentKey: componentKey, meta: fallbackMeta });
                     if (countEl) countEl.textContent = String(fallbackRows.length);
                     setRepliesSyncMeta(fallbackMeta, false);
                 } catch (_e2) {}
@@ -3990,7 +4585,7 @@ if (uploadInput) {
         try {
             var panel = document.getElementById('section-' + section);
             if (panel) {
-                var isReadonly = (role === 'validator' && section && !isActionableComponent(section));
+                    var isReadonly = (section && !isActionableComponent(section));
                 panel.setAttribute('data-readonly', isReadonly ? '1' : '0');
                 var secbar = panel.querySelector('.cr-secbar');
                 if (secbar) {
@@ -5296,7 +5891,12 @@ if (uploadInput) {
     function setVal(id, value) {
         var el = document.getElementById(id);
         if (!el) return;
-        el.value = (value === null || typeof value === 'undefined') ? '' : String(value);
+        var text = (value === null || typeof value === 'undefined') ? '' : String(value);
+        el.value = text;
+        if (el.dataset && el.dataset.simpleDone) {
+            var displayEl = el.nextElementSibling;
+            if (displayEl) displayEl.textContent = text.trim() || '-';
+        }
     }
 
     function setFileField(id, fieldKey, value) {
@@ -7115,12 +7715,15 @@ function askActionConfirm(label) {
     }
 
     function initSectionNav() {
+        var role = getRole();
+        if (role === 'verifier' && REPORT_PAYLOAD) {
+            renderVerifierWorkflowSidebar(REPORT_PAYLOAD);
+        }
         var items = Array.prototype.slice.call(document.querySelectorAll('.list-group-item[data-section]'));
         if (!items.length) return;
         var reviewTabHost = document.getElementById('cvReviewTabs');
         var reviewTabButtons = reviewTabHost ? Array.prototype.slice.call(reviewTabHost.querySelectorAll('[data-review-section]')) : [];
 
-        var role = getRole();
         var isAssignmentScopedRole = (role === 'verifier' || role === 'db_verifier');
         var hasBackendVisibleSections = false;
         if ((role === 'verifier' || role === 'db_verifier' || role === 'validator') && !REPORT_PAYLOAD) {
@@ -7180,6 +7783,7 @@ function askActionConfirm(label) {
         function show(section) {
             section = normSection(section);
             if (!section) return;
+            var panelSection = panelSectionForComponent(section);
             CURRENT_SECTION_KEY = section;
             if (section !== 'timeline') {
                 LAST_COMPONENT_SECTION_KEY = section;
@@ -7190,7 +7794,7 @@ function askActionConfirm(label) {
                 return;
             }
 
-            syncUploadType(section);
+            syncUploadType(panelSection);
             setMiniTimelineFilter(section);
             items.forEach(function (btn) {
                 btn.classList.toggle('active', btn.getAttribute('data-section') === section);
@@ -7200,17 +7804,20 @@ function askActionConfirm(label) {
             var panels = Array.prototype.slice.call(document.querySelectorAll('.candidate-section'));
             panels.forEach(function (p) {
                 var id = (p.id || '').replace(/^section-/, '').toLowerCase();
-                var on = id === section;
+                var on = id === panelSection;
                 p.style.display = on ? '' : 'none';
                 p.classList.toggle('cr-active', on);
             });
 
             setCompNavActive(section);
+            if (panelSection === 'reference') {
+                renderReferencePanelForSection(REPORT_PAYLOAD, section);
+            }
             ensureComponentTableRendered(section);
             ensureComponentToolbar(section);
 
             try {
-                var panel = document.getElementById('section-' + String(section));
+                var panel = document.getElementById('section-' + String(panelSection));
                 if (!document.querySelector('.cr-report-root.cr-validator-workspace')) {
                     ensureComponentChat(panel, section);
                 }
@@ -7729,6 +8336,10 @@ function askActionConfirm(label) {
             if (cid) {
                 url += '&client_id=' + encodeURIComponent(cid);
             }
+            var priorityBucket = (qs('priority_bucket') || '').toString().trim().toLowerCase();
+            if (priorityBucket) {
+                url += '&priority_bucket=' + encodeURIComponent(priorityBucket);
+            }
         }
 
 
@@ -8012,13 +8623,7 @@ function askActionConfirm(label) {
         var contactProofFile = contact.proof_file || contact.address_proof_file || contact.address_proof || contact.proof || contact.proof_document || contact.proof_path || '';
         setFileField('cv_contact_proof_file', 'proof_file', contactProofFile || '');
 
-        setVal('cv_reference_name', ref.reference_name || '');
-        setVal('cv_reference_designation', ref.reference_designation || '');
-        setVal('cv_reference_company', ref.reference_company || '');
-        setVal('cv_reference_mobile', ref.reference_mobile || '');
-        setVal('cv_reference_email', ref.reference_email || '');
-        setVal('cv_reference_relationship', ref.relationship || '');
-        setVal('cv_reference_years_known', ref.years_known || '');
+        renderReferencePanelForSection(d, CURRENT_SECTION_KEY || LAST_COMPONENT_SECTION_KEY || 'reference');
 
         setVal('cv_social_linkedin_url', social.linkedin_url || '');
         setVal('cv_social_facebook_url', social.facebook_url || '');
@@ -8107,7 +8712,9 @@ function askActionConfirm(label) {
     }
     }
 
-    document.addEventListener('DOMContentLoaded', function () {
+    function initCandidateReportPage() {
+        if (document.body.dataset.candidateReportInit === '1') return;
+        document.body.dataset.candidateReportInit = '1';
         var deprecatedCompleteBtn = document.getElementById('cvCompleteGroupBtn');
         if (deprecatedCompleteBtn) {
             deprecatedCompleteBtn.style.display = 'none';
@@ -8133,7 +8740,13 @@ function askActionConfirm(label) {
             if (root) root.setAttribute('data-ui-ready', '1');
             setText('cvTopMessage', (e && e.message) ? e.message : 'Failed to load report');
         });
-    });
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initCandidateReportPage);
+    } else {
+        initCandidateReportPage();
+    }
 
 setTimeout(function () {
     if (!isLegacyPdfViewerEnabled()) return;

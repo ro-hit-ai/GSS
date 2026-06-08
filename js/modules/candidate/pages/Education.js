@@ -547,8 +547,15 @@ class EducationManager extends TabManager {
             matchStatus: value ? 'manual_pending' : ''
         });
 
+        const shell = input.closest('.institution-select-shell');
         const panel = card.querySelector('[data-institution-panel]');
         if (!panel) return;
+
+        // Anchor the panel relative to the shell
+        if (shell && panel.parentElement !== shell) {
+            shell.appendChild(panel);
+        }
+
         if (value.length < 2) {
             panel.innerHTML = '<div class="institution-search-empty">Type at least 2 characters</div>';
             panel.style.display = value ? 'block' : 'none';

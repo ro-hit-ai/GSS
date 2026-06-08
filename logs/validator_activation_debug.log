@@ -101,3 +101,12 @@
 [2026-06-03 13:12:20] source=store_authorization application_id=APP-20260603131017556 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none
 [2026-06-03 14:08:29] source=store_authorization application_id=APP-20260603140030312 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none
 [2026-06-03 14:13:31] source=submit application_id=APP-20260603140030312 case_id=225 final_submit_completed=1 authorization_completed=1 queue_created=1 queue_seed_reason=final_submit
+[2026-06-05 10:45:49] source=store_authorization application_id=APP-20260603140030312 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none
+[2026-06-06 08:03:11] source=store_authorization application_id=APP-20260603140030312 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none
+[2026-06-06 12:07:21] source=store_authorization application_id=APP-20260603140030312 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none
+[2026-06-06 13:14:50] source=store_authorization application_id=APP-20260606130845482 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none
+[2026-06-06 13:20:42] source=submit application_id=APP-20260606130845482 case_id=226 final_submit_completed=1 authorization_completed=1 queue_created=1 queue_seed_reason=final_submit
+[2026-06-06 13:56:31] source=store_authorization application_id=APP-20260606130845482 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none
+[2026-06-06 14:22:24] source=store_authorization application_id=APP-20260606142029642 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none
+[2026-06-06 14:43:05] source=store_authorization application_id=APP-20260606130845482 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none
+[2026-06-06 14:46:49] source=store_authorization application_id=APP-20260606142029642 final_submit_completed=0 authorization_completed=1 queue_created=0 queue_seed_reason=none

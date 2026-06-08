@@ -375,10 +375,15 @@ class BasicDetails {
             }
 
             if (errorEl) errorEl.textContent = '';
+            const previewUrl = URL.createObjectURL(file);
             if (nameBtn) {
                 nameBtn.textContent = file.name;
                 nameBtn.disabled = false;
                 nameBtn.classList.add('preview-btn');
+                nameBtn.setAttribute('data-url', previewUrl);
+                nameBtn.setAttribute('data-name', file.name);
+                nameBtn.setAttribute('data-type', 'pdf');
+                nameBtn.setAttribute('data-local-file', '1');
             }
             if (removeBtn) {
                 removeBtn.style.display = '';
@@ -390,11 +395,20 @@ class BasicDetails {
         if (removeBtn) {
             this.on(removeBtn, "click", (e) => {
                 e.preventDefault();
+                // Revoke any locally created object URL
+                if (nameBtn && nameBtn.getAttribute('data-local-file')) {
+                    const existingUrl = nameBtn.getAttribute('data-url');
+                    if (existingUrl) try { URL.revokeObjectURL(existingUrl); } catch (_e) {}
+                }
                 input.value = "";
                 if (nameBtn) {
                     nameBtn.textContent = "No file chosen";
                     nameBtn.disabled = true;
                     nameBtn.classList.remove("preview-btn");
+                    nameBtn.removeAttribute('data-url');
+                    nameBtn.removeAttribute('data-name');
+                    nameBtn.removeAttribute('data-type');
+                    nameBtn.removeAttribute('data-local-file');
                 }
                 removeBtn.style.display = "none";
                 removeBtn.disabled = true;

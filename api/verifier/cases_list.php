@@ -271,7 +271,7 @@ try {
 
     $groupKey = strtoupper(get_str('group', ''));
     $search = get_str('search', '');
-    $view = strtolower(get_str('view', 'available')); // available|mine|followup|completed|active|history|participated
+    $view = strtolower(get_str('view', 'available'));
     $filterMode = strtolower(get_str('filter', 'all'));
     $sourceRoute = get_str('src', '');
     $debug = get_str('debug', '') === '1';
@@ -291,10 +291,16 @@ try {
         exit;
     }
 
-    if ($view !== 'mine' && $view !== 'available' && $view !== 'followup' && $view !== 'completed' && $view !== 'active' && $view !== 'history' && $view !== 'participated') {
+    $includeCompletedForAll = false;
+    if ($view !== 'mine' && $view !== 'available' && $view !== 'followup' && $view !== 'completed' && $view !== 'active' && $view !== 'claimable' && $view !== 'all' && $view !== 'history' && $view !== 'participated') {
         $view = 'mine';
     }
-    if ($view === 'active') $view = 'available';
+    if ($view === 'claimable') $view = 'available';
+    if ($view === 'active') $view = 'mine';
+    if ($view === 'all') {
+        $view = 'mine';
+        $includeCompletedForAll = true;
+    }
     if ($view === 'history') $view = 'participated';
     if ($view === 'completed') $view = 'participated';
 
@@ -324,7 +330,7 @@ try {
             }
         } catch (Throwable $e) {
         }
-        $whereStatus = "q.completed_at IS NULL";
+        $whereStatus = $includeCompletedForAll ? "1=1" : "q.completed_at IS NULL";
         if ($view === 'followup') {
             $whereStatus = "q.completed_at IS NULL AND LOWER(TRIM(q.status)) IN ('followup','hold','reopened','blocked')";
         }
@@ -334,7 +340,7 @@ try {
             'FROM Vati_Payfiller_Verifier_Case_Queue q ' .
             'JOIN Vati_Payfiller_Cases c ON c.case_id = q.case_id ' .
             'WHERE ' . $whereStatus . ' ' .
-            "AND UPPER(TRIM(COALESCE(c.case_status,''))) NOT IN ('STOP_BGV','REJECTED','APPROVED','COMPLETED','CLEAR') " .
+            "AND UPPER(TRIM(COALESCE(c.case_status,''))) NOT IN ('STOP_BGV','REJECTED') " .
             "AND ( ? = '' OR c.application_id LIKE CONCAT('%', ?, '%') OR c.candidate_first_name LIKE CONCAT('%', ?, '%') OR c.candidate_last_name LIKE CONCAT('%', ?, '%') OR c.candidate_email LIKE CONCAT('%', ?, '%') OR c.candidate_mobile LIKE CONCAT('%', ?, '%') ) " .
             'ORDER BY COALESCE(q.claimed_at, c.created_at) ASC, q.id ASC LIMIT 300';
         $searchParam = $search !== '' ? $search : '';
@@ -342,7 +348,11 @@ try {
         $st->execute([$searchParam, $searchParam, $searchParam, $searchParam, $searchParam, $searchParam]);
         $rows = verifier_filter_actionable_queue_rows($pdo, $st->fetchAll(PDO::FETCH_ASSOC) ?: [], $allowedSet);
 
-        if ($view === 'available') {
+        if ($includeCompletedForAll) {
+            $rows = array_values(array_filter($rows, static function ($r): bool {
+                return !empty($r['can_claim']) || !empty($r['can_open']) || trim((string)($r['completed_at'] ?? '')) !== '';
+            }));
+        } elseif ($view === 'available') {
             $rows = array_values(array_filter($rows, static function ($r): bool {
                 return !empty($r['can_claim']) || !empty($r['can_open']);
             }));
@@ -455,7 +465,7 @@ try {
             }
         }
     }
-    if ($view === 'available' || $view === 'mine') {
+    if (($view === 'available' || $view === 'mine') && !$includeCompletedForAll) {
         $rows = array_values(array_filter($rows, static function ($r): bool {
             $s = strtolower(trim((string)($r['status'] ?? '')));
             $completedAt = trim((string)($r['completed_at'] ?? ''));
@@ -463,9 +473,27 @@ try {
         }));
     }
 
+    if ($includeCompletedForAll) {
+        $completedRows = verifier_load_participated_rows($pdo, $userId, $clientId, $search);
+        if ($completedRows) {
+            $seen = [];
+            foreach ($rows as $r) {
+                $app = trim((string)($r['application_id'] ?? ''));
+                if ($app !== '') $seen[$app] = true;
+            }
+            foreach ($completedRows as $r) {
+                $app = trim((string)($r['application_id'] ?? ''));
+                if ($app !== '' && !isset($seen[$app])) {
+                    $rows[] = $r;
+                    $seen[$app] = true;
+                }
+            }
+        }
+    }
+
     // "Available" should also surface current verifier's open tasks so users can
     // continue work without switching views.
-    if ($view === 'available') {
+    if ($view === 'available' && !$includeCompletedForAll) {
         $sqlMineOpen =
             'SELECT q.id, q.case_id, q.application_id, q.client_id, q.group_key, q.status, q.assigned_user_id, q.claimed_at, q.completed_at, ' .
             'c.candidate_first_name, c.candidate_last_name, c.candidate_email, c.candidate_mobile, c.case_status, c.created_at ' .
@@ -515,7 +543,7 @@ try {
     }
 
     // Fallback SQL when SPs return no rows (keeps UI stable across env/proc variants).
-    if (!$rows && ($view === 'available' || $view === 'mine')) {
+    if (!$rows && ($view === 'available' || $view === 'mine') && !$includeCompletedForAll) {
         $whereStatus = ($view === 'available')
             ? "q.completed_at IS NULL AND COALESCE(q.assigned_user_id,0) = 0"
             : "q.completed_at IS NULL AND q.assigned_user_id = ?";

@@ -26,6 +26,21 @@ final class WorkflowTransitionService
         $this->lockService = new WorkflowLockService($this->repo);
     }
 
+    private function isSplitReferenceComponent(string $componentKey): bool
+    {
+        $componentKey = strtolower(trim($componentKey));
+        return $componentKey === 'education_reference' || $componentKey === 'employment_reference';
+    }
+
+    private function componentStorageCandidates(string $componentKey): array
+    {
+        $componentKey = strtolower(trim($componentKey));
+        if ($this->isSplitReferenceComponent($componentKey)) {
+            return [$componentKey, 'reference'];
+        }
+        return $componentKey !== '' ? [$componentKey] : [];
+    }
+
     public function applyTransition(array $cmd): array
     {
         $t0 = microtime(true);
@@ -97,6 +112,9 @@ final class WorkflowTransitionService
         }
 
         try {
+            if (!$this->repo->pdo()->inTransaction() && function_exists('verifier_case_queue_ensure_table')) {
+                verifier_case_queue_ensure_table($this->repo->pdo());
+            }
             $this->repo->begin();
 
             $case = $this->repo->loadCaseForUpdate($caseId, $applicationId);
@@ -107,14 +125,23 @@ final class WorkflowTransitionService
             $this->guard->assertVersion($expectedVersion, (int)$case['workflow_version']);
             $beforeVersion = (int)$case['workflow_version'];
 
-            $component = $this->repo->loadComponentForUpdate($caseId, $applicationId, $componentKey);
+            $requestedComponentKey = $componentKey;
+            $workflowComponentKey = $componentKey;
+            $component = null;
+            foreach ($this->componentStorageCandidates($componentKey) as $candidateComponentKey) {
+                $component = $this->repo->loadComponentForUpdate($caseId, $applicationId, $candidateComponentKey);
+                if ($component) {
+                    $workflowComponentKey = $candidateComponentKey;
+                    break;
+                }
+            }
             if (!$component) {
                 throw new RuntimeException('WF_COMPONENT_NOT_IN_SNAPSHOT');
             }
 
             $this->guard->assertAssignmentAllowed($component, $actorRole, $actorUserId);
 
-            $currentStatus = $this->repo->loadWorkflowStatusForUpdate($caseId, $componentKey, $effectiveStage);
+            $currentStatus = $this->repo->loadWorkflowStatusForUpdate($caseId, $workflowComponentKey, $effectiveStage);
             $isDecisionAction = in_array($action, ['approve', 'reject', 'hold', 'insufficient_documents'], true);
             $isReplaceableCheckpoint = $this->guard->isEvaluatedStatus($currentStatus) || wf_is_invalidated_status($currentStatus);
             $decisionReplacement = $isDecisionAction && $isReplaceableCheckpoint;
@@ -132,14 +159,14 @@ final class WorkflowTransitionService
             }
 
             if ($action === 'reopen' && !$supervisedReopen) {
-                $downstreamAwareReopen = $this->repo->hasDownstreamActivity($caseId, $componentKey, $stage);
+                $downstreamAwareReopen = $this->repo->hasDownstreamActivity($caseId, $workflowComponentKey, $stage);
             }
             if ($decisionReplacement) {
-                $downstreamAwareDecisionChange = $this->repo->hasDownstreamActivity($caseId, $componentKey, $stage);
+                $downstreamAwareDecisionChange = $this->repo->hasDownstreamActivity($caseId, $workflowComponentKey, $stage);
             }
 
             if (!$supervisedReopen && !($action === 'reopen' && $downstreamAwareReopen) && !$decisionReplacement) {
-                $lock = $this->lockService->canModifyComponent($caseId, $componentKey, $actorRole, $action);
+                $lock = $this->lockService->canModifyComponent($caseId, $workflowComponentKey, $actorRole, $action);
                 if (empty($lock['allowed'])) {
                     throw new RuntimeException((string)($lock['code'] ?? 'WF_COMPONENT_LOCKED_BY_DOWNSTREAM_ACTIVITY'));
                 }
@@ -151,25 +178,25 @@ final class WorkflowTransitionService
             }
             $this->guard->assertAllowedTransition($currentStatus, $action);
 
-            $stages = $this->repo->loadComponentStageStatuses($caseId, $componentKey);
+            $stages = $this->repo->loadComponentStageStatuses($caseId, $workflowComponentKey);
             if (!isset($stages['candidate'])) {
-                $this->repo->upsertWorkflowStatus($caseId, $applicationId, $componentKey, 'candidate', 'completed', 0, 'candidate');
+                $this->repo->upsertWorkflowStatus($caseId, $applicationId, $workflowComponentKey, 'candidate', 'completed', 0, 'candidate');
                 $stages['candidate'] = 'completed';
             }
             $this->guard->assertStageGate($effectiveStage, $stages);
-            $this->invariant->assertQaApproveGate($stage, $action, $caseId, $componentKey);
+            $this->invariant->assertQaApproveGate($stage, $action, $caseId, $workflowComponentKey);
 
             $newStatus = $this->guard->actionToStatus($action);
-            $this->repo->upsertWorkflowStatus($caseId, $applicationId, $componentKey, $effectiveStage, $newStatus, $actorUserId, $actorRole);
-            $this->repo->clearWorkflowInvalidationMetadata($caseId, $applicationId, $componentKey, $effectiveStage);
+            $this->repo->upsertWorkflowStatus($caseId, $applicationId, $workflowComponentKey, $effectiveStage, $newStatus, $actorUserId, $actorRole);
+            $this->repo->clearWorkflowInvalidationMetadata($caseId, $applicationId, $workflowComponentKey, $effectiveStage);
             $invalidatedStages = [];
             if ($action === 'reopen') {
-                $this->repo->markWorkflowReopened($caseId, $applicationId, $componentKey, $effectiveStage, $actorUserId, $actorRole, $reason);
+                $this->repo->markWorkflowReopened($caseId, $applicationId, $workflowComponentKey, $effectiveStage, $actorUserId, $actorRole, $reason);
                 if ($supervisedReopen || $downstreamAwareReopen) {
                     $invalidatedStages = $this->repo->invalidateDownstreamStagesForReopen(
                         $caseId,
                         $applicationId,
-                        $componentKey,
+                        $workflowComponentKey,
                         $effectiveStage,
                         $actorUserId,
                         $actorRole,
@@ -180,7 +207,7 @@ final class WorkflowTransitionService
                 $this->repo->logWorkflowDecisionChange(
                     $caseId,
                     $applicationId,
-                    $componentKey,
+                    $workflowComponentKey,
                     $effectiveStage,
                     $actorUserId,
                     $actorRole,
@@ -192,7 +219,7 @@ final class WorkflowTransitionService
                     $invalidatedStages = $this->repo->invalidateDownstreamStagesForDecisionChange(
                         $caseId,
                         $applicationId,
-                        $componentKey,
+                        $workflowComponentKey,
                         $effectiveStage,
                         $actorUserId,
                         $actorRole,
@@ -205,7 +232,7 @@ final class WorkflowTransitionService
                 $this->repo->logWorkflowDecisionRecorded(
                     $caseId,
                     $applicationId,
-                    $componentKey,
+                    $workflowComponentKey,
                     $effectiveStage,
                     $actorUserId,
                     $actorRole,
@@ -214,9 +241,9 @@ final class WorkflowTransitionService
                     $reason
                 );
             } elseif ($currentStatus === 'reopened' && $this->guard->isEvaluatedStatus($newStatus)) {
-                $this->repo->markWorkflowRelocked($caseId, $applicationId, $componentKey, $effectiveStage, $actorUserId, $actorRole);
+                $this->repo->markWorkflowRelocked($caseId, $applicationId, $workflowComponentKey, $effectiveStage, $actorUserId, $actorRole);
             }
-            $this->repo->syncComponentStatus($caseId, $applicationId, $componentKey, $newStatus);
+            $this->repo->syncComponentStatus($caseId, $applicationId, $workflowComponentKey, $newStatus);
 
             $stageSummaries = [];
             foreach (wf_stage_keys() as $sk) {
@@ -232,11 +259,11 @@ final class WorkflowTransitionService
                 throw new RuntimeException('WF_VERSION_CONFLICT');
             }
 
-            $this->projection->syncQueues($caseId, $actorUserId, $componentKey, $effectiveStage);
+            $this->projection->syncQueues($caseId, $actorUserId, $workflowComponentKey, $effectiveStage);
             foreach ($invalidatedStages as $inv) {
                 $invStage = strtolower(trim((string)($inv['stage'] ?? '')));
                 if ($invStage !== '') {
-                    $this->projection->syncQueues($caseId, $actorUserId, $componentKey, $invStage);
+                    $this->projection->syncQueues($caseId, $actorUserId, $workflowComponentKey, $invStage);
                 }
             }
             $this->invariant->assertNoUnresolvedOnApproved($nextCaseStatus, $caseId);
@@ -245,7 +272,7 @@ final class WorkflowTransitionService
                 'transition_request_id' => $transitionRequestId,
                 'application_id' => $applicationId,
                 'case_id' => $caseId,
-                'component_key' => $componentKey,
+                'component_key' => $workflowComponentKey,
                 'item_key' => $itemKey,
                 'stage' => $effectiveStage,
                 'action' => $action,
@@ -266,7 +293,7 @@ final class WorkflowTransitionService
                     'transition_request_id' => ($transitionRequestId !== '' ? ($transitionRequestId . ':invalidate:' . $invStage) : uniqid('inv-', true)),
                     'application_id' => $applicationId,
                     'case_id' => $caseId,
-                    'component_key' => $componentKey,
+                    'component_key' => $workflowComponentKey,
                     'item_key' => $itemKey,
                     'stage' => $invStage,
                     'action' => ($decisionReplacement ? 'invalidate_due_to_decision_change' : 'invalidate_due_to_reopen'),
@@ -282,11 +309,12 @@ final class WorkflowTransitionService
 
             $this->repo->commit();
 
-            $this->logDriftCompare($caseId, $applicationId, $componentKey, $stage, $newStatus, $nextCaseStatus, $group);
+            $this->logDriftCompare($caseId, $applicationId, $workflowComponentKey, $stage, $newStatus, $nextCaseStatus, $group);
             $this->logEvent('transition_commit', [
                 'application_id' => $applicationId,
                 'case_id' => $caseId,
-                'component_key' => $componentKey,
+                'component_key' => $requestedComponentKey,
+                'storage_component_key' => $workflowComponentKey,
                 'stage' => $effectiveStage,
                 'action' => $action,
                 'component_status_before' => $currentStatus,
@@ -311,7 +339,8 @@ final class WorkflowTransitionService
                 'data' => [
                     'application_id' => $applicationId,
                     'case_id' => $caseId,
-                    'component_key' => $componentKey,
+                    'component_key' => $requestedComponentKey,
+                    'storage_component_key' => $workflowComponentKey,
                     'stage' => $effectiveStage,
                     'action' => $action,
                     'component_status' => $newStatus,
@@ -392,6 +421,9 @@ final class WorkflowTransitionService
 
         $startedTx = false;
         try {
+            if (!$this->repo->pdo()->inTransaction() && function_exists('verifier_case_queue_ensure_table')) {
+                verifier_case_queue_ensure_table($this->repo->pdo());
+            }
             if (!$this->repo->pdo()->inTransaction()) {
                 $this->repo->begin();
                 $startedTx = true;
@@ -403,12 +435,22 @@ final class WorkflowTransitionService
             }
 
             $beforeVersion = (int)($case['workflow_version'] ?? 0);
+            $storageComponents = [];
             foreach ($components as $componentKey) {
-                $component = $this->repo->loadComponentForUpdate($caseId, $applicationId, $componentKey);
+                $component = null;
+                $storageComponentKey = $componentKey;
+                foreach ($this->componentStorageCandidates($componentKey) as $candidateComponentKey) {
+                    $component = $this->repo->loadComponentForUpdate($caseId, $applicationId, $candidateComponentKey);
+                    if ($component) {
+                        $storageComponentKey = $candidateComponentKey;
+                        break;
+                    }
+                }
                 if (!$component) {
                     throw new RuntimeException('WF_COMPONENT_NOT_IN_SNAPSHOT');
                 }
-                $this->repo->loadWorkflowStatusForUpdate($caseId, $componentKey, $stage);
+                $storageComponents[$componentKey] = $storageComponentKey;
+                $this->repo->loadWorkflowStatusForUpdate($caseId, $storageComponentKey, $stage);
             }
 
             $nextCaseStatus = $this->deriveCaseStatus($caseId);
@@ -420,7 +462,7 @@ final class WorkflowTransitionService
             }
 
             foreach ($components as $componentKey) {
-                $this->projection->syncQueues($caseId, $actorUserId, $componentKey, $stage);
+                $this->projection->syncQueues($caseId, $actorUserId, $storageComponents[$componentKey] ?? $componentKey, $stage);
             }
             $this->invariant->assertNoUnresolvedOnApproved($nextCaseStatus, $caseId);
 

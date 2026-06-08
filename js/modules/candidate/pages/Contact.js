@@ -579,6 +579,22 @@ class Contact {
             }
         }
 
+        // Permanent address proof required when different from current
+        if (hasPermanent && (!hasCurrent || !isSame)) {
+            const permProofInput = form.querySelector('input[type="file"][name="permanent_address_proof"]');
+            const permHasNew = !!(permProofInput && permProofInput.files && permProofInput.files.length > 0);
+            const permHasExisting = !!form.querySelector('input[name="existing_permanent_address_proof"]');
+            if (!permHasNew && !permHasExisting && permProofInput && !permProofInput.disabled) {
+                if (window.CandidateNotify && typeof window.CandidateNotify.addFieldError === 'function') {
+                    const box = permProofInput.closest('.form-control') || permProofInput;
+                    window.CandidateNotify.addFieldError(errors, box, 'Please upload permanent address proof');
+                } else {
+                    permProofInput.classList.add('is-invalid');
+                    errors.push({ field: permProofInput, message: 'Please upload permanent address proof' });
+                }
+            }
+        }
+
         if (errors.length) {
             if (window.CandidateNotify && typeof window.CandidateNotify.validation === 'function') {
                 window.CandidateNotify.validation({

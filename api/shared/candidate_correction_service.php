@@ -32,6 +32,32 @@ function ccs_component_norm(string $k): string {
     return $k;
 }
 
+function ccs_is_reference_split(string $component): bool {
+    $component = ccs_component_norm($component);
+    return $component === 'education_reference' || $component === 'employment_reference';
+}
+
+function ccs_allowed_component_match(array $allowedSet, string $component): bool {
+    $component = ccs_component_norm($component);
+    if (isset($allowedSet['*']) || isset($allowedSet[$component])) return true;
+    if (ccs_is_reference_split($component) && isset($allowedSet['reference'])) return true;
+    if ($component === 'reference' && (isset($allowedSet['education_reference']) || isset($allowedSet['employment_reference']))) return true;
+    return false;
+}
+
+function ccs_component_storage_candidates(string $component): array {
+    $component = ccs_component_norm($component);
+    if (ccs_is_reference_split($component)) return [$component, 'reference'];
+    return $component !== '' ? [$component] : [];
+}
+
+function ccs_component_overlap_keys(string $component): array {
+    $component = ccs_component_norm($component);
+    if ($component === 'reference') return ['reference', 'education_reference', 'employment_reference'];
+    if (ccs_is_reference_split($component)) return [$component];
+    return $component !== '' ? [$component] : [];
+}
+
 function ccs_ensure_table(PDO $pdo): void {
     $pdo->exec("CREATE TABLE IF NOT EXISTS Vati_Payfiller_Candidate_Correction_Sessions (
         correction_session_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -202,8 +228,12 @@ function ccs_role_allowed_sections(PDO $pdo, int $userId): array {
 
 function ccs_stage_status(PDO $pdo, int $caseId, string $component, string $stage): string {
     $st = $pdo->prepare("SELECT LOWER(TRIM(COALESCE(status,''))) FROM Vati_Payfiller_Case_Component_Workflow WHERE case_id = ? AND LOWER(TRIM(component_key)) = ? AND LOWER(TRIM(stage)) = ? LIMIT 1");
-    $st->execute([$caseId, ccs_component_norm($component), strtolower(trim($stage))]);
-    return (string)($st->fetchColumn() ?: '');
+    foreach (ccs_component_storage_candidates($component) as $componentKey) {
+        $st->execute([$caseId, $componentKey, strtolower(trim($stage))]);
+        $status = (string)($st->fetchColumn() ?: '');
+        if ($status !== '') return $status;
+    }
+    return '';
 }
 
 function ccs_is_actionable_status(string $status): bool {
@@ -214,16 +244,20 @@ function ccs_is_actionable_status(string $status): bool {
 function ccs_can_role_request_component(PDO $pdo, int $caseId, string $component, string $role, int $userId, int $clientId, int $caseClientId, array $allowedSet): bool {
     $component = ccs_component_norm($component);
     if ($component === '' || $component === 'reports' || $component === 'timeline') return false;
-    if (!isset($allowedSet['*']) && !isset($allowedSet[$component])) return false;
+    if (!ccs_allowed_component_match($allowedSet, $component)) return false;
     if ($role === 'gss_admin') return true;
     if ($role === 'client_admin') {
         $enabled = strtolower(trim((string)(env_get('CLIENT_ADMIN_CAN_REQUEST_CORRECTION', '0') ?? '0'))) === '1';
         return $enabled && $clientId > 0 && $clientId === $caseClientId;
     }
     if ($role === 'validator') {
+        $row = null;
         $c = $pdo->prepare("SELECT assigned_role, assigned_user_id FROM Vati_Payfiller_Case_Components WHERE case_id = ? AND LOWER(TRIM(component_key)) = ? LIMIT 1");
-        $c->execute([$caseId, $component]);
-        $row = $c->fetch(PDO::FETCH_ASSOC) ?: null;
+        foreach (ccs_component_storage_candidates($component) as $componentKey) {
+            $c->execute([$caseId, $componentKey]);
+            $row = $c->fetch(PDO::FETCH_ASSOC) ?: null;
+            if ($row) break;
+        }
         if (!$row) return false;
         $ar = strtolower(trim((string)($row['assigned_role'] ?? '')));
         $au = (int)($row['assigned_user_id'] ?? 0);
@@ -235,9 +269,13 @@ function ccs_can_role_request_component(PDO $pdo, int $caseId, string $component
         if (!ccs_user_has_verifier_visibility($pdo, $caseId, $userId)) return false;
         $case = ccs_get_case($pdo, $caseId, '');
         $applicationId = (string)($case['application_id'] ?? '');
+        $row = null;
         $c = $pdo->prepare("SELECT assigned_role, assigned_user_id FROM Vati_Payfiller_Case_Components WHERE case_id = ? AND LOWER(TRIM(component_key)) = ? LIMIT 1");
-        $c->execute([$caseId, $component]);
-        $row = $c->fetch(PDO::FETCH_ASSOC) ?: null;
+        foreach (ccs_component_storage_candidates($component) as $componentKey) {
+            $c->execute([$caseId, $componentKey]);
+            $row = $c->fetch(PDO::FETCH_ASSOC) ?: null;
+            if ($row) break;
+        }
         if (!$row) return false;
         $assignedRole = strtolower(trim((string)($row['assigned_role'] ?? '')));
         $assignedUserId = (int)($row['assigned_user_id'] ?? 0);
@@ -246,7 +284,7 @@ function ccs_can_role_request_component(PDO $pdo, int $caseId, string $component
         } else {
             $configAllowed = case_component_binding_role_allowed($pdo, $caseId, $applicationId, $component, $role);
             if ($configAllowed === false) return false;
-            if (!isset($allowedSet['*']) && !isset($allowedSet[$component])) return false;
+            if (!ccs_allowed_component_match($allowedSet, $component)) return false;
         }
         return ccs_is_actionable_status(ccs_stage_status($pdo, $caseId, $component, 'verifier'));
     }
@@ -270,6 +308,13 @@ function ccs_get_eligible_components(PDO $pdo, int $caseId, string $role, int $u
         if ($k === '') continue;
         if (ccs_can_role_request_component($pdo, $caseId, $k, $role, $userId, $clientId, $caseClientId, $allowedSet)) {
             $out[] = $k;
+            if ($k === 'reference') {
+                foreach (['education_reference', 'employment_reference'] as $splitKey) {
+                    if (ccs_can_role_request_component($pdo, $caseId, $splitKey, $role, $userId, $clientId, $caseClientId, $allowedSet)) {
+                        $out[] = $splitKey;
+                    }
+                }
+            }
         }
     }
     return array_values(array_unique($out));
@@ -293,8 +338,13 @@ function ccs_update_components_waiting_candidate(PDO $pdo, int $caseId, string $
             AND LOWER(TRIM(COALESCE(status,''))) <> 'waiting_candidate'"
     );
     foreach ($components as $c) {
-        $st->execute([$userId > 0 ? $userId : null, $role, $caseId, $applicationId, ccs_component_norm((string)$c), $stage]);
-        $count += (int)$st->rowCount();
+        $changed = 0;
+        foreach (ccs_component_storage_candidates((string)$c) as $componentKey) {
+            $st->execute([$userId > 0 ? $userId : null, $role, $caseId, $applicationId, $componentKey, $stage]);
+            $changed += (int)$st->rowCount();
+            if ($changed > 0) break;
+        }
+        $count += $changed;
     }
     return $count;
 }
@@ -315,8 +365,13 @@ function ccs_resume_components_after_candidate_submit(PDO $pdo, int $caseId, str
     );
     $count = 0;
     foreach ($components as $c) {
-        $st->execute([$caseId, $applicationId, ccs_component_norm((string)$c)]);
-        $count += (int)$st->rowCount();
+        $changed = 0;
+        foreach (ccs_component_storage_candidates((string)$c) as $componentKey) {
+            $st->execute([$caseId, $applicationId, $componentKey]);
+            $changed += (int)$st->rowCount();
+            if ($changed > 0) break;
+        }
+        $count += $changed;
     }
     return $count;
 }
@@ -392,13 +447,34 @@ function ccs_snapshot_document_versions(PDO $pdo, int $caseId, string $applicati
 
 function ccs_log_workflow_communication(PDO $pdo, int $caseId, string $applicationId, array $components, string $reason, int $userId, string $userName, string $role, string $threadId): void {
     wc_ensure_tables($pdo);
+    $componentKeys = [];
+    foreach ($components as $component) {
+        $componentKey = ccs_component_norm((string)$component);
+        if ($componentKey !== '') {
+            $componentKeys[$componentKey] = true;
+        }
+    }
+    $componentKeys = array_keys($componentKeys);
+    if (!$componentKeys) {
+        return;
+    }
+
     $subject = 'Candidate Correction Requested';
-    $body = 'Correction requested for components: ' . implode(', ', $components) . ($reason !== '' ? (' | reason: ' . $reason) : '');
+    $componentList = implode(', ', $componentKeys);
     $st = $pdo->prepare("INSERT INTO Vati_Payfiller_Workflow_Communications
         (application_id, case_id, component_key, role_key, action_key, subject, body, notes, sent_by_user_id, sent_by_name, sent_at, delivery_status, communication_type, direction, actor_role, actor_name, workflow_stage, thread_id, source_table, source_message_key)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'sent', 'correction_request', 'outgoing', ?, ?, ?, ?, 'Vati_Payfiller_Candidate_Correction_Sessions', ?)");
-    $srcKey = 'corr:' . $caseId . ':' . sha1($applicationId . '|' . implode(',', $components) . '|' . $reason . '|' . date('YmdHi'));
-    $st->execute([$applicationId, $caseId, 'candidate_correction', $role, 'correction_request', $subject, $body, $reason !== '' ? $reason : null, $userId > 0 ? $userId : null, $userName !== '' ? $userName : null, $role, $userName !== '' ? $userName : null, $role, $threadId, $srcKey]);
+    foreach ($componentKeys as $componentKey) {
+        $body = 'Correction requested for component: ' . $componentKey;
+        if (count($componentKeys) > 1) {
+            $body .= ' | selected components: ' . $componentList;
+        }
+        if ($reason !== '') {
+            $body .= ' | reason: ' . $reason;
+        }
+        $srcKey = 'corr:' . $caseId . ':' . $componentKey . ':' . sha1($applicationId . '|' . $componentKey . '|' . $componentList . '|' . $reason . '|' . date('YmdHi'));
+        $st->execute([$applicationId, $caseId, $componentKey, $role, 'correction_request', $subject, $body, $reason !== '' ? $reason : null, $userId > 0 ? $userId : null, $userName !== '' ? $userName : null, $role, $userName !== '' ? $userName : null, $role, $threadId, $srcKey]);
+    }
 }
 
 function ccs_active_session_conflicts(PDO $pdo, int $caseId, array $components): array {
@@ -407,14 +483,23 @@ function ccs_active_session_conflicts(PDO $pdo, int $caseId, array $components):
     $st->execute([$caseId]);
     $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
     $asked = [];
-    foreach ($components as $c) $asked[ccs_component_norm((string)$c)] = true;
+    foreach ($components as $c) {
+        foreach (ccs_component_overlap_keys((string)$c) as $overlapKey) {
+            $asked[$overlapKey] = true;
+        }
+    }
     $conf = [];
     foreach ($rows as $r) {
         $arr = json_decode((string)($r['allowed_components_json'] ?? '[]'), true);
         if (!is_array($arr)) continue;
         foreach ($arr as $ac) {
             $k = ccs_component_norm((string)$ac);
-            if ($k !== '' && isset($asked[$k])) $conf[$k] = true;
+            foreach (ccs_component_overlap_keys($k) as $overlapKey) {
+                if (isset($asked[$overlapKey])) {
+                    $conf[$k] = true;
+                    break;
+                }
+            }
         }
     }
     return array_values(array_keys($conf));
@@ -424,8 +509,9 @@ function ccs_active_conflict_sessions(PDO $pdo, int $caseId, array $components):
     if (!$components) return [];
     $asked = [];
     foreach ($components as $c) {
-        $k = ccs_component_norm((string)$c);
-        if ($k !== '') $asked[$k] = true;
+        foreach (ccs_component_overlap_keys((string)$c) as $overlapKey) {
+            $asked[$overlapKey] = true;
+        }
     }
     if (!$asked) return [];
 
@@ -439,8 +525,11 @@ function ccs_active_conflict_sessions(PDO $pdo, int $caseId, array $components):
         $overlap = [];
         foreach ($arr as $componentKey) {
             $k = ccs_component_norm((string)$componentKey);
-            if ($k !== '' && isset($asked[$k])) {
-                $overlap[$k] = true;
+            foreach (ccs_component_overlap_keys($k) as $overlapKey) {
+                if (isset($asked[$overlapKey])) {
+                    $overlap[$k] = true;
+                    break;
+                }
             }
         }
         if ($overlap) {

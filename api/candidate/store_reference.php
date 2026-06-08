@@ -95,6 +95,51 @@ function validate_reference_rows(array $rows, string $label, bool $isDraft): arr
     return $validRows;
 }
 
+function reference_progress_component_keys(PDO $pdo, string $applicationId): array
+{
+    $sessionAllowedRaw = (string)($_SESSION['candidate_correction_allowed_components'] ?? '');
+    if ($sessionAllowedRaw !== '') {
+        $sessionAllowed = json_decode($sessionAllowedRaw, true);
+        if (is_array($sessionAllowed)) {
+            $sessionKeys = [];
+            foreach ($sessionAllowed as $componentKey) {
+                $key = ccs_component_norm((string)$componentKey);
+                if ($key === 'education_reference' || $key === 'employment_reference' || $key === 'reference') {
+                    $sessionKeys[$key] = true;
+                }
+            }
+            $out = [];
+            if (isset($sessionKeys['education_reference'])) $out[] = 'education_reference';
+            if (isset($sessionKeys['employment_reference'])) $out[] = 'employment_reference';
+            if (!$out && isset($sessionKeys['reference'])) $out[] = 'reference';
+            if ($out) return $out;
+        }
+    }
+
+    $keys = [];
+    try {
+        $st = $pdo->prepare(
+            "SELECT DISTINCT LOWER(TRIM(component_key)) AS component_key
+               FROM Vati_Payfiller_Case_Components
+              WHERE application_id = ?
+                AND COALESCE(is_required, 1) = 1
+                AND LOWER(TRIM(component_key)) IN ('reference','education_reference','employment_reference')"
+        );
+        $st->execute([$applicationId]);
+        foreach (($st->fetchAll(PDO::FETCH_COLUMN) ?: []) as $componentKey) {
+            $key = strtolower(trim((string)$componentKey));
+            if ($key !== '') $keys[$key] = true;
+        }
+    } catch (Throwable $e) {
+    }
+
+    $out = [];
+    if (isset($keys['education_reference'])) $out[] = 'education_reference';
+    if (isset($keys['employment_reference'])) $out[] = 'employment_reference';
+    if (!$out && isset($keys['reference'])) $out[] = 'reference';
+    return $out ?: ['reference'];
+}
+
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         http_response_code(405);
@@ -157,7 +202,9 @@ try {
 
     $savedData = ReferenceService::replaceGrouped($pdo, (string)$application_id, $educationRows, $employmentRows);
 
-    ccs_progress_component_after_candidate_save($pdo, (string)$application_id, 'reference', $isDraft);
+    foreach (reference_progress_component_keys($pdo, (string)$application_id) as $componentKey) {
+        ccs_progress_component_after_candidate_save($pdo, (string)$application_id, $componentKey, $isDraft);
+    }
     $pdo->commit();
 
     echo json_encode([

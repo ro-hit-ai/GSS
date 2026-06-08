@@ -94,7 +94,8 @@ BEGIN
     (v_case_id, p_application_id, 'id', 1, 'pending', NOW(), NOW()),
     (v_case_id, p_application_id, 'education', 1, 'pending', NOW(), NOW()),
     (v_case_id, p_application_id, 'employment', 1, 'pending', NOW(), NOW()),
-    (v_case_id, p_application_id, 'reference', 1, 'pending', NOW(), NOW());
+    (v_case_id, p_application_id, 'education_reference', 1, 'pending', NOW(), NOW()),
+    (v_case_id, p_application_id, 'employment_reference', 1, 'pending', NOW(), NOW());
 
     INSERT IGNORE INTO Vati_Payfiller_Case_Component_Workflow
     (case_id, application_id, component_key, stage, status, created_at, updated_at)
@@ -107,8 +108,10 @@ BEGIN
     (v_case_id, p_application_id, 'education', 'validator', 'pending', NOW(), NOW()),
     (v_case_id, p_application_id, 'employment', 'candidate', 'pending', NOW(), NOW()),
     (v_case_id, p_application_id, 'employment', 'validator', 'pending', NOW(), NOW()),
-    (v_case_id, p_application_id, 'reference', 'candidate', 'pending', NOW(), NOW()),
-    (v_case_id, p_application_id, 'reference', 'validator', 'pending', NOW(), NOW());
+    (v_case_id, p_application_id, 'education_reference', 'candidate', 'pending', NOW(), NOW()),
+    (v_case_id, p_application_id, 'education_reference', 'validator', 'pending', NOW(), NOW()),
+    (v_case_id, p_application_id, 'employment_reference', 'candidate', 'pending', NOW(), NOW()),
+    (v_case_id, p_application_id, 'employment_reference', 'validator', 'pending', NOW(), NOW());
 
     INSERT INTO Vati_Payfiller_Case_Timeline
     (application_id, actor_user_id, actor_role, event_type, section_key, message, created_at)
@@ -126,4 +129,3 @@ BEGIN
     SELECT v_case_id AS case_id;
 END$$
 DELIMITER ;
-

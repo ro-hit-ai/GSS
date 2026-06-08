@@ -388,12 +388,48 @@ try {
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 
     $nodeRes = app_node_api_json_request('POST', $nodePath, $payload, 30);
-    if (($nodeRes['success'] ?? false) !== true) {
-        http_response_code(502);
-        echo json_encode(['status' => 0, 'message' => 'Node communication failed', 'error' => (string)($nodeRes['error'] ?? 'Unknown node error')]);
-        exit;
+    $nodeFailed = (($nodeRes['success'] ?? false) !== true);
+    $nodeError = (string)($nodeRes['error'] ?? 'Unknown node error');
+    $nodeBody = !$nodeFailed && is_array($nodeRes['response'] ?? null) ? $nodeRes['response'] : [];
+    if ($nodeFailed) {
+        app_mail_set_log_meta([
+            'application_id' => $applicationId,
+            'case_id' => $caseId,
+            'component_key' => $componentKey,
+            'component' => $componentKey,
+            'event_type' => 'verification_request',
+            'role' => $senderRole,
+            'sender_role' => $senderRole
+        ]);
+        $fallbackSent = send_app_mail(
+            $recipientEmail,
+            $subject,
+            nl2br(htmlspecialchars($messageBody, ENT_QUOTES, 'UTF-8')),
+            'VATI GSS',
+            [
+                'application_id' => $applicationId,
+                'event_type' => 'verification_request',
+                'component_key' => $componentKey,
+                'role' => $senderRole,
+                'transport' => 'smtp'
+            ]
+        );
+        app_mail_clear_log_meta();
+        if (!$fallbackSent) {
+            http_response_code(502);
+            echo json_encode([
+                'status' => 0,
+                'message' => 'Mail provider temporarily rejected the send. Please retry. If it continues, contact admin to check SMTP configuration.',
+                'error' => $nodeError
+            ]);
+            exit;
+        }
+        $nodeBody = [
+            'status' => 'sent',
+            'transport' => 'php_smtp_fallback',
+            'node_error' => $nodeError
+        ];
     }
-    $nodeBody = is_array($nodeRes['response'] ?? null) ? $nodeRes['response'] : [];
     $nodeThreadId = (string)($nodeBody['thread_id']
         ?? $nodeBody['node_thread_id']
         ?? $nodeBody['data']['thread_id']

@@ -3192,7 +3192,8 @@ body.candidate-page .candidate-form .file-upload-box.is-invalid {
     border: 1px solid #d7dde5;
     border-radius: 10px;
     background: #ffffff;
-    overflow: hidden;
+    overflow: visible;
+    position: relative;
 }
 
 .candidate-form.create-like-spacing .education-card .institution-search-input {
@@ -3227,6 +3228,18 @@ body.candidate-page .candidate-form .file-upload-box.is-invalid {
     box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.08);
 }
 
+/* Institution search panel needs the form-field to be a positioning context */
+.candidate-form.create-like-spacing .education-card .form-field:has(.institution-select-shell) {
+    position: relative;
+    overflow: visible !important;
+    z-index: 10;
+}
+
+/* Fallback for browsers without :has support */
+.candidate-form.create-like-spacing .education-card .institution-select-shell {
+    position: relative;
+}
+
 .candidate-form.create-like-spacing .education-card .institution-select-trigger:hover {
     background: #eef6ff;
     color: #075ea8;
@@ -3234,16 +3247,19 @@ body.candidate-page .candidate-form .file-upload-box.is-invalid {
 
 .candidate-form.create-like-spacing .education-card .institution-search-panel {
     display: none;
+    position: absolute;
+    left: 0;
+    top: 100%;
     width: 100%;
     max-height: 220px;
-    margin-top: 5px;
+    margin-top: 2px;
     padding: 5px;
     overflow-y: auto;
     border: 1px solid #d8e4f2;
     border-radius: 10px;
     background: #ffffff;
     box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
-    z-index: 20;
+    z-index: 200;
 }
 
 .candidate-form.create-like-spacing .education-card .institution-search-option,
@@ -8301,4 +8317,216 @@ body.candidate-page .candidate-form.employment-create-compact .employment-card-b
 .employment-create-compact .employment-overlap-row {
     border-top: 1px dashed rgba(234, 88, 12, 0.18);
     padding-top: 6px;
+}
+
+/* ============================================================
+   RESPONSIVE FIXES — appended
+   1. Basic Details: tablet (993–1199px) & mobile
+   4. Education card: tablet grid fix
+   5. Contact: permanent address proof section visibility
+   6. Reference: inner tab styling
+============================================================ */
+
+/* ---- Fix 1 & 4: Tablet (769px – 1100px) ---- */
+@media (max-width: 1100px) {
+    /* Basic details: switch to 2-col + photo on top */
+    body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        grid-auto-flow: row !important;
+    }
+
+    body.candidate-page .candidate-form.create-like-spacing .basic-field-first,
+    body.candidate-page .candidate-form.create-like-spacing .basic-field-middle,
+    body.candidate-page .candidate-form.create-like-spacing .basic-field-last,
+    body.candidate-page .candidate-form.create-like-spacing .basic-field-photo,
+    body.candidate-page .candidate-form.create-like-spacing .basic-field-fullname,
+    body.candidate-page .candidate-form.create-like-spacing .basic-field-gender,
+    body.candidate-page .candidate-form.create-like-spacing .basic-resume-inline,
+    body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid > :nth-child(n) {
+        grid-column: auto !important;
+        grid-row: auto !important;
+    }
+
+    /* Photo spans 2 cols on tablet so it stays prominent */
+    body.candidate-page .candidate-form.create-like-spacing .basic-field-photo {
+        grid-column: 1 / -1 !important;
+        align-self: auto !important;
+    }
+
+    body.candidate-page .candidate-form.create-like-spacing .basic-photo-card {
+        max-width: none !important;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 14px;
+    }
+
+    body.candidate-page .candidate-form.create-like-spacing .basic-photo-card .compact-photo {
+        width: 120px !important;
+        min-width: 120px !important;
+        height: 120px !important;
+        min-height: 120px !important;
+        max-height: 120px !important;
+        flex: 0 0 120px;
+    }
+
+    body.candidate-page .candidate-form.create-like-spacing .basic-photo-card .mobile-photo-actions {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+    }
+
+    /* Education card: 2-col on tablet */
+    body.candidate-page .candidate-form.create-like-spacing .education-card-body {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+
+    body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(1),
+    body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(2),
+    body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(3) {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        gap: 8px !important;
+    }
+
+    body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(1) > .form-field,
+    body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(2) > .form-field,
+    body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(3) > .form-field {
+        grid-column: auto !important;
+        grid-row: auto !important;
+    }
+
+    body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(4) {
+        grid-column: 1 / -1 !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+
+    body.candidate-page .candidate-form.create-like-spacing .education-card-body > .no-further-education-row {
+        grid-column: 1 / -1 !important;
+    }
+
+    /* Identification: 2-col proof blocks on tablet */
+    body.candidate-page .candidate-form.create-like-spacing .identification-proof-block {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+
+    body.candidate-page .candidate-form.create-like-spacing .identification-proof-block > .form-row-3 {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        gap: 8px !important;
+    }
+
+    body.candidate-page .candidate-form.create-like-spacing .identification-proof-block > .form-row-3 > .form-field,
+    body.candidate-page .candidate-form.create-like-spacing .identification-proof-block > .form-row-1 {
+        grid-column: auto !important;
+        grid-row: auto !important;
+    }
+
+    body.candidate-page .candidate-form.create-like-spacing .identification-proof-block > .proof-date-row {
+        grid-column: 1 / -1 !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+}
+
+/* ---- Fix 1: Mobile (≤ 600px) — single column, stacked photo ---- */
+@media (max-width: 600px) {
+    body.candidate-page .candidate-form.create-like-spacing .basic-compact-grid {
+        grid-template-columns: 1fr !important;
+    }
+
+    body.candidate-page .candidate-form.create-like-spacing .basic-photo-card {
+        flex-direction: column !important;
+        align-items: center !important;
+    }
+
+    body.candidate-page .candidate-form.create-like-spacing .basic-photo-card .compact-photo {
+        width: 100% !important;
+        max-width: 180px !important;
+        min-width: 0 !important;
+        height: 160px !important;
+        min-height: 160px !important;
+        max-height: 160px !important;
+        flex: none;
+    }
+
+    body.candidate-page .candidate-form.create-like-spacing .basic-photo-card .mobile-photo-actions {
+        flex-direction: row !important;
+        justify-content: center !important;
+        flex-wrap: wrap !important;
+    }
+
+    /* Education: single column on mobile */
+    body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(1),
+    body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(2),
+    body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(3) {
+        grid-template-columns: 1fr !important;
+    }
+
+    body.candidate-page .candidate-form.create-like-spacing .education-card-body > .compact-row:nth-child(4) {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+/* ---- Fix 5: Contact — permanent address proof shows only when different ---- */
+/* This is handled in JS (Contact.applyAddressMode), but add CSS helper class */
+.contact-permanent-proof-hidden {
+    display: none !important;
+}
+
+/* ---- Fix 6: Reference inner tabs styling ---- */
+body.candidate-page .candidate-form.reference-create-compact .reference-inner-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 4px 0;
+}
+
+body.candidate-page .candidate-form.reference-create-compact .reference-inner-tab {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 14px;
+    border: 1px solid rgba(4, 20, 24, 0.10);
+    border-radius: 999px;
+    background: #ffffff;
+    color: #516171;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    gap: 6px;
+}
+
+body.candidate-page .candidate-form.reference-create-compact .reference-inner-tab:hover {
+    background: rgba(5, 125, 219, 0.08);
+    border-color: rgba(5, 125, 219, 0.22);
+    color: var(--crm-primary, #057DDB);
+}
+
+body.candidate-page .candidate-form.reference-create-compact .reference-inner-tab.active {
+    background: linear-gradient(135deg, rgba(5, 125, 219, 0.12), rgba(12, 67, 107, 0.10));
+    border-color: rgba(5, 125, 219, 0.28);
+    color: var(--crm-text, #041418);
+    box-shadow: 0 4px 10px rgba(5, 125, 219, 0.10);
+}
+
+/* Reference section card spacing */
+body.candidate-page .candidate-form.reference-create-compact .reference-section-card {
+    padding: 14px 16px;
+    border: 1px solid rgba(4, 20, 24, 0.08);
+    border-radius: 14px;
+    background: #ffffff;
+    margin-top: 8px;
+}
+
+@media (max-width: 768px) {
+    body.candidate-page .candidate-form.reference-create-compact .reference-inner-tabs {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        -webkit-overflow-scrolling: touch;
+        padding-bottom: 4px;
+    }
+
+    body.candidate-page .candidate-form.reference-create-compact .reference-section-card .form-row-2,
+    body.candidate-page .candidate-form.reference-create-compact .reference-section-card .form-row-3 {
+        grid-template-columns: 1fr !important;
+    }
 }

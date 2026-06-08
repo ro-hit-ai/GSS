@@ -4,7 +4,6 @@ document.addEventListener('DOMContentLoaded', function () {
     var rowsHost = document.getElementById('vrBoardRows');
     var refreshBtn = document.getElementById('vrBoardRefreshBtn');
     var bucketHost = document.getElementById('vrBucketChips');
-    var stateHost = document.getElementById('vrStateChips');
     var compatNoteEl = document.getElementById('vrBoardCompatNote');
     var kpiPendingEl = document.getElementById('vrKpiPending');
     var kpiInProgressEl = document.getElementById('vrKpiInProgress');
@@ -13,8 +12,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var state = {
         rows: [],
-        bucket: 'pending',
-        stateFilter: 'all',
+        bucket: 'claimable',
         loading: false,
         claimInFlightKey: ''
     };
@@ -48,6 +46,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function bucketLabel(bucket) {
         var key = String(bucket || '').toLowerCase().trim();
+        if (key === 'claimable') return 'To Be Claimed';
+        if (key === 'active') return 'Active';
+        if (key === 'all') return 'All';
         if (key === 'pending') return 'Pending';
         if (key === 'completed') return 'Completed';
         if (key === 'followup') return 'Follow Up';
@@ -73,11 +74,15 @@ document.addEventListener('DOMContentLoaded', function () {
         if (s === 'mine_active' || s === 'followup') out.push('is-mine');
         if (s === 'claimed_by_other' || s === 'locked_future' || s === 'hidden_unrelated') out.push('is-locked');
         if (s === 'completed') out.push('is-completed');
-        if ((row && row.can_claim) || (row && row.can_open)) out.push('is-clickable');
+        if (row && row.can_open) out.push('is-clickable');
         return out.join(' ');
     }
 
-    function stateBadgeHtml(row) {
+    function stateBadgeHtml(row, bucket) {
+        var view = String(bucket || state.bucket || '').toLowerCase().trim();
+        if (view === 'claimable') return '<span class="vr-badge available">Claimable</span>';
+        if (view === 'active') return '<span class="vr-badge mine_active">Owned Active</span>';
+        if (view === 'completed') return '<span class="vr-badge completed_state">Completed</span>';
         var s = String(row && row.row_state ? row.row_state : '').toLowerCase().trim();
         var cls = s;
         if (s === 'followup') cls = 'followup_state';
@@ -85,8 +90,8 @@ document.addEventListener('DOMContentLoaded', function () {
         return '<span class="vr-badge ' + esc(cls) + '">' + esc(claimStateLabel(row)) + '</span>';
     }
 
-    function bucketBadgeHtml(row) {
-        var bucket = String(row && row.board_bucket ? row.board_bucket : '').toLowerCase().trim();
+    function bucketBadgeHtml(row, bucketOverride) {
+        var bucket = String(bucketOverride || (row && row.board_bucket ? row.board_bucket : '')).toLowerCase().trim();
         return '<span class="vr-badge ' + esc(bucket) + '">' + esc(bucketLabel(bucket)) + '</span>';
     }
 
@@ -109,43 +114,190 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function filteredRows() {
         return state.rows.filter(function (row) {
-            var bucketOk = String(row.board_bucket || '').toLowerCase() === state.bucket;
-            var stateKeys = Array.isArray(row.state_keys) ? row.state_keys : [];
-            var stateOk = state.stateFilter === 'all' || stateKeys.indexOf(state.stateFilter) >= 0;
-            return bucketOk && stateOk;
+        var stateKeys = Array.isArray(row.state_keys) ? row.state_keys : [];
+        if (String(row.row_state || '').toLowerCase().trim() === 'hidden_unrelated') return false;
+        if (state.bucket === 'claimable') return stateKeys.indexOf('claimable_next') >= 0;
+        if (state.bucket === 'active') return stateKeys.indexOf('owned_active') >= 0;
+        if (state.bucket === 'completed') return stateKeys.indexOf('completed') >= 0;
+        if (state.bucket === 'all') {
+            return stateKeys.indexOf('owned_active') >= 0
+                || stateKeys.indexOf('claimable_next') >= 0
+                || stateKeys.indexOf('completed') >= 0;
+        }
+        return false;
         });
     }
 
-    function updateKpis() {
-        var counts = {
-            pending: 0,
-            mineActive: 0,
-            followup: 0,
-            completed: 0
-        };
-        state.rows.forEach(function (row) {
-            var bucket = String(row.board_bucket || '').toLowerCase().trim();
-            var rowState = String(row.row_state || '').toLowerCase().trim();
-            if (bucket === 'pending' && rowState === 'available') counts.pending += 1;
-            if (rowState === 'mine_active') counts.mineActive += 1;
-            if (bucket === 'followup') counts.followup += 1;
-            if (bucket === 'completed') counts.completed += 1;
+    function componentStateLabel(stateKey) {
+        var s = String(stateKey || '').toLowerCase().trim();
+        if (s === 'context') return 'Context';
+        if (s === 'owned_active') return 'Owned';
+        if (s === 'claimable_next') return 'Claimable';
+        if (s === 'locked_future') return 'Locked';
+        if (s === 'completed') return 'Completed';
+        return s ? s.replace(/_/g, ' ') : '-';
+    }
+
+    function componentLockReason(item) {
+        var reason = String(item && item.reason ? item.reason : '').trim();
+        var code = String(item && item.reason_code ? item.reason_code : '').toLowerCase().trim();
+        if (reason) return reason;
+        if (code === 'case_gate_incomplete') return 'Finish earlier priority first';
+        if (code === 'higher_priority_bucket_pending') return 'Higher-priority workload pending';
+        if (code === 'already_assigned') return 'Already assigned';
+        if (code === 'no_capability') return 'No routing capability';
+        if (code === 'completed') return 'Completed';
+        return '';
+    }
+
+    function routingComponentEntries(row) {
+        var states = row && row.routing_component_states && typeof row.routing_component_states === 'object'
+            ? row.routing_component_states
+            : {};
+        return Object.keys(states).map(function (key) {
+            var item = states[key] || {};
+            return {
+                key: key,
+                label: String(item.label || key || '').trim(),
+                priority: item.priority ? parseInt(String(item.priority), 10) || 0 : 0,
+                state: String(item.state || '').toLowerCase().trim(),
+                reason: componentLockReason(item),
+                displayStatus: String(item.display_status || '').trim(),
+                history: Array.isArray(item.history) ? item.history : []
+            };
+        }).filter(function (entry) {
+            return entry.label && entry.state !== 'hidden_unrelated';
+        }).sort(function (a, b) {
+            if (a.state === 'context' && b.state !== 'context') return -1;
+            if (b.state === 'context' && a.state !== 'context') return 1;
+            if (a.priority !== b.priority) return a.priority - b.priority;
+            return a.label.localeCompare(b.label);
         });
-        if (kpiPendingEl) kpiPendingEl.textContent = String(counts.pending);
-        if (kpiInProgressEl) kpiInProgressEl.textContent = String(counts.mineActive);
-        if (kpiFollowUpEl) kpiFollowUpEl.textContent = String(counts.followup);
+    }
+
+    function priorityComponentGroups(row) {
+        var groups = {};
+        routingComponentEntries(row).forEach(function (entry) {
+            if (!entry.priority || entry.state === 'context' || entry.state === 'hidden_unrelated') return;
+            var key = String(entry.priority);
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(entry);
+        });
+        return Object.keys(groups).sort(function (a, b) {
+            return parseInt(a, 10) - parseInt(b, 10);
+        }).map(function (priority) {
+            return {
+                priority: priority,
+                entries: groups[priority].sort(function (a, b) {
+                    return a.label.localeCompare(b.label);
+                })
+            };
+        });
+    }
+
+    function componentEntriesStripHtml(entries) {
+        entries = Array.isArray(entries) ? entries.filter(function (entry) {
+            return entry && entry.label && entry.state !== 'hidden_unrelated';
+        }) : [];
+        if (!entries.length) return '<div class="vr-board-muted">No components in this work bucket</div>';
+
+        function displayStatus(entry) {
+            if (entry.state === 'claimable_next') return 'Claimable';
+            if (entry.state === 'owned_active') return 'Active';
+            if (entry.state === 'locked_future') return 'Locked';
+            return entry.displayStatus || componentStateLabel(entry.state);
+        }
+
+        function componentPill(entry) {
+            var historyTitle = entry.history.length
+                ? entry.history.map(function (it) {
+                    return [fmtDateTime(it.at || ''), String(it.status || it.event || '').trim(), String(it.message || '').trim()].filter(Boolean).join(' - ');
+                }).join('\n')
+                : '';
+            var title = historyTitle || entry.reason || entry.label;
+            return '<span class="vr-component-pill vr-work-component is-' + esc(entry.state || '') + '">' +
+                '<span class="vr-component-name" title="' + esc(entry.label) + '">' + esc(entry.label) + '</span>' +
+                '<span class="vr-component-status" title="' + esc(title) + '">' + esc(displayStatus(entry)) + '</span>' +
+            '</span>';
+        }
+
+        return '<div class="vr-component-strip vr-work-components">' + entries.map(componentPill).join('') + '</div>';
+    }
+
+    function componentStateStripHtml(row, group) {
+        var entries = group && Array.isArray(group.entries) ? group.entries : routingComponentEntries(row);
+        var priority = group && group.priority ? String(group.priority) : '';
+        var priorityHtml = priority ? '<span class="vr-component-tier">P' + esc(priority) + '</span>' : '';
+        return '<div class="vr-priority-line">' + priorityHtml + componentEntriesStripHtml(entries) + '</div>';
+    }
+
+    function priorityGroupState(group) {
+        var entries = group && Array.isArray(group.entries) ? group.entries : [];
+        var states = entries.map(function (entry) { return entry.state; });
+        if (states.indexOf('owned_active') >= 0) return 'owned_active';
+        if (states.indexOf('claimable_next') >= 0) return 'claimable_next';
+        if (states.indexOf('locked_future') >= 0) return 'locked_future';
+        if (states.length && states.every(function (stateKey) { return stateKey === 'completed'; })) return 'completed';
+        return states[0] || '';
+    }
+
+    function priorityGroupBadgeHtml(group) {
+        var groupState = priorityGroupState(group);
+        var label = groupState === 'owned_active'
+            ? 'Active'
+            : groupState === 'claimable_next'
+                ? 'Claimable'
+                : groupState === 'locked_future'
+                    ? 'Locked'
+                    : groupState === 'completed'
+                        ? 'Completed'
+                        : 'Pending';
+        var cls = groupState || 'pending';
+        return '<span class="vr-badge ' + esc(cls) + '">' + esc(label) + '</span>';
+    }
+
+    function claimButtonLabel(row) {
+        return 'Claim';
+    }
+
+    function appendPriorityBucket(url, priority) {
+        url = String(url || '').trim();
+        priority = String(priority || '').trim();
+        if (!url || !priority) return url;
+        var glue = url.indexOf('?') >= 0 ? '&' : '?';
+        return url + glue + 'priority_bucket=' + encodeURIComponent('p' + priority);
+    }
+
+    function priorityChildRowsHtml(row, key) {
+        return '';
+    }
+
+    function updateKpis() {
+        var counts = { claimable: 0, active: 0, all: 0, completed: 0 };
+        state.rows.forEach(function (row) {
+            if (String(row.row_state || '').toLowerCase().trim() === 'hidden_unrelated') return;
+            var stateKeys = Array.isArray(row.state_keys) ? row.state_keys : [];
+            if (stateKeys.indexOf('claimable_next') >= 0) counts.claimable += 1;
+            if (stateKeys.indexOf('owned_active') >= 0) counts.active += 1;
+            if (stateKeys.indexOf('completed') >= 0) counts.completed += 1;
+            if (stateKeys.indexOf('claimable_next') >= 0 || stateKeys.indexOf('owned_active') >= 0 || stateKeys.indexOf('completed') >= 0) counts.all += 1;
+        });
+        if (kpiPendingEl) kpiPendingEl.textContent = String(counts.claimable);
+        if (kpiInProgressEl) kpiInProgressEl.textContent = String(counts.active);
+        if (kpiFollowUpEl) kpiFollowUpEl.textContent = String(counts.all);
         if (kpiCompletedEl) kpiCompletedEl.textContent = String(counts.completed);
     }
 
     function updateChipLabels() {
         if (!bucketHost) return;
-        var counts = { pending: 0, completed: 0, followup: 0, insuff_docs: 0 };
+        var counts = { claimable: 0, active: 0, completed: 0, all: 0 };
         state.rows.forEach(function (row) {
+            if (String(row.row_state || '').toLowerCase().trim() === 'hidden_unrelated') return;
             var stateKeys = Array.isArray(row.state_keys) ? row.state_keys : [];
-            var stateOk = state.stateFilter === 'all' || stateKeys.indexOf(state.stateFilter) >= 0;
-            if (!stateOk) return;
-            var key = String(row.board_bucket || '').toLowerCase().trim();
-            if (Object.prototype.hasOwnProperty.call(counts, key)) counts[key] += 1;
+            if (stateKeys.indexOf('claimable_next') >= 0) counts.claimable += 1;
+            if (stateKeys.indexOf('owned_active') >= 0) counts.active += 1;
+            if (stateKeys.indexOf('completed') >= 0) counts.completed += 1;
+            if (stateKeys.indexOf('claimable_next') >= 0 || stateKeys.indexOf('owned_active') >= 0 || stateKeys.indexOf('completed') >= 0) counts.all += 1;
         });
         Array.prototype.slice.call(bucketHost.querySelectorAll('[data-bucket]')).forEach(function (btn) {
             var key = String(btn.getAttribute('data-bucket') || '').toLowerCase().trim();
@@ -156,35 +308,17 @@ document.addEventListener('DOMContentLoaded', function () {
         if (compatNoteEl) compatNoteEl.style.display = state.rows.length ? 'block' : 'none';
     }
 
-    function updateStateLabels() {
-        if (!stateHost) return;
-        Array.prototype.slice.call(stateHost.querySelectorAll('[data-state]')).forEach(function (btn) {
-            var key = String(btn.getAttribute('data-state') || '').toLowerCase().trim();
-            btn.classList.toggle('active', key === state.stateFilter);
-        });
-    }
-
     function renderRows() {
         if (!rowsHost) return;
         updateKpis();
         updateChipLabels();
-        updateStateLabels();
         var rows = filteredRows();
         if (!rows.length) {
-            rowsHost.innerHTML = '<div class="vr-empty">No cases in this bucket for the selected routing state.</div>';
+            rowsHost.innerHTML = '<div class="vr-empty">No cases in this work bucket.</div>';
             return;
         }
         rowsHost.innerHTML = rows.map(function (row) {
             var key = String(row.queue_row_id || '') + '|' + String(row.case_id || '');
-            var actionHtml = '';
-            if (row.can_claim) {
-                var disabled = state.claimInFlightKey && state.claimInFlightKey !== key;
-                actionHtml = '<button type="button" class="vr-action-btn claim" data-action="claim" data-row-key="' + esc(key) + '" data-case-id="' + esc(String(row.case_id || '')) + '"' + (disabled ? ' disabled' : '') + '>Claim</button>';
-            } else if (row.can_open) {
-                actionHtml = '<button type="button" class="vr-action-btn ' + (String(row.row_state || '') === 'completed' ? 'view' : 'open') + '" data-action="open" data-url="' + esc(String(row.open_url || '')) + '">' + (String(row.row_state || '') === 'completed' ? 'View' : 'Open') + '</button>';
-            } else {
-                actionHtml = '<button type="button" class="vr-action-btn" disabled>Readonly</button>';
-            }
             var claimedBy = String(row.assigned_user_name || '').trim();
             if (!claimedBy) claimedBy = '-';
             var claimedMeta = '';
@@ -193,17 +327,35 @@ document.addEventListener('DOMContentLoaded', function () {
             } else if (String(row.completed_at || '').trim()) {
                 claimedMeta = '<div class="vr-board-muted">Completed ' + esc(fmtDateTime(row.completed_at)) + '</div>';
             }
-            var tierText = routingTierText(row);
-            return ''
-                + '<div class="' + esc(rowClass(row)) + '" data-row-key="' + esc(key) + '" data-actionable="' + (row.can_claim || row.can_open ? '1' : '0') + '">'
+            var groups = priorityComponentGroups(row);
+            if (!groups.length) {
+                groups = [{ priority: '', entries: routingComponentEntries(row) }];
+            }
+            return groups.map(function (group) {
+                var groupState = priorityGroupState(group);
+                var actionHtml = '';
+                if (state.bucket === 'claimable' && row.can_claim && groupState === 'claimable_next') {
+                    var disabled = state.claimInFlightKey && state.claimInFlightKey !== key;
+                    actionHtml = '<button type="button" class="vr-action-btn claim" data-action="claim" data-row-key="' + esc(key) + '" data-case-id="' + esc(String(row.case_id || '')) + '" data-priority="' + esc(String(group.priority || '')) + '"' + (disabled ? ' disabled' : '') + '>' + esc(claimButtonLabel(row)) + '</button>';
+                } else if (row.can_open && (groupState === 'owned_active' || groupState === 'completed')) {
+                    var openText = state.bucket === 'completed' ? 'Open Report' : 'Open';
+                    actionHtml = '<button type="button" class="vr-action-btn ' + (state.bucket === 'completed' ? 'view' : 'open') + '" data-action="open" data-url="' + esc(appendPriorityBucket(row.open_url, group.priority)) + '">' + esc(openText) + '</button>';
+                } else if (groupState === 'locked_future') {
+                    actionHtml = '<span class="vr-board-child-state">Locked</span>';
+                } else {
+                    actionHtml = '<button type="button" class="vr-action-btn" disabled>Readonly</button>';
+                }
+                return ''
+                + '<div class="' + esc(rowClass(row)) + ' vr-board-priority-row" data-row-key="' + esc(key) + '" data-priority="' + esc(String(group.priority || '')) + '" data-open-url="' + esc(appendPriorityBucket(row.open_url, group.priority)) + '" data-actionable="' + (row.can_open && (groupState === 'owned_active' || groupState === 'completed') ? '1' : '0') + '">'
                 +   '<div class="vr-board-cell"><div class="vr-board-case">' + esc(row.application_id || '-') + '</div><div class="vr-board-muted">' + esc(String(row.workflow_mode || '').replace(/_/g, ' ')) + '</div></div>'
                 +   '<div class="vr-board-cell"><div class="vr-board-name">' + esc(((row.candidate_first_name || '') + ' ' + (row.candidate_last_name || '')).trim() || '-') + '</div></div>'
-                +   '<div class="vr-board-cell"><div>' + esc(row.component_summary_text || '-') + '</div><div class="vr-board-muted">' + esc(tierText || (row.component_summary || []).map(function (it) { return it.label || ''; }).filter(Boolean).join(' | ')) + '</div></div>'
-                +   '<div class="vr-board-cell">' + bucketBadgeHtml(row) + '</div>'
-                +   '<div class="vr-board-cell">' + stateBadgeHtml(row) + '</div>'
+                +   '<div class="vr-board-cell">' + componentStateStripHtml(row, group) + '</div>'
+                +   '<div class="vr-board-cell">' + bucketBadgeHtml(row, state.bucket) + '</div>'
+                +   '<div class="vr-board-cell">' + priorityGroupBadgeHtml(group) + '</div>'
                 +   '<div class="vr-board-cell"><div>' + esc(claimedBy) + '</div>' + claimedMeta + '</div>'
                 +   '<div class="vr-board-cell">' + actionHtml + '</div>'
                 + '</div>';
+            }).join('');
         }).join('');
     }
 
@@ -230,8 +382,28 @@ document.addEventListener('DOMContentLoaded', function () {
             });
     }
 
-    function claimRow(caseId, rowKey) {
+    function reportUrlForRow(row, priority) {
+        row = row || {};
+        var params = new URLSearchParams();
+        if (row.case_id) params.set('case_id', String(row.case_id));
+        if (row.application_id) params.set('application_id', String(row.application_id));
+        if (row.client_id) params.set('client_id', String(row.client_id));
+        params.set('board', '1');
+        params.set('view', 'active');
+        params.set('filter', 'active_work');
+        if (priority) params.set('priority_bucket', 'p' + String(priority));
+        return base + '/modules/verifier/candidate_view.php?' + params.toString();
+    }
+
+    function rowByKey(rowKey) {
+        return state.rows.find(function (it) {
+            return (String(it.queue_row_id || '') + '|' + String(it.case_id || '')) === String(rowKey || '');
+        }) || null;
+    }
+
+    function claimRow(caseId, rowKey, priority) {
         if (state.claimInFlightKey) return;
+        var targetRow = rowByKey(rowKey);
         state.claimInFlightKey = rowKey;
         renderRows();
         setMessage('', '');
@@ -244,13 +416,13 @@ document.addEventListener('DOMContentLoaded', function () {
             .then(function (res) { return res.json().catch(function () { return null; }).then(function (data) { return { ok: res.ok, data: data }; }); })
             .then(function (out) {
                 if (!out.ok || !out.data || out.data.status !== 1) {
-                    throw new Error((out.data && out.data.message) ? out.data.message : 'Unable to claim case');
+                    throw new Error((out.data && out.data.message) ? out.data.message : 'Unable to claim components');
                 }
-                setMessage('Case claimed successfully. You can open it now.', 'success');
-                return loadBoard();
+                window.location.assign(reportUrlForRow(targetRow || { case_id: caseId }, priority));
+                return null;
             })
             .catch(function (err) {
-                setMessage((err && err.message) ? err.message : 'Unable to claim case', 'warning');
+                setMessage((err && err.message) ? err.message : 'Unable to claim components', 'warning');
                 return loadBoard();
             })
             .finally(function () {
@@ -263,16 +435,7 @@ document.addEventListener('DOMContentLoaded', function () {
         bucketHost.addEventListener('click', function (e) {
             var btn = e.target && e.target.closest ? e.target.closest('[data-bucket]') : null;
             if (!btn) return;
-            state.bucket = String(btn.getAttribute('data-bucket') || 'pending').toLowerCase();
-            renderRows();
-        });
-    }
-
-    if (stateHost) {
-        stateHost.addEventListener('click', function (e) {
-            var btn = e.target && e.target.closest ? e.target.closest('[data-state]') : null;
-            if (!btn) return;
-            state.stateFilter = String(btn.getAttribute('data-state') || 'all').toLowerCase();
+            state.bucket = String(btn.getAttribute('data-bucket') || 'claimable').toLowerCase();
             renderRows();
         });
     }
@@ -283,7 +446,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (actionBtn) {
                 var action = String(actionBtn.getAttribute('data-action') || '');
                 if (action === 'claim') {
-                    claimRow(parseInt(String(actionBtn.getAttribute('data-case-id') || '0'), 10) || 0, String(actionBtn.getAttribute('data-row-key') || ''));
+                    claimRow(parseInt(String(actionBtn.getAttribute('data-case-id') || '0'), 10) || 0, String(actionBtn.getAttribute('data-row-key') || ''), String(actionBtn.getAttribute('data-priority') || ''));
                     return;
                 }
                 if (action === 'open') {
@@ -299,12 +462,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 return (String(it.queue_row_id || '') + '|' + String(it.case_id || '')) === rowKey;
             });
             if (!row) return;
-            if (row.can_claim) {
-                claimRow(parseInt(String(row.case_id || '0'), 10) || 0, rowKey);
-                return;
-            }
             if (row.can_open && row.open_url) {
-                window.location.assign(String(row.open_url));
+                window.location.assign(String(rowEl.getAttribute('data-open-url') || row.open_url));
             }
         });
     }

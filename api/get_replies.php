@@ -27,6 +27,8 @@ function normalize_component_key(string $value): string
     if ($v === 'contact_information' || $v === 'contact information') return 'contact';
     if ($v === 'education_details' || $v === 'education details') return 'education';
     if ($v === 'employment_details' || $v === 'employment details') return 'employment';
+    if ($v === 'education_reference' || $v === 'education reference') return 'education_reference';
+    if ($v === 'employment_reference' || $v === 'employment reference') return 'employment_reference';
     if ($v === 'social_media' || $v === 'social media') return 'socialmedia';
     if ($v === 'e-court' || $v === 'e_court' || $v === 'e court') return 'ecourt';
     if ($v === 'references') return 'reference';
@@ -38,6 +40,8 @@ function infer_component_from_text(string $subject, string $body = ''): string
     $haystack = strtolower(trim($subject . ' ' . $body));
     if ($haystack === '') return '';
     $map = [
+        'education_reference' => ['education reference', 'education_reference'],
+        'employment_reference' => ['employment reference', 'employment_reference'],
         'basic' => ['basic details', 'basic'],
         'id' => ['identification', ' id '],
         'contact' => ['contact information', 'contact'],
@@ -308,6 +312,7 @@ try {
     $hasActorName = table_has_column($pdo, $wcTable, 'actor_name');
     $hasDelivery = table_has_column($pdo, $wcTable, 'delivery_status');
     $hasType = table_has_column($pdo, $wcTable, 'communication_type');
+    $hasActionKey = table_has_column($pdo, $wcTable, 'action_key');
     $hasMessageId = table_has_column($pdo, $wcTable, 'message_id');
     $hasInReplyTo = table_has_column($pdo, $wcTable, 'in_reply_to');
     $hasReferences = table_has_column($pdo, $wcTable, 'references_header');
@@ -321,6 +326,7 @@ try {
         . ($hasActorName ? ', actor_name' : ', sent_by_name AS actor_name')
         . ($hasDelivery ? ', delivery_status' : ", 'sent' AS delivery_status")
         . ($hasType ? ', communication_type' : ", '' AS communication_type")
+        . ($hasActionKey ? ', action_key' : ", '' AS action_key")
         . ($hasMessageId ? ', message_id' : ", '' AS message_id")
         . ($hasInReplyTo ? ', in_reply_to' : ", '' AS in_reply_to")
         . ($hasReferences ? ', references_header' : ", '' AS references_header")
@@ -360,6 +366,7 @@ try {
             'direction' => (string)($row['direction'] ?? ''),
             'delivery_status' => (string)($row['delivery_status'] ?? ''),
             'communication_type' => (string)($row['communication_type'] ?? ''),
+            'action_key' => (string)($row['action_key'] ?? ''),
             'actor_role' => (string)($row['actor_role'] ?? $row['role_key'] ?? ''),
             'message_id' => (string)($row['message_id'] ?? ''),
             'in_reply_to' => (string)($row['in_reply_to'] ?? ''),
@@ -450,7 +457,6 @@ try {
         if ($resolvedOwnerRole === '') {
             $resolvedOwnerRole = normalize_thread_owner_role((string)($d['thread_owner_role'] ?? ''));
         }
-        unset($d['subject']);
     }
     unset($d);
     $lastIncoming = null;

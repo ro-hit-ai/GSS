@@ -200,6 +200,9 @@
         function getSelectedView() {
             if (!viewSelect) return 'mine';
             var v = String(viewSelect.value || 'mine').toLowerCase();
+            if (v === 'claimable') return 'claimable';
+            if (v === 'active') return 'active';
+            if (v === 'all') return 'all';
             if (v === 'available') return 'available';
             if (v === 'followup') return 'followup';
             if (v === 'participated') return 'participated';
@@ -223,7 +226,7 @@
 
         function normalizeView(v) {
             var x = String(v || '').toLowerCase().trim();
-            if (x === 'available' || x === 'mine' || x === 'followup' || x === 'participated' || x === 'history' || x === 'completed') {
+            if (x === 'claimable' || x === 'active' || x === 'all' || x === 'available' || x === 'mine' || x === 'followup' || x === 'participated' || x === 'history' || x === 'completed') {
                 return x;
             }
             return '';

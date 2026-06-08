@@ -564,3 +564,11 @@
 [2026-06-03 14:14:06] submit notify: candidate_email=256testingtest123@gmail.com client_id=3 job_role=SDE
 [2026-06-03 14:14:09] submit notify: candidate_confirmation_sent=yes
 [2026-06-03 14:14:12] submit notify: internal_recipient_count=1 internal_sent_count=1
+[2026-06-06 13:20:45] verifier-first shadow validator applied: groups=BASIC,ADDITIONAL,EDUCATION,REPORTS; unassigned=; application_id=APP-20260606130845482
+[2026-06-06 13:20:45] candidate workflow transition: rows updated=10; application_id=APP-20260606130845482
+[2026-06-06 13:20:45] verifier-first shadow validator ready: rows updated=0; application_id=APP-20260606130845482
+[2026-06-06 13:20:45] submit notify: start application_id=APP-20260606130845482
+[2026-06-06 13:20:45] submit notify: row_found=yes
+[2026-06-06 13:20:45] submit notify: candidate_email=256testingtest123@gmail.com client_id=3 job_role=SDE
+[2026-06-06 13:20:50] submit notify: candidate_confirmation_sent=yes
+[2026-06-06 13:20:53] submit notify: internal_recipient_count=1 internal_sent_count=1

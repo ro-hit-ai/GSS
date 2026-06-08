@@ -365,17 +365,21 @@ if ($displayFullName === '') {
                 <div class="file-upload-box basic-resume-inline-box" data-file-upload>
                     <div class="file-upload-row">
                         <button type="button" class="file-upload-btn" data-file-choose data-file-target="resumeInput">Choose File</button>
-                        <button type="button" class="file-upload-name<?php echo $resumeOriginalName !== '' ? ' preview-btn' : ''; ?>" data-file-name disabled><?= $resumeOriginalName !== '' ? htmlspecialchars($resumeOriginalName) : 'No file chosen' ?></button>
+                        <button type="button"
+                                class="file-upload-name<?php echo $resumeOriginalName !== '' ? ' preview-btn' : ''; ?>"
+                                data-file-name
+                                <?php echo $resumeOriginalName !== '' ? '' : 'disabled'; ?>
+                                <?php if ($resumeOriginalName !== '' && $resumeUrl !== ''): ?>
+                                    data-url="<?= htmlspecialchars($resumeUrl) ?>"
+                                    data-name="<?= htmlspecialchars($resumeOriginalName) ?>"
+                                    data-type="pdf"
+                                <?php endif; ?>
+                        ><?= $resumeOriginalName !== '' ? htmlspecialchars($resumeOriginalName) : 'No file chosen' ?></button>
                         <button type="button" class="file-upload-remove" data-file-remove aria-label="Remove resume" style="<?= $resumeOriginalName !== '' ? '' : 'display:none;' ?>">
                             <i class="fas fa-times"></i>
                         </button>
                     </div>
                     <div class="file-upload-error" data-file-error></div>
-                    <?php if ($resumeUrl !== ''): ?>
-                        <div class="compact-hint mt-1">
-                            <a href="<?= htmlspecialchars($resumeUrl) ?>" target="_blank" rel="noopener">View current resume</a>
-                        </div>
-                    <?php endif; ?>
                 </div>
             </div>
         </div>

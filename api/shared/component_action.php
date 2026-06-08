@@ -881,14 +881,19 @@ try {
         if ($role === 'verifier') {
             $routingState = verifier_routing_case_state($pdo, $caseId, $userId);
             $ownedActive = array_flip(array_map('strval', $routingState['owned_active_components'] ?? []));
-            if (!isset($ownedActive[$componentKey])) {
+            $componentRouting = $routingState['components'][$componentKey] ?? [];
+            $componentState = (string)($componentRouting['state'] ?? 'hidden_unrelated');
+            $isAssignedCompleted = $componentState === 'completed'
+                && strtolower(trim((string)($componentRouting['assigned_role'] ?? ''))) === 'verifier'
+                && (int)($componentRouting['assigned_user_id'] ?? 0) === $userId;
+            if (!isset($ownedActive[$componentKey]) && !$isAssignedCompleted) {
                 http_response_code(403);
                 echo json_encode([
                     'status' => 0,
                     'message' => 'Component is not active for your current routing tier',
                     'data' => [
-                        'component_state' => $routingState['components'][$componentKey]['state'] ?? 'hidden_unrelated',
-                        'reason' => $routingState['components'][$componentKey]['reason'] ?? 'Not assigned to this component'
+                        'component_state' => $componentState,
+                        'reason' => $componentRouting['reason'] ?? 'Not assigned to this component'
                     ]
                 ]);
                 exit;
@@ -1018,14 +1023,6 @@ try {
                 ]);
                 exit;
             }
-            if ($cur === 'rejected' && $action === 'approve' && $reason === '') {
-                http_response_code(409);
-                echo json_encode([
-                    'status' => 0,
-                    'message' => 'Reason is required to approve a rejected item.'
-                ]);
-                exit;
-            }
         } catch (Throwable $e) {
             projection_debug_log('lifecycle_open_count_advance_failed', [
                 'case_id' => $caseId,
@@ -1135,14 +1132,6 @@ try {
                         'current_status' => ($cur !== '' ? $cur : 'pending'),
                         'allowed_actions' => allowed_actions_for_status($cur),
                     ]
-                ]);
-                exit;
-            }
-            if ($cur === 'rejected' && $action === 'approve' && $reason === '') {
-                http_response_code(409);
-                echo json_encode([
-                    'status' => 0,
-                    'message' => 'Reason is required to approve a rejected item.'
                 ]);
                 exit;
             }

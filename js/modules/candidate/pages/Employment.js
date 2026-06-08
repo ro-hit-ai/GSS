@@ -283,6 +283,12 @@ class EmploymentManager extends TabManager {
             }
         }
 
+        this.debugEmploymentDates('reload-populate-card', {
+            cardIndex: index + 1,
+            sourceJoiningDate: data.joining_date || '',
+            sourceRelievingDate: data.relieving_date || '',
+            sourceEmploymentStatus: data.employment_status || ''
+        });
         this.refreshTimelineIntelligence();
         this.applyEmploymentLayoutReset();
         console.log(`✅ Card ${index} populated successfully`);
@@ -375,27 +381,37 @@ class EmploymentManager extends TabManager {
         const index = parseInt(card.dataset.cardIndex || '-1', 10);
         if (index < 0) return;
 
-        const lastVisibleIndex = Math.max(0, (this.visibleEmploymentCount || 1) - 1);
-        const canContinue = !this.isFresher && index === lastVisibleIndex && index < this.maxEmploymentCount - 1;
-        if (!trigger.checked || !canContinue) {
-            trigger.checked = false;
+        const visibleCount = Math.max(1, this.visibleEmploymentCount || 1);
+        const isLastVisible = index === visibleCount - 1;
+
+        if (trigger.checked) {
+            const canContinue = !this.isFresher && isLastVisible && index < this.maxEmploymentCount - 1;
+            if (!canContinue) {
+                this.refreshEmploymentState();
+                return;
+            }
+
+            if (!this.cards[index + 1]) {
+                this.addCard(index + 1, null);
+                this.fullEmploymentCount = this.cards.filter(Boolean).length;
+            }
+
+            this.visibleEmploymentCount = Math.min(index + 2, this.maxEmploymentCount);
+            this.currentTab = this.visibleEmploymentCount - 1;
+            this.persistVisibleEmploymentCount();
             this.refreshEmploymentState();
             return;
         }
 
-        if (!this.cards[index + 1]) {
-            this.addCard(index + 1, null);
-            this.fullEmploymentCount = this.cards.filter(Boolean).length;
+        if (index < visibleCount - 1) {
+            this.visibleEmploymentCount = Math.max(1, index + 1);
+            this.currentTab = Math.min(index, this.visibleEmploymentCount - 1);
+            this.persistVisibleEmploymentCount();
+            this.refreshEmploymentState();
+            return;
         }
 
-        this.cards.forEach((otherCard) => {
-            const otherCheckbox = otherCard?.querySelector('.no-further-employment-checkbox');
-            if (otherCheckbox) otherCheckbox.checked = false;
-        });
-
-        this.visibleEmploymentCount = Math.min(index + 2, this.maxEmploymentCount);
-        this.currentTab = this.visibleEmploymentCount - 1;
-        this.persistVisibleEmploymentCount();
+        trigger.checked = false;
         this.refreshEmploymentState();
     }
 
@@ -801,6 +817,28 @@ class EmploymentManager extends TabManager {
         }
     }
 
+    debugEmploymentDates(stage, extra = {}) {
+        try {
+            const dates = this.cards.map((card, index) => {
+                if (!card) return null;
+                return {
+                    index: index + 1,
+                    visible: index < (this.visibleEmploymentCount || this.cards.length || 1),
+                    joining_date: card.querySelector('[name="joining_date[]"]')?.value || '',
+                    relieving_date: card.querySelector('[name="relieving_date[]"]')?.value || '',
+                    employment_status: card.querySelector('[name="employment_status[]"]')?.value || ''
+                };
+            }).filter(Boolean);
+            console.debug('[Employment date debug]', stage, {
+                visibleEmploymentCount: this.visibleEmploymentCount,
+                fullEmploymentCount: this.fullEmploymentCount,
+                dates,
+                ...extra
+            });
+        } catch (_e) {
+        }
+    }
+
     restoreVisibleEmploymentCount() {
         try {
             const scopedKey = this.getNoFurtherEmploymentStorageKey();
@@ -864,11 +902,11 @@ class EmploymentManager extends TabManager {
             const checkbox = card.querySelector('.no-further-employment-checkbox');
             if (!row || !checkbox) return;
 
-            const isLastVisible = index === total - 1;
-            const canContinue = !this.isFresher && isLastVisible && index < this.maxEmploymentCount - 1;
+            const isVisible = index < total;
+            const canContinue = !this.isFresher && isVisible && index < this.maxEmploymentCount - 1;
             row.style.display = canContinue ? '' : 'none';
             checkbox.disabled = !canContinue;
-            checkbox.checked = false;
+            checkbox.checked = canContinue && index < total - 1;
         });
     }
 
@@ -1348,6 +1386,13 @@ class EmploymentManager extends TabManager {
                 formData.set(`insufficient_employment_docs[${index}]`, '0');
             });
             formData.set('draft', isDraft ? '1' : '0');
+            this.debugEmploymentDates('before-save');
+            console.debug('[Employment date debug]', 'sent-to-api', {
+                visibleEmploymentCount: formData.get('visibleEmploymentCount') || '',
+                joining_date: formData.getAll('joining_date[]'),
+                relieving_date: formData.getAll('relieving_date[]'),
+                employment_status: formData.getAll('employment_status[]')
+            });
 
             console.log('📦 Form data prepared:', {
                 draft: isDraft,

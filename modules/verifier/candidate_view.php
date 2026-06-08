@@ -10,8 +10,10 @@ $caseId = isset($_GET['case_id']) ? (int)$_GET['case_id'] : 0;
 $fromBoard = isset($_GET['board']) && (string)$_GET['board'] === '1';
 $view = isset($_GET['view']) ? strtolower(trim((string)$_GET['view'])) : '';
 $filter = isset($_GET['filter']) ? strtolower(trim((string)$_GET['filter'])) : '';
-$allowedViews = ['mine', 'available', 'followup', 'participated', 'history', 'completed'];
+$priorityBucket = isset($_GET['priority_bucket']) ? strtolower(trim((string)$_GET['priority_bucket'])) : '';
+$allowedViews = ['mine', 'available', 'claimable', 'active', 'all', 'followup', 'participated', 'history', 'completed'];
 $allowedFilters = ['all', 'active_work', 'awaiting_evaluation', 'waiting_candidate', 'evaluated', 'reopened', 'downstream_processing', 'review_complete'];
+$allowedPriorityBuckets = ['p1', 'p2', 'p3'];
 
 if ($applicationId === '' && $caseId > 0) {
     require_once __DIR__ . '/../../config/db.php';
@@ -72,6 +74,10 @@ if ($applicationId !== '') {
 
 if ($clientId > 0) {
     $target .= '&client_id=' . urlencode((string)$clientId);
+}
+
+if (in_array($priorityBucket, $allowedPriorityBuckets, true)) {
+    $target .= '&priority_bucket=' . urlencode($priorityBucket);
 }
 
 if (in_array($view, $allowedViews, true)) {

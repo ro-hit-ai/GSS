@@ -50,6 +50,8 @@ try {
         'education' => 'education',
         'employment' => 'employment',
         'reference' => 'reference',
+        'education_reference' => 'reference',
+        'employment_reference' => 'reference',
     ];
     $allowedPages = ['review-confirmation'];
     foreach ($allowed as $c) {

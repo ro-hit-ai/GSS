@@ -159,6 +159,9 @@ try {
         exit;
     }
 
+    if (function_exists('verifier_case_queue_ensure_table')) {
+        verifier_case_queue_ensure_table($pdo);
+    }
     $pdo->beginTransaction();
     $token = ccs_new_token();
     $componentsJson = json_encode($components, JSON_UNESCAPED_UNICODE);
@@ -205,7 +208,16 @@ try {
     $mailSent = ccs_send_mail($pdo, $case, $components, $reason, $token, $role);
     try {
         ccs_log_workflow_communication($pdo, $caseId, $applicationId, $components, $reason, $userId, $userName, $role, 'app:' . strtolower($applicationId));
-        ccs_timeline($pdo, $applicationId, $userId, $role, 'candidate_correction', 'Correction session requested | components: ' . implode(', ', $components) . ($reason !== '' ? (' | reason: ' . $reason) : ''));
+        $timelineComponents = [];
+        foreach ($components as $component) {
+            $componentKey = ccs_component_norm((string)$component);
+            if ($componentKey !== '') {
+                $timelineComponents[$componentKey] = true;
+            }
+        }
+        foreach (array_keys($timelineComponents) as $componentKey) {
+            ccs_timeline($pdo, $applicationId, $userId, $role, $componentKey, 'Correction session requested | component: ' . $componentKey . ($reason !== '' ? (' | reason: ' . $reason) : ''));
+        }
     } catch (Throwable $e) {
     }
 

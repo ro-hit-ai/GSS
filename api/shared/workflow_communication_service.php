@@ -466,6 +466,8 @@ function wc_reply_component_from_subject(string $subject, string $message = ''):
     if ($haystack === '') return '';
 
     $map = [
+        'education_reference' => ['education reference', 'education_reference'],
+        'employment_reference' => ['employment reference', 'employment_reference'],
         'basic' => ['basic details', 'basic'],
         'id' => ['identification', 'id'],
         'contact' => ['contact information', 'contact'],

@@ -91,6 +91,24 @@ class Reference {
     static resolveActiveSections() {
         const counts = this.getRequiredCounts();
         const config = this.getConfig();
+        const correction = config && config.correction_mode ? (config.correction_context || {}) : {};
+        const correctionComponents = Array.isArray(correction.components) ? correction.components : [];
+        const correctionSet = correctionComponents.reduce((acc, item) => {
+            const key = String(item || '').trim().toLowerCase();
+            if (key) acc[key] = true;
+            return acc;
+        }, {});
+        if (config && config.correction_mode) {
+            if (correctionSet.education_reference || correctionSet.employment_reference) {
+                const scoped = [];
+                if (correctionSet.education_reference) scoped.push('education_reference');
+                if (correctionSet.employment_reference) scoped.push('employment_reference');
+                return scoped;
+            }
+            if (correctionSet.reference) {
+                return ['education_reference', 'employment_reference'];
+            }
+        }
         const sectionMap = config && config.reference_sections
             ? config.reference_sections
             : ((config && config.sections && config.sections.reference) ? config.sections.reference : {});
@@ -176,7 +194,7 @@ class Reference {
             }
         });
 
-        if (tabsWrap) tabsWrap.style.display = (hasEducation && hasEmployment) ? '' : 'none';
+        if (tabsWrap) tabsWrap.style.display = (hasEducation || hasEmployment) ? '' : 'none';
         if (noSectionMessage) noSectionMessage.style.display = activeSections.length ? 'none' : 'block';
 
         if (hasEducation) {
@@ -231,7 +249,7 @@ class Reference {
             tab.className = `${type === 'education' ? 'education' : 'employment'}-tab tab-item reference-inner-tab`;
             tab.dataset.referenceType = type;
             tab.dataset.index = String(index);
-            tab.innerHTML = `${type === 'education' ? 'Education Ref' : 'Employment Ref'} ${index + 1} <span class="tab-dot">•</span>`;
+            tab.innerHTML = `Reference ${index + 1} <span class="tab-dot">•</span>`;
             tab.addEventListener('click', () => this.showInnerTab(type, index));
             tabs.appendChild(tab);
         }
@@ -288,17 +306,31 @@ class Reference {
         if (!group) return;
 
         const isLastVisible = index === group.visibleCount - 1;
-        if (!checkbox.checked || !isLastVisible || group.visibleCount >= this._maxReferences) {
-            checkbox.checked = false;
-            this.updateContinuation(type);
-            return;
-        }
 
-        this.captureGroupValues(type);
-        group.visibleCount += 1;
-        group.currentIndex = group.visibleCount - 1;
-        if (!group.rows[group.currentIndex]) group.rows[group.currentIndex] = {};
-        this.renderGroup(type);
+        if (checkbox.checked) {
+            if (!isLastVisible || group.visibleCount >= this._maxReferences) {
+                this.updateContinuation(type);
+                return;
+            }
+
+            this.captureGroupValues(type);
+            group.visibleCount += 1;
+            group.currentIndex = group.visibleCount - 1;
+            if (!group.rows[group.currentIndex]) group.rows[group.currentIndex] = {};
+            this.renderGroup(type);
+            this.showInnerTab(type, group.currentIndex);
+        } else {
+            if (index < group.visibleCount - 1) {
+                this.captureGroupValues(type);
+                group.visibleCount = Math.max(1, index + 1);
+                group.currentIndex = Math.min(index, group.visibleCount - 1);
+                this.renderGroup(type);
+                this.showInnerTab(type, group.currentIndex);
+            } else {
+                checkbox.checked = false;
+                this.updateContinuation(type);
+            }
+        }
     }
 
     static updateContinuation(type) {
@@ -309,13 +341,13 @@ class Reference {
             const row = card.querySelector('.reference-continuation-row');
             const checkbox = card.querySelector('.reference-continuation-checkbox');
             const label = card.querySelector('[data-continuation-label]');
-            const isLast = index === group.visibleCount - 1;
-            const canContinue = isLast && group.visibleCount < this._maxReferences;
+            const canContinue = index < this._maxReferences - 1;
+            const showRow = canContinue && index < group.visibleCount;
 
-            if (row) row.style.display = canContinue ? '' : 'none';
+            if (row) row.style.display = showRow ? '' : 'none';
             if (checkbox) {
-                checkbox.disabled = !canContinue;
-                checkbox.checked = false;
+                checkbox.disabled = !showRow;
+                checkbox.checked = showRow && index < group.visibleCount - 1;
             }
             if (label) {
                 label.textContent = type === 'education'

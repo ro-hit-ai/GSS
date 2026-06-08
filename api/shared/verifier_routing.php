@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/case_component_binding.php';
 
 function verifier_routing_components(): array
 {
@@ -253,7 +254,85 @@ function verifier_routing_priority_for_component(array $priorityMap, string $com
     return 99;
 }
 
-function verifier_routing_case_component_rows(PDO $pdo, int $caseId): array
+function verifier_routing_reference_targets_for_case(PDO $pdo, int $caseId, array $capabilities): array
+{
+    $targets = [];
+    try {
+        $config = case_component_binding_build_for_case($pdo, $caseId, '');
+        foreach (($config['required_components'] ?? []) as $componentKey) {
+            $key = verifier_routing_normalize_component((string)$componentKey);
+            if ($key === 'education_reference' || $key === 'employment_reference') {
+                $targets[$key] = true;
+            }
+        }
+    } catch (Throwable $e) {
+    }
+
+    if (!$targets) {
+        foreach ($capabilities as $capability) {
+            if (!is_array($capability)) continue;
+            $key = verifier_routing_normalize_component((string)($capability['component_key'] ?? ''));
+            if ($key === 'education_reference' || $key === 'employment_reference') {
+                $targets[$key] = true;
+            }
+        }
+    }
+
+    return array_keys($targets);
+}
+
+function verifier_routing_expand_reference_rows(PDO $pdo, int $caseId, array $rows, array $capabilities): array
+{
+    $hasSplitReference = false;
+    $genericRows = [];
+    $out = [];
+
+    foreach ($rows as $row) {
+        $key = verifier_routing_normalize_component((string)($row['component_key'] ?? ''));
+        if ($key === 'education_reference' || $key === 'employment_reference') {
+            $hasSplitReference = true;
+        }
+    }
+
+    foreach ($rows as $row) {
+        $key = verifier_routing_normalize_component((string)($row['component_key'] ?? ''));
+        if ($key === 'reference') {
+            $genericRows[] = $row;
+            if ($hasSplitReference) continue;
+        }
+        $out[] = $row;
+    }
+
+    if (!$hasSplitReference && $genericRows) {
+        $targets = verifier_routing_reference_targets_for_case($pdo, $caseId, $capabilities);
+        if ($targets) {
+            foreach ($genericRows as $genericRow) {
+                foreach ($targets as $targetKey) {
+                    $row = $genericRow;
+                    $row['component_key'] = $targetKey;
+                    $out[] = $row;
+                }
+            }
+            $out = array_values(array_filter($out, function ($row) {
+                return verifier_routing_normalize_component((string)($row['component_key'] ?? '')) !== 'reference';
+            }));
+        }
+    }
+
+    $seen = [];
+    $deduped = [];
+    foreach ($out as $row) {
+        $key = verifier_routing_normalize_component((string)($row['component_key'] ?? ''));
+        if ($key === '') continue;
+        if (isset($seen[$key])) continue;
+        $seen[$key] = true;
+        $row['component_key'] = $key;
+        $deduped[] = $row;
+    }
+    return $deduped;
+}
+
+function verifier_routing_case_component_rows(PDO $pdo, int $caseId, array $capabilities = []): array
 {
     if ($caseId <= 0) return [];
     try {
@@ -272,7 +351,8 @@ function verifier_routing_case_component_rows(PDO $pdo, int $caseId): array
                 AND COALESCE(c.is_required, 1) = 1"
         );
         $st->execute([$caseId]);
-        return $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        return verifier_routing_expand_reference_rows($pdo, $caseId, $rows, $capabilities);
     } catch (Throwable $e) {
         return [];
     }
@@ -332,19 +412,28 @@ function verifier_routing_pending_higher_priority_count(PDO $pdo, int $userId, i
     }
 
     $count = 0;
+    $rowsByCase = [];
     foreach ($rows as $row) {
         $caseId = (int)($row['case_id'] ?? 0);
+        if ($caseId <= 0) continue;
+        $rowsByCase[$caseId][] = $row;
+    }
+
+    foreach ($rowsByCase as $caseId => $caseRows) {
+        $caseId = (int)$caseId;
         if ($excludeCaseId > 0 && $caseId === $excludeCaseId) continue;
-        $key = verifier_routing_normalize_component((string)($row['component_key'] ?? ''));
-        if (!verifier_routing_is_routeable($key)) continue;
-        if (!verifier_routing_component_has_capability($capabilities, $key)) continue;
-        $priority = verifier_routing_priority_for_component($priorityMap, $key);
-        if ($priority <= 0 || $priority >= $targetPriority) continue;
-        if (verifier_routing_status_is_complete((string)($row['verifier_status'] ?? ''))) continue;
-        $assignedRole = strtolower(trim((string)($row['assigned_role'] ?? '')));
-        $assignedUserId = (int)($row['assigned_user_id'] ?? 0);
-        if ($assignedUserId > 0 && !($assignedRole === 'verifier' && $assignedUserId === $userId)) continue;
-        $count++;
+        foreach (verifier_routing_expand_reference_rows($pdo, $caseId, $caseRows, $capabilities) as $row) {
+            $key = verifier_routing_normalize_component((string)($row['component_key'] ?? ''));
+            if (!verifier_routing_is_routeable($key)) continue;
+            if (!verifier_routing_component_has_capability($capabilities, $key)) continue;
+            $priority = verifier_routing_priority_for_component($priorityMap, $key);
+            if ($priority <= 0 || $priority >= $targetPriority) continue;
+            if (verifier_routing_status_is_complete((string)($row['verifier_status'] ?? ''))) continue;
+            $assignedRole = strtolower(trim((string)($row['assigned_role'] ?? '')));
+            $assignedUserId = (int)($row['assigned_user_id'] ?? 0);
+            if ($assignedUserId > 0 && !($assignedRole === 'verifier' && $assignedUserId === $userId)) continue;
+            $count++;
+        }
     }
     return $count;
 }
@@ -353,7 +442,7 @@ function verifier_routing_case_state(PDO $pdo, int $caseId, int $userId): array
 {
     $capabilities = verifier_routing_fetch_user_capabilities($pdo, $userId);
     $priorityMap = verifier_routing_capability_priority_map($capabilities);
-    $caseRows = verifier_routing_case_component_rows($pdo, $caseId);
+    $caseRows = verifier_routing_case_component_rows($pdo, $caseId, $capabilities);
     $components = [];
     $ownedActive = [];
     $claimableNext = [];
@@ -394,7 +483,7 @@ function verifier_routing_case_state(PDO $pdo, int $caseId, int $userId): array
         $state = 'hidden_unrelated';
         $reasonCode = 'no_capability';
         $caseGatePasses = $hasCapability ? verifier_routing_case_gate_passes($caseRows, $priorityMap, $priority) : false;
-        $bucketPending = $hasCapability ? verifier_routing_pending_higher_priority_count($pdo, $userId, $priority, $caseId) : 0;
+        $bucketPending = 0;
 
         if (!$hasCapability) {
             $hiddenUnrelated[] = $key;
@@ -420,10 +509,6 @@ function verifier_routing_case_state(PDO $pdo, int $caseId, int $userId): array
         } elseif (!$caseGatePasses) {
             $state = 'locked_future';
             $reasonCode = 'case_gate_incomplete';
-            $lockedFuture[] = $key;
-        } elseif ($bucketPending > 0) {
-            $state = 'locked_future';
-            $reasonCode = 'higher_priority_bucket_pending';
             $lockedFuture[] = $key;
         } else {
             $state = 'claimable_next';
@@ -472,17 +557,10 @@ function verifier_routing_user_matching_components(PDO $pdo, int $caseId, int $u
     $caps = verifier_routing_fetch_user_capabilities($pdo, $userId);
     if (!$caps) return [];
 
-    $st = $pdo->prepare(
-        "SELECT DISTINCT LOWER(TRIM(component_key)) AS component_key
-           FROM Vati_Payfiller_Case_Components
-          WHERE case_id = ?
-            AND COALESCE(is_required, 1) = 1"
-    );
-    $st->execute([$caseId]);
-    $caseComponents = $st->fetchAll(PDO::FETCH_COLUMN) ?: [];
+    $caseRows = verifier_routing_case_component_rows($pdo, $caseId, $caps);
     $out = [];
-    foreach ($caseComponents as $caseComponent) {
-        $caseKey = verifier_routing_normalize_component((string)$caseComponent);
+    foreach ($caseRows as $row) {
+        $caseKey = verifier_routing_normalize_component((string)($row['component_key'] ?? ''));
         if (!verifier_routing_is_routeable($caseKey)) continue;
         foreach ($caps as $capability) {
             if (verifier_routing_component_matches((string)$capability['component_key'], $caseKey)) {
@@ -499,17 +577,10 @@ function verifier_routing_best_priority_for_case(PDO $pdo, int $caseId, int $use
     if ($caseId <= 0 || $userId <= 0) return 99;
     $caps = verifier_routing_fetch_user_capabilities($pdo, $userId);
     if (!$caps) return 99;
-    $st = $pdo->prepare(
-        "SELECT DISTINCT LOWER(TRIM(component_key)) AS component_key
-           FROM Vati_Payfiller_Case_Components
-          WHERE case_id = ?
-            AND COALESCE(is_required, 1) = 1"
-    );
-    $st->execute([$caseId]);
-    $caseComponents = $st->fetchAll(PDO::FETCH_COLUMN) ?: [];
+    $caseRows = verifier_routing_case_component_rows($pdo, $caseId, $caps);
     $best = 99;
-    foreach ($caseComponents as $caseComponent) {
-        $caseKey = verifier_routing_normalize_component((string)$caseComponent);
+    foreach ($caseRows as $row) {
+        $caseKey = verifier_routing_normalize_component((string)($row['component_key'] ?? ''));
         if (!verifier_routing_is_routeable($caseKey)) continue;
         foreach ($caps as $capability) {
             if (verifier_routing_component_matches((string)$capability['component_key'], $caseKey)) {

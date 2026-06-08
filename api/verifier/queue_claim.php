@@ -37,20 +37,30 @@ try {
     $claim = verifier_case_queue_claim($pdo, $caseId, $userId);
     if (empty($claim['ok'])) {
         http_response_code(409);
-        echo json_encode(['status' => 0, 'message' => (string)($claim['message'] ?? 'Already claimed by someone else or already completed')]);
+        echo json_encode(['status' => 0, 'message' => (string)($claim['message'] ?? 'No claimable components are available')]);
         exit;
+    }
+
+    $components = array_values(array_filter(array_map('strval', $claim['components'] ?? [])));
+    $claimedCount = count($components);
+    if ($claimedCount === 1) {
+        $claimMessage = 'Claimed component: ' . $components[0];
+    } elseif ($claimedCount > 1) {
+        $claimMessage = 'Claimed ' . $claimedCount . ' components';
+    } else {
+        $claimMessage = 'Components claimed';
     }
 
     try {
         $log = $pdo->prepare('INSERT INTO Vati_Payfiller_Case_Timeline (application_id, actor_user_id, actor_role, event_type, section_key, message, created_at) SELECT application_id, ?, ?, ?, ?, ?, NOW() FROM Vati_Payfiller_Cases WHERE case_id = ? LIMIT 1');
         $role = !empty($_SESSION['auth_moduleAccess']) ? (string)$_SESSION['auth_moduleAccess'] : 'verifier';
-        $claimedComponents = implode(', ', array_map('strval', $claim['components'] ?? []));
+        $claimedComponents = implode(', ', $components);
         $message = $claimedComponents !== '' ? ('Verifier claimed components: ' . $claimedComponents) : 'Verifier claimed components';
         $log->execute([$userId, $role, 'update', 'verifier', $message, $caseId]);
     } catch (Throwable $e) {
     }
 
-    echo json_encode(['status' => 1, 'message' => 'claimed', 'data' => ['case_id' => $caseId, 'components' => $claim['components'] ?? []]]);
+    echo json_encode(['status' => 1, 'message' => $claimMessage, 'data' => ['case_id' => $caseId, 'components' => $components]]);
 
 } catch (Throwable $e) {
     http_response_code(500);

@@ -359,6 +359,9 @@ ob_start();
     .cr-nav .badge.bg-success{background:rgba(34,197,94,0.14) !important; color:#166534 !important; border:1px solid rgba(34,197,94,0.22);}
     .cr-nav .badge.bg-warning{background:rgba(251,191,36,0.16) !important; color:#92400e !important; border:1px solid rgba(251,191,36,0.26);}
     .cr-nav .badge.bg-secondary{background:rgba(100,116,139,0.14) !important; color:#334155 !important; border:1px solid rgba(100,116,139,0.22);}
+    .cr-nav .cr-dynamic-nav-item{min-height:42px;}
+    .cr-nav .cr-dynamic-nav-item:disabled{opacity:.72; cursor:not-allowed; transform:none;}
+    .cr-dynamic-nav-badge{font-size:10px !important; padding:3px 7px !important;}
     .cr-main{flex:1; min-width:0;}
 
     .cr-compnav{display:none; align-items:center; gap:8px; flex-wrap:wrap; margin-top:12px;}
@@ -366,6 +369,10 @@ ob_start();
     .cr-compnav-btn{border:1px solid rgba(148,163,184,0.36); background:#fff; color:#0f172a; border-radius:999px; padding:7px 12px; font-size:12px; font-weight:900; cursor:pointer; line-height:1;}
     .cr-compnav-btn:hover{border-color:rgba(59,130,246,0.28); background:rgba(59,130,246,0.06);}
     .cr-compnav-btn.active{border-color:rgba(59,130,246,0.42); background:rgba(59,130,246,0.12); color:#1d4ed8;}
+    .cr-compnav-btn[data-state="claimable_next"]{border-color:#86efac;background:#ecfdf5;color:#166534;}
+    .cr-compnav-btn[data-state="locked_future"]{border-color:#cbd5e1;background:#f8fafc;color:#64748b;cursor:not-allowed;opacity:.82;}
+    .cr-compnav-btn[data-state="completed"]{border-color:#bbf7d0;background:#f0fdf4;color:#15803d;}
+    .cr-compnav-state{font-size:10px;font-weight:950;margin-left:5px;text-transform:uppercase;letter-spacing:.04em;}
 
     .cr-report-root.cr-role-verifier .cr-compnav,
     .cr-report-root.cr-role-validator .cr-compnav,
@@ -3957,6 +3964,8 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
                                 <option value="education">Education</option>
                                 <option value="employment">Employment</option>
                                 <option value="reference">Reference</option>
+                                <option value="education_reference">Education Reference</option>
+                                <option value="employment_reference">Employment Reference</option>
                                 <option value="socialmedia">Social Media</option>
                                 <option value="ecourt">E-Court</option>
                                 <option value="reports">Reports</option>
@@ -4389,7 +4398,7 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
                                     aria-label="Refresh replies"
                                     style="width:34px; height:34px; border-radius:999px; border:1px solid #cbd5e1; background:#fff; color:#2563eb; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 4px 14px rgba(37,99,235,0.08); cursor:pointer;"
                                 >
-                                    <span aria-hidden="true" style="font-size:16px; line-height:1; font-weight:700;">â†»</span>
+                                    <span aria-hidden="true" style="font-size:16px; line-height:1; font-weight:700;">&#8635;</span>
                                 </button>
                             </div>
                             <div id="emailReplies" class="cr-util-scroll">
@@ -4447,6 +4456,8 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
                                         <option value="education">Education</option>
                                         <option value="employment">Employment</option>
                                         <option value="reference">Reference</option>
+                                        <option value="education_reference">Education Reference</option>
+                                        <option value="employment_reference">Employment Reference</option>
                                         <option value="socialmedia">Social Media</option>
                                         <option value="ecourt">E-Court</option>
                                         <option value="reports">Reports</option>

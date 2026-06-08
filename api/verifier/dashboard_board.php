@@ -74,6 +74,91 @@ function vr_case_board_summary_text(array $componentSummary): string
     return implode(', ', array_keys($labels));
 }
 
+function vr_case_board_component_key(string $key): string
+{
+    $k = strtolower(trim($key));
+    $k = str_replace(['-', ' '], '_', $k);
+    if ($k === 'identification') return 'id';
+    if ($k === 'address') return 'contact';
+    if ($k === 'social_media') return 'socialmedia';
+    return $k;
+}
+
+function vr_case_board_status_from_event(string $eventType, string $message): string
+{
+    $text = strtolower(trim($eventType . ' ' . $message));
+    if ($text === '') return '';
+    if (strpos($text, 'reject') !== false) return 'Rejected';
+    if (strpos($text, 'hold') !== false) return 'Hold';
+    if (strpos($text, 'insufficient') !== false || strpos($text, 'need docs') !== false || strpos($text, 'correction') !== false) return 'Insufficiency';
+    if (strpos($text, 'mail') !== false || strpos($text, 'email') !== false) return 'Mail Sent';
+    if (strpos($text, 'approve') !== false) return 'Approved';
+    if (strpos($text, 'complete') !== false) return 'Completed';
+    return '';
+}
+
+function vr_case_board_component_history(PDO $pdo, string $applicationId): array
+{
+    $out = [];
+    if ($applicationId === '') return $out;
+    try {
+        $st = $pdo->prepare(
+            "SELECT section_key, event_type, message, created_at
+               FROM Vati_Payfiller_Case_Timeline
+              WHERE application_id = ?
+              ORDER BY created_at ASC"
+        );
+        $st->execute([$applicationId]);
+        foreach (($st->fetchAll(PDO::FETCH_ASSOC) ?: []) as $row) {
+            $componentKey = vr_case_board_component_key((string)($row['section_key'] ?? ''));
+            if ($componentKey === '' || $componentKey === 'timeline') continue;
+            $eventType = (string)($row['event_type'] ?? '');
+            $message = (string)($row['message'] ?? '');
+            $status = vr_case_board_status_from_event($eventType, $message);
+            $out[$componentKey][] = [
+                'at' => (string)($row['created_at'] ?? ''),
+                'event' => $eventType,
+                'message' => $message,
+                'status' => $status,
+            ];
+        }
+    } catch (Throwable $e) {
+        return [];
+    }
+    return $out;
+}
+
+function vr_case_board_history_for_component(array $history, string $componentKey): array
+{
+    $key = vr_case_board_component_key($componentKey);
+    $items = $history[$key] ?? [];
+    if (!$items && $key === 'education_reference') {
+        $items = $history['reference'] ?? [];
+    } elseif (!$items && $key === 'employment_reference') {
+        $items = $history['reference'] ?? [];
+    } elseif (!$items && $key === 'contact') {
+        $items = $history['address'] ?? [];
+    } elseif (!$items && $key === 'id') {
+        $items = $history['identification'] ?? [];
+    }
+    return $items;
+}
+
+function vr_case_board_display_status(array $history, string $state): string
+{
+    for ($i = count($history) - 1; $i >= 0; $i--) {
+        $status = trim((string)($history[$i]['status'] ?? ''));
+        if ($status !== '') return $status;
+    }
+    $s = strtolower(trim($state));
+    if ($s === 'context') return 'Context';
+    if ($s === 'completed') return 'Completed';
+    if ($s === 'owned_active') return 'Active';
+    if ($s === 'claimable_next') return 'Ready';
+    if ($s === 'locked_future') return 'Locked';
+    return '';
+}
+
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
         http_response_code(405);
@@ -149,6 +234,15 @@ try {
         }
 
         $routingState = verifier_routing_case_state($pdo, $caseId, $userId);
+        $componentHistory = vr_case_board_component_history($pdo, (string)($row['application_id'] ?? ''));
+        foreach (($routingState['components'] ?? []) as $componentKey => $componentState) {
+            $history = vr_case_board_history_for_component($componentHistory, (string)$componentKey);
+            $routingState['components'][$componentKey]['history'] = $history;
+            $routingState['components'][$componentKey]['display_status'] = vr_case_board_display_status(
+                $history,
+                (string)($componentState['state'] ?? '')
+            );
+        }
         $state = vr_case_board_state_from_routing($routingState, $bucket);
         $componentSummary = verifier_case_queue_component_summary($pdo, $caseId);
         $matchingComponents = array_values(array_unique(array_merge(
@@ -232,3 +326,4 @@ try {
     http_response_code(500);
     echo json_encode(['status' => 0, 'message' => $e->getMessage()]);
 }
+

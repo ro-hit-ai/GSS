@@ -63,13 +63,12 @@ function case_component_binding_map_verification_type_to_components(string $type
     $name = strtolower(trim($typeName));
     $category = strtolower(trim($typeCategory));
 
-    // Strict deterministic map only (no fuzzy/contains matching).
     $exactTypeMap = [
         'education' => 'education',
         'employment' => 'employment',
         'employement' => 'employment',
-        'education reference' => 'reference',
-        'employment reference' => 'reference',
+        'education reference' => 'education_reference',
+        'employment reference' => 'employment_reference',
         'identity proof' => 'id',
         'current address' => 'contact',
         'permanent address' => 'contact',
@@ -83,7 +82,6 @@ function case_component_binding_map_verification_type_to_components(string $type
         return [$exactTypeMap[$name]];
     }
 
-    // Category-level deterministic fallback (still explicit, not heuristic).
     $exactCategoryMap = [
         'education' => 'education',
         'employment' => 'employment',

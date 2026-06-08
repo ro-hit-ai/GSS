@@ -23,7 +23,7 @@ ob_start();
 <div class="vr-page">
 <div class="card vr-card">
     <h3>Candidate List</h3>
-    <p class="card-subtitle">Verifier review workspace with group-based active and evaluated visibility.</p>
+    <p class="card-subtitle">Verifier review workspace for claimable, active, and completed component work.</p>
 </div>
 
 <div class="card vr-card">
@@ -39,11 +39,10 @@ ob_start();
 
                 <label style="font-size:13px; margin-right:6px;">View</label>
                 <select id="vrCasesViewSelect" class="vr-input" style="min-width:180px;">
-                    <option value="available">Active Work</option>
-                    <option value="mine" selected>My Visibility</option>
-                    <option value="followup">Follow-up</option>
-                    <option value="participated">Participated</option>
-                    <option value="history">Reviewed (Legacy)</option>
+                    <option value="claimable">To Be Claimed</option>
+                    <option value="active" selected>Active</option>
+                    <option value="completed">Completed</option>
+                    <option value="all">All</option>
                 </select>
                 <select id="vrCasesStateFilter" class="vr-input" style="min-width:210px;">
                     <option value="all">All Statuses</option>
