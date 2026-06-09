@@ -53,12 +53,13 @@ try {
         'education_reference' => 'reference',
         'employment_reference' => 'reference',
     ];
-    $allowedPages = ['review-confirmation'];
+    $allowedPages = [];
     foreach ($allowed as $c) {
         $k = ccs_component_norm((string)$c);
         if (isset($map[$k])) $allowedPages[] = $map[$k];
     }
     $allowedPages = array_values(array_unique($allowedPages));
+    $allowedPages[] = 'success';
 
     $_SESSION['case_id'] = $caseId;
     $_SESSION['application_id'] = $applicationId;
@@ -74,7 +75,7 @@ try {
         $_SESSION['candidate_login_marker'] = (string)time();
     }
 
-    $go = count($allowedPages) > 1 ? $allowedPages[1] : 'review-confirmation';
+    $go = $allowedPages[0] ?? 'success';
     header('Location: ' . app_url('/modules/candidate/index.php?page=' . urlencode($go)));
     exit;
 } catch (Throwable $e) {

@@ -202,10 +202,11 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!entries.length) return '<div class="vr-board-muted">No components in this work bucket</div>';
 
         function displayStatus(entry) {
+            if (entry.displayStatus) return entry.displayStatus;
             if (entry.state === 'claimable_next') return 'Claimable';
             if (entry.state === 'owned_active') return 'Active';
             if (entry.state === 'locked_future') return 'Locked';
-            return entry.displayStatus || componentStateLabel(entry.state);
+            return componentStateLabel(entry.state);
         }
 
         function componentPill(entry) {
@@ -274,6 +275,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function updateKpis() {
         var counts = { claimable: 0, active: 0, all: 0, completed: 0 };
+        // Preserve the existing KPI semantics: counts are based on dashboard API rows
+        // with matching routing state keys, not the rendered priority sections.
         state.rows.forEach(function (row) {
             if (String(row.row_state || '').toLowerCase().trim() === 'hidden_unrelated') return;
             var stateKeys = Array.isArray(row.state_keys) ? row.state_keys : [];
@@ -291,6 +294,8 @@ document.addEventListener('DOMContentLoaded', function () {
     function updateChipLabels() {
         if (!bucketHost) return;
         var counts = { claimable: 0, active: 0, completed: 0, all: 0 };
+        // Preserve the existing tab-count semantics: one count per visible API row
+        // containing the state key, even when the row renders multiple sections.
         state.rows.forEach(function (row) {
             if (String(row.row_state || '').toLowerCase().trim() === 'hidden_unrelated') return;
             var stateKeys = Array.isArray(row.state_keys) ? row.state_keys : [];
@@ -306,6 +311,49 @@ document.addEventListener('DOMContentLoaded', function () {
             btn.classList.toggle('active', key === state.bucket);
         });
         if (compatNoteEl) compatNoteEl.style.display = state.rows.length ? 'block' : 'none';
+    }
+
+    function groupActionHtml(row, group, key) {
+        var groupState = priorityGroupState(group);
+        if (state.bucket === 'claimable' && row.can_claim && groupState === 'claimable_next') {
+            var disabled = state.claimInFlightKey && state.claimInFlightKey !== key;
+            return '<button type="button" class="vr-action-btn claim" data-action="claim" data-row-key="' + esc(key) + '" data-case-id="' + esc(String(row.case_id || '')) + '" data-priority="' + esc(String(group.priority || '')) + '"' + (disabled ? ' disabled' : '') + '>' + esc(claimButtonLabel(row)) + '</button>';
+        }
+        if (row.can_open && (groupState === 'owned_active' || groupState === 'completed')) {
+            var openText = state.bucket === 'completed' ? 'Open Report' : 'Open';
+            return '<button type="button" class="vr-action-btn ' + (state.bucket === 'completed' ? 'view' : 'open') + '" data-action="open" data-url="' + esc(appendPriorityBucket(row.open_url, group.priority)) + '">' + esc(openText) + '</button>';
+        }
+        if (groupState === 'locked_future') {
+            return '<span class="vr-board-child-state">Locked</span>';
+        }
+        return '<button type="button" class="vr-action-btn" disabled>Readonly</button>';
+    }
+
+    function prioritySectionClass(row, group) {
+        var groupState = priorityGroupState(group);
+        var out = ['vr-board-data-row', 'vr-priority-section'];
+        if (groupState === 'owned_active' || groupState === 'followup') out.push('is-mine');
+        if (groupState === 'locked_future') out.push('is-locked');
+        if (groupState === 'completed') out.push('is-completed');
+        if (row && row.can_open && (groupState === 'owned_active' || groupState === 'completed')) out.push('is-clickable');
+        return out.join(' ');
+    }
+
+    function prioritySectionHtml(row, group, key, claimedBy, claimedMeta) {
+        var groupState = priorityGroupState(group);
+        var actionable = row.can_open && (groupState === 'owned_active' || groupState === 'completed');
+        return ''
+        + '<div class="' + esc(prioritySectionClass(row, group)) + '" data-row-key="' + esc(key) + '" data-priority="' + esc(String(group.priority || '')) + '" data-open-url="' + esc(appendPriorityBucket(row.open_url, group.priority)) + '" data-actionable="' + (actionable ? '1' : '0') + '">'
+        +   '<div class="vr-priority-section-main">'
+        +       componentStateStripHtml(row, group)
+        +       '<div class="vr-priority-section-meta">'
+        +           '<span>Status: ' + priorityGroupBadgeHtml(group) + '</span>'
+        +           '<span>Claimed By: <strong>' + esc(claimedBy) + '</strong></span>'
+        +           claimedMeta
+        +       '</div>'
+        +   '</div>'
+        +   '<div class="vr-priority-section-action">' + groupActionHtml(row, group, key) + '</div>'
+        + '</div>';
     }
 
     function renderRows() {
@@ -331,31 +379,25 @@ document.addEventListener('DOMContentLoaded', function () {
             if (!groups.length) {
                 groups = [{ priority: '', entries: routingComponentEntries(row) }];
             }
-            return groups.map(function (group) {
-                var groupState = priorityGroupState(group);
-                var actionHtml = '';
-                if (state.bucket === 'claimable' && row.can_claim && groupState === 'claimable_next') {
-                    var disabled = state.claimInFlightKey && state.claimInFlightKey !== key;
-                    actionHtml = '<button type="button" class="vr-action-btn claim" data-action="claim" data-row-key="' + esc(key) + '" data-case-id="' + esc(String(row.case_id || '')) + '" data-priority="' + esc(String(group.priority || '')) + '"' + (disabled ? ' disabled' : '') + '>' + esc(claimButtonLabel(row)) + '</button>';
-                } else if (row.can_open && (groupState === 'owned_active' || groupState === 'completed')) {
-                    var openText = state.bucket === 'completed' ? 'Open Report' : 'Open';
-                    actionHtml = '<button type="button" class="vr-action-btn ' + (state.bucket === 'completed' ? 'view' : 'open') + '" data-action="open" data-url="' + esc(appendPriorityBucket(row.open_url, group.priority)) + '">' + esc(openText) + '</button>';
-                } else if (groupState === 'locked_future') {
-                    actionHtml = '<span class="vr-board-child-state">Locked</span>';
-                } else {
-                    actionHtml = '<button type="button" class="vr-action-btn" disabled>Readonly</button>';
-                }
-                return ''
-                + '<div class="' + esc(rowClass(row)) + ' vr-board-priority-row" data-row-key="' + esc(key) + '" data-priority="' + esc(String(group.priority || '')) + '" data-open-url="' + esc(appendPriorityBucket(row.open_url, group.priority)) + '" data-actionable="' + (row.can_open && (groupState === 'owned_active' || groupState === 'completed') ? '1' : '0') + '">'
-                +   '<div class="vr-board-cell"><div class="vr-board-case">' + esc(row.application_id || '-') + '</div><div class="vr-board-muted">' + esc(String(row.workflow_mode || '').replace(/_/g, ' ')) + '</div></div>'
-                +   '<div class="vr-board-cell"><div class="vr-board-name">' + esc(((row.candidate_first_name || '') + ' ' + (row.candidate_last_name || '')).trim() || '-') + '</div></div>'
-                +   '<div class="vr-board-cell">' + componentStateStripHtml(row, group) + '</div>'
-                +   '<div class="vr-board-cell">' + bucketBadgeHtml(row, state.bucket) + '</div>'
-                +   '<div class="vr-board-cell">' + priorityGroupBadgeHtml(group) + '</div>'
-                +   '<div class="vr-board-cell"><div>' + esc(claimedBy) + '</div>' + claimedMeta + '</div>'
-                +   '<div class="vr-board-cell">' + actionHtml + '</div>'
-                + '</div>';
-            }).join('');
+            var candidateName = ((row.candidate_first_name || '') + ' ' + (row.candidate_last_name || '')).trim() || '-';
+            return ''
+            + '<article class="vr-case-card" data-case-id="' + esc(String(row.case_id || '')) + '">'
+            +   '<header class="vr-case-card-head">'
+            +       '<div>'
+            +           '<div class="vr-board-case">' + esc(row.application_id || '-') + '</div>'
+            +           '<div class="vr-board-name">Candidate: ' + esc(candidateName) + '</div>'
+            +       '</div>'
+            +       '<div class="vr-case-card-badges">'
+            +           bucketBadgeHtml(row, state.bucket)
+            +           '<span class="vr-board-muted">' + esc(String(row.workflow_mode || '').replace(/_/g, ' ')) + '</span>'
+            +       '</div>'
+            +   '</header>'
+            +   '<div class="vr-priority-section-list">'
+            +       groups.map(function (group) {
+                        return prioritySectionHtml(row, group, key, claimedBy, claimedMeta);
+                    }).join('')
+            +   '</div>'
+            + '</article>';
         }).join('');
     }
 

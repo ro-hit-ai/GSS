@@ -11,6 +11,9 @@ class Router {
     static _allowedPagesCache = null;
     static _cacheTimestamp = 0;
     static CACHE_TTL = 1000;
+    static correctionConfigError = false;
+    static correctionErrorMessage = "Unable to load correction configuration. Please reopen the correction link or contact support.";
+    static correctionForbiddenPages = ["review", "review-confirmation", "authorization"];
     
     static pageOrder = [
         "review-confirmation",
@@ -155,20 +158,38 @@ class Router {
             const res = await fetch(url, { credentials: 'include' });
             const json = await res.json();
             if (json && json.status === 1 && json.data) {
-                this.enabledPages = Array.isArray(json.data.enabled_pages) ? json.data.enabled_pages : null;
                 this.caseConfig = json.data;
+                this.correctionConfigError = false;
+                this.enabledPages = Array.isArray(json.data.enabled_pages) ? json.data.enabled_pages : null;
+                if (Number(this.caseConfig.correction_mode || 0) === 1) {
+                    this.enabledPages = this.sanitizeCorrectionPages(this.enabledPages);
+                    this.caseConfig.enabled_pages = this.enabledPages;
+                    this.caseConfig.pages = this.enabledPages;
+                }
                 window.CANDIDATE_CASE_CONFIG = this.caseConfig;
                 this.reconcileLocalSessionState();
                 console.log('✅ Candidate enabled pages from config:', this.enabledPages);
             } else {
-                this.enabledPages = null;
-                this.caseConfig = null;
+                if (this.hasCorrectionBootstrap()) {
+                    this.correctionConfigError = true;
+                    this.enabledPages = [];
+                    this.caseConfig = { correction_mode: 1, correction_config_error: 1 };
+                } else {
+                    this.enabledPages = null;
+                    this.caseConfig = null;
+                }
                 window.CANDIDATE_CASE_CONFIG = null;
                 console.warn('⚠️ Candidate config not available, using default pages');
             }
         } catch (e) {
-            this.enabledPages = null;
-            this.caseConfig = null;
+            if (this.hasCorrectionBootstrap()) {
+                this.correctionConfigError = true;
+                this.enabledPages = [];
+                this.caseConfig = { correction_mode: 1, correction_config_error: 1 };
+            } else {
+                this.enabledPages = null;
+                this.caseConfig = null;
+            }
             window.CANDIDATE_CASE_CONFIG = null;
             console.warn('⚠️ Candidate config fetch failed, using default pages');
         }
@@ -215,11 +236,40 @@ class Router {
         return Number(cfg.submitted_locked || 0) === 1 && Number(cfg.correction_mode || 0) !== 1;
     }
 
+    static isCorrectionMode() {
+        const cfg = this.caseConfig || {};
+        return Number(cfg.correction_mode || 0) === 1;
+    }
+
+    static hasCorrectionBootstrap() {
+        return Number(window.CANDIDATE_CORRECTION_MODE || 0) === 1;
+    }
+
+    static isCorrectionRuntime() {
+        return this.isCorrectionMode() || this.hasCorrectionBootstrap();
+    }
+
+    static sanitizeCorrectionPages(pages) {
+        if (!Array.isArray(pages)) return [];
+        const out = [];
+        pages.forEach(page => {
+            const key = String(page || '').trim().toLowerCase();
+            if (!key || this.correctionForbiddenPages.includes(key)) return;
+            if (!out.includes(key)) out.push(key);
+        });
+        return out;
+    }
+
     static isEnabledPage(pageId) {
+        if (!pageId) return false;
+        if (this.correctionConfigError) return pageId === 'correction-error';
+        if (this.isCorrectionRuntime()) {
+            if (!Array.isArray(this.enabledPages) || this.enabledPages.length === 0) return pageId === 'success';
+            return this.sanitizeCorrectionPages(this.enabledPages).includes(pageId);
+        }
         if (pageId === 'review' || pageId === 'success' || pageId === 'review-confirmation') {
             return true;
         }
-        if (!pageId) return false;
         if (!Array.isArray(this.enabledPages) || this.enabledPages.length === 0) return true;
         return this.enabledPages.includes(pageId);
     }
@@ -251,12 +301,27 @@ class Router {
             this._cacheTimestamp = Date.now();
             return this._allowedPagesCache;
         }
-        if (this.caseConfig && Number(this.caseConfig.correction_mode || 0) === 1) {
-            const enabled = this.getEnabledPageOrder();
-            const pages = enabled.length ? enabled.slice() : this.pageOrder.slice();
-            this._allowedPagesCache = pages;
+        if (this.correctionConfigError) {
+            this._allowedPagesCache = ['correction-error'];
             this._cacheTimestamp = Date.now();
-            return pages;
+            return this._allowedPagesCache;
+        }
+        if (this.isCorrectionRuntime()) {
+            const enabled = this.sanitizeCorrectionPages(this.getEnabledPageOrder());
+            const correctionPages = enabled.filter(p => p !== 'review' && p !== 'review-confirmation' && p !== 'success');
+            const allowed = [];
+            for (let i = 0; i < correctionPages.length; i++) {
+                const page = correctionPages[i];
+                allowed.push(page);
+                if (this.lsGet(`completed-${page}`) !== "1") break;
+            }
+            const allCorrectionPagesCompleted = correctionPages.every(page => this.lsGet(`completed-${page}`) === "1");
+            if (allCorrectionPagesCompleted || correctionPages.length === 0) {
+                allowed.push("success");
+            }
+            this._allowedPagesCache = allowed.length ? Array.from(new Set(allowed)) : ['success'];
+            this._cacheTimestamp = Date.now();
+            return this._allowedPagesCache;
         }
         const now = Date.now();
         
@@ -319,17 +384,33 @@ class Router {
         return allowed;
     }
 
+    static getCorrectionLandingPage() {
+        const enabled = this.getEnabledPageOrder();
+        const correctionPages = enabled.filter(p => p !== 'review' && p !== 'review-confirmation' && p !== 'success');
+        const firstIncomplete = correctionPages.find(page => this.lsGet(`completed-${page}`) !== "1");
+        return firstIncomplete || (enabled.includes('success') ? 'success' : (correctionPages[0] || 'success'));
+    }
+
     static getCurrentAllowedPage(requestedPage = null) {
         console.log(`📋 getCurrentAllowedPage called with: "${requestedPage}"`);
+        const allowedPages = this.getAllowedPages();
+        if (this.correctionConfigError && requestedPage !== 'correction-error') {
+            return 'correction-error';
+        }
         
         if (requestedPage) {
-            const allowedPages = this.getAllowedPages();
             if (allowedPages.includes(requestedPage)) {
                 console.log(`✅ Requested page "${requestedPage}" is allowed`);
                 return requestedPage;
             } else {
                 console.log(`⛔ Requested page "${requestedPage}" not allowed`);
             }
+        }
+
+        if (this.isCorrectionRuntime()) {
+            const correctionLanding = this.getCorrectionLandingPage();
+            console.log(`📌 Correction mode starting with: "${correctionLanding}"`);
+            return correctionLanding;
         }
         
         const isReviewCompleted = this.lsGet("completed-review-confirmation") === "1";
@@ -339,11 +420,33 @@ class Router {
             return "review-confirmation";
         }
         
-        const allowedPages = this.getAllowedPages();
-        
         const lastAllowed = allowedPages[allowedPages.length - 1] || "review-confirmation";
         console.log(`📌 Returning last allowed page: "${lastAllowed}"`);
         return lastAllowed;
+    }
+
+    static async completeCorrectionSessionBeforeSuccess() {
+        if (!this.isCorrectionRuntime()) return true;
+        if (this.caseConfig && Number(this.caseConfig.correction_submitted || 0) === 1) return true;
+
+        const base = (window.APP_BASE_URL || '').replace(/\/$/, '');
+        const res = await fetch(`${base}/api/candidate/submit.php`, {
+            method: 'POST',
+            credentials: 'same-origin'
+        });
+        const json = await res.json();
+        if (!json || !json.success) {
+            throw new Error((json && json.message) || 'Correction submission failed.');
+        }
+
+        if (this.caseConfig) {
+            this.caseConfig.correction_submitted = 1;
+            this.caseConfig.correction_mode = 0;
+            this.caseConfig.application_status = 'submitted';
+            window.CANDIDATE_CASE_CONFIG = this.caseConfig;
+        }
+        this._allowedPagesCache = ['success'];
+        return true;
     }
 
     static async navigateTo(pageId, pushState = true) {
@@ -378,6 +481,10 @@ class Router {
                     
                     pageId = correctPage;
                 }
+            }
+
+            if (this.isCorrectionRuntime() && pageId === 'success') {
+                await this.completeCorrectionSessionBeforeSuccess();
             }
             
             await this.cleanupPreviousPage();
@@ -420,6 +527,11 @@ class Router {
             throw new Error("Page container not found");
         }
 
+        if (pageId === 'correction-error') {
+            container.innerHTML = this.getFallbackContent(pageId);
+            return;
+        }
+
         if (this.shouldUseCache(pageId) && this.pageCache.has(pageId)) {
             console.log(`📦 Serving ${pageId} from cache`);
             container.innerHTML = this.pageCache.get(pageId);
@@ -442,6 +554,11 @@ class Router {
             });
             
             clearTimeout(timeoutId);
+
+            if (response.redirected && /\/modules\/candidate\/index\.php/i.test(response.url || '')) {
+                window.location.assign(response.url);
+                return;
+            }
             
             if (!response.ok) {
                 let errText = '';
@@ -457,6 +574,10 @@ class Router {
             }
 
             const html = await response.text();
+            if (/^\s*<!doctype html/i.test(html) || /<body[^>]*class=["'][^"']*candidate-page/i.test(html)) {
+                window.location.assign(response.url || `?page=${encodeURIComponent(pageId)}`);
+                return;
+            }
             
             if (this.shouldUseCache(pageId)) {
                 this.pageCache.set(pageId, html);
@@ -509,6 +630,14 @@ class Router {
                     </div>
                     <h3 class="mb-3">Application Submitted Successfully!</h3>
                     <p class="text-muted">Your background verification form has been submitted.</p>
+                </div>
+            `,
+            "correction-error": `
+                <div class="container py-5">
+                    <div class="alert alert-danger">
+                        <h5>Correction workspace unavailable</h5>
+                        <p>${this.correctionErrorMessage}</p>
+                    </div>
                 </div>
             `,
             "default": `
@@ -897,9 +1026,15 @@ class Router {
     }
 
     static getNextPage(pageId) {
+        if (this.isCorrectionRuntime()) {
+            const order = this.sanitizeCorrectionPages(this.getEnabledPageOrder());
+            const index = order.indexOf(pageId);
+            if (pageId === 'review' || pageId === 'review-confirmation' || pageId === 'authorization') return 'success';
+            if (index === -1 || index >= order.length - 2) return 'success';
+            return order[index + 1] || 'success';
+        }
         const order = this.getEnabledPageOrder();
         const index = order.indexOf(pageId);
-        if (pageId === 'reference') return 'review';
         if (pageId === 'review') return 'success';
         if (index === -1 || index >= order.length - 2) {
             return "success";

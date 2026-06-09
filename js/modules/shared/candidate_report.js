@@ -72,6 +72,13 @@
     var ROLE_LOCK_REASONS = {};
     var LOAD_REPORT_IN_FLIGHT = false;
     var LOAD_REPORT_PENDING_OPTS = null;
+    var REPORT_VERSION_POLL_TIMER = null;
+    var REPORT_VERSION_POLL_IN_FLIGHT = false;
+    var REPORT_VERSION_CURRENT = null;
+    var REPORT_VERSION_DEFERRED = false;
+    var REPORT_VERSION_DEFERRED_TIMER = null;
+    var REPORT_VERSION_REFRESH_IN_FLIGHT = false;
+    var REPORT_VERSION_POLL_MS = 60000;
     try {
         if (!window.__validatorActionDebug || !Array.isArray(window.__validatorActionDebug)) {
             window.__validatorActionDebug = [];
@@ -532,11 +539,12 @@ function closeBsModal(id) {
         if (ACTIONABLE_COMPONENTS.indexOf(s) === -1) return false;
         if (s === 'basic') return false;
         var role = getRole();
-        if (role === 'validator') {
+        if (role === 'validator' || role === 'verifier' || role === 'db_verifier') {
             if (ROLE_ACTIONABLE_COMPONENTS && Object.prototype.hasOwnProperty.call(ROLE_ACTIONABLE_COMPONENTS, s)) {
                 return !!ROLE_ACTIONABLE_COMPONENTS[s];
             }
             if (ROLE_READONLY_COMPONENTS && ROLE_READONLY_COMPONENTS[s]) return false;
+            if (ROLE_LOCKED_COMPONENTS && ROLE_LOCKED_COMPONENTS[s]) return false;
         }
         return true;
     }
@@ -566,12 +574,15 @@ function closeBsModal(id) {
         if (section === 'basic') {
             return { actionable: false, readonly: true, denied_reason: 'context_only' };
         }
+        if (ROLE_LOCKED_COMPONENTS && ROLE_LOCKED_COMPONENTS[section]) {
+            return { actionable: false, readonly: true, denied_reason: 'component_locked' };
+        }
         if (ROLE_READONLY_COMPONENTS && ROLE_READONLY_COMPONENTS[section]) {
-            return { actionable: false, readonly: true, denied_reason: 'validator_readonly_unassigned' };
+            return { actionable: false, readonly: true, denied_reason: 'component_readonly' };
         }
         if (ROLE_ACTIONABLE_COMPONENTS && Object.keys(ROLE_ACTIONABLE_COMPONENTS).length > 0) {
             if (!ROLE_ACTIONABLE_COMPONENTS[section]) {
-                return { actionable: false, readonly: true, denied_reason: 'validator_not_actionable' };
+                return { actionable: false, readonly: true, denied_reason: 'component_not_actionable' };
             }
         }
         return { actionable: true, readonly: false, denied_reason: '' };
@@ -581,7 +592,7 @@ function closeBsModal(id) {
         var role = getRole();
         var section = normSection(componentKey);
         var access = getValidatorComponentAccess(section);
-        var blocked = ((role === 'validator' || section === 'basic') && !access.actionable);
+        var blocked = ((role === 'validator' || role === 'verifier' || role === 'db_verifier' || section === 'basic') && !access.actionable);
         var evt = {
             ts: new Date().toISOString(),
             attempted_action: String(actionType || ''),
@@ -613,6 +624,7 @@ function closeBsModal(id) {
         ROLE_LOCK_REASONS = {};
         var d = payload && (payload.data || payload) ? (payload.data || payload) : {};
         var a = d && d.actionability ? d.actionability : {};
+        var permissions = d && d.permissions && typeof d.permissions === 'object' ? d.permissions : {};
         var actionable = Array.isArray(a.actionable_components) ? a.actionable_components : [];
         var readonly = Array.isArray(a.readonly_components) ? a.readonly_components : [];
         var locked = Array.isArray(a.locked_components) ? a.locked_components : [];
@@ -633,6 +645,17 @@ function closeBsModal(id) {
                 ROLE_LOCK_REASONS[nk] = String(reasons[nk] || '');
             }
         });
+        try {
+            var reportMode = String((a && a.report_mode) || permissions.report_mode || qs('report_mode') || '').toLowerCase().trim();
+            var canTakeAction = !Object.prototype.hasOwnProperty.call(permissions, 'can_take_action')
+                || Number(permissions.can_take_action) === 1;
+            document.body.dataset.crReportMode = reportMode;
+            document.body.dataset.crCanTakeAction = canTakeAction ? '1' : '0';
+            document.dispatchEvent(new CustomEvent('cr:actionability-updated', {
+                detail: { report_mode: reportMode, can_take_action: canTakeAction ? 1 : 0 }
+            }));
+        } catch (_e) {
+        }
     }
 
     function activeComponentSectionKey() {
@@ -2503,6 +2526,7 @@ if (uploadInput) {
     }
 
     function renderReferencePanelForSection(payload, section) {
+        updateReferencePanelIdentity(section);
         var ref = referenceRowForSection(payload && payload.reference, section);
         setVal('cv_reference_name', ref.reference_name || '');
         setVal('cv_reference_designation', ref.reference_designation || '');
@@ -2511,6 +2535,23 @@ if (uploadInput) {
         setVal('cv_reference_email', ref.reference_email || '');
         setVal('cv_reference_relationship', ref.relationship || '');
         setVal('cv_reference_years_known', ref.years_known || '');
+    }
+
+    function updateReferencePanelIdentity(section) {
+        section = normSection(section);
+        var panel = document.getElementById('section-reference');
+        if (!panel) return;
+        var effectiveSection = (section === 'education_reference' || section === 'employment_reference') ? section : 'reference';
+        panel.setAttribute('data-component-key', effectiveSection);
+        panel.setAttribute('data-current-section', effectiveSection);
+        var title = panel.querySelector('.cr-secbar-title');
+        if (title) {
+            title.textContent = sectionLabel(effectiveSection);
+        }
+        var remarksLabel = panel.querySelector('label[for="cvRemarksReference"]');
+        if (remarksLabel) {
+            remarksLabel.textContent = 'Comments / Remarks - ' + sectionLabel(effectiveSection);
+        }
     }
 
     function canShowComponentToolbar(section) {
@@ -5117,7 +5158,9 @@ if (uploadInput) {
                     body: JSON.stringify({
                         application_id: applicationId,
                         event_type: 'comment',
-                        section_key: String(cfg.section || 'basic'),
+                        section_key: String(cfg.section === 'reference'
+                            ? (currentSectionKey() || cfg.section || 'reference')
+                            : (cfg.section || 'basic')),
                         message: msg
                     })
                 })
@@ -5457,6 +5500,11 @@ if (uploadInput) {
             el.textContent = String(text || 'CANDIDATE PENDING').toUpperCase();
             return;
         }
+        if (k === 'correction_submitted') {
+            el.classList.add('bg-info');
+            el.textContent = String(text || 'CORRECTION SUBMITTED').toUpperCase();
+            return;
+        }
         if (k === 'mail_sent') {
             el.classList.add('bg-info');
             el.textContent = String(text || 'MAIL SENT').toUpperCase();
@@ -5595,9 +5643,13 @@ if (uploadInput) {
         try {
             componentKey = normSection(componentKey);
             if (!componentKey) return null;
-            var cw = d && d.component_workflow ? d.component_workflow : null;
+            var cw = d && d.component_workflow ? d.component_workflow : (d && d.componentWorkflow ? d.componentWorkflow : null);
             if (!cw || typeof cw !== 'object') return null;
             if (cw[componentKey] && typeof cw[componentKey] === 'object') return cw[componentKey];
+            if ((componentKey === 'education_reference' || componentKey === 'employment_reference')
+                && cw.reference && typeof cw.reference === 'object') {
+                return cw.reference;
+            }
 
             var keys = Object.keys(cw);
             for (var i = 0; i < keys.length; i++) {
@@ -5658,6 +5710,7 @@ if (uploadInput) {
                         hold: true,
                         insufficient_documents: true,
                         waiting_candidate: true,
+                        correction_submitted: true,
                         reopened: true,
                         blocked: true,
                         completed: true,
@@ -5728,6 +5781,10 @@ if (uploadInput) {
         }
         if (low.indexOf('need docs') !== -1) {
             setBadge(badgeId, 'need_docs', compact);
+            return true;
+        }
+        if (low.indexOf('correction submitted') !== -1) {
+            setBadge(badgeId, 'correction_submitted', compact);
             return true;
         }
         if (low.indexOf('candidate pending') !== -1 || low.indexOf('waiting candidate') !== -1 || low.indexOf('reopened') !== -1) {
@@ -6793,6 +6850,7 @@ if (uploadInput) {
 
         var WORKFLOW_ACTION_RULES = {
             pending: ['hold', 'insufficient_documents', 'reject', 'approve'],
+            correction_submitted: ['hold', 'insufficient_documents', 'reject', 'approve'],
             hold: ['approve', 'reject', 'insufficient_documents'],
             insufficient_documents: ['approve', 'hold', 'reject', 'insufficient_documents'],
             approved: ['hold', 'insufficient_documents', 'reject'],
@@ -6822,8 +6880,7 @@ if (uploadInput) {
         function componentWorkflowStageMeta(componentKey, stageKey) {
             try {
                 var d = REPORT_PAYLOAD || {};
-                var wf = d && d.component_workflow && typeof d.component_workflow === 'object' ? d.component_workflow : {};
-                var row = wf[normSection(componentKey)] || null;
+                var row = getWorkflowComponentRow(d, componentKey);
                 if (!row || typeof row !== 'object') return null;
                 var meta = row[String(stageKey || '').toLowerCase().trim()] || null;
                 return (meta && typeof meta === 'object') ? meta : null;
@@ -6933,6 +6990,10 @@ if (uploadInput) {
                 sections.forEach(function (sectionEl) {
                     var sid = String(sectionEl.id || '').replace(/^section-/, '');
                     var key = normSection(sid);
+                    var activeIdentity = currentSectionKey();
+                    if (key === 'reference' && (activeIdentity === 'education_reference' || activeIdentity === 'employment_reference')) {
+                        key = activeIdentity;
+                    }
                     var showActions = isActionableComponent(key);
                     var isReadonly = (getRole() === 'validator' && !showActions);
                     var roleNow = getRole();
@@ -8283,6 +8344,204 @@ function askActionConfirm(label) {
         }
     }
 
+    function reportWorkflowVersionFromPayload(payload) {
+        var data = payload && typeof payload === 'object' ? payload : {};
+        var cs = data.case && typeof data.case === 'object' ? data.case : {};
+        var version = cs.workflow_version;
+        if (version === null || typeof version === 'undefined' || version === '') {
+            version = data.workflow_version;
+        }
+        if (version === null || typeof version === 'undefined' || version === '') return null;
+        return String(version);
+    }
+
+    function cssAttrValue(value) {
+        var raw = String(value || '');
+        if (window.CSS && typeof window.CSS.escape === 'function') return window.CSS.escape(raw);
+        return raw.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    }
+
+    function captureReportUiState() {
+        var section = '';
+        try {
+            section = activeComponentSectionKey() || CURRENT_SECTION_KEY || LAST_COMPONENT_SECTION_KEY || '';
+        } catch (_e) {
+            section = CURRENT_SECTION_KEY || LAST_COMPONENT_SECTION_KEY || '';
+        }
+        var tabs = [];
+        try {
+            document.querySelectorAll('.nav-link.active, [role="tab"].active, [data-bs-toggle="tab"].active, [data-toggle="tab"].active').forEach(function (el) {
+                var selector = '';
+                if (el.id) {
+                    selector = '#' + cssAttrValue(el.id);
+                } else {
+                    var target = el.getAttribute('data-bs-target') || el.getAttribute('data-target') || el.getAttribute('href') || '';
+                    if (target && target.charAt(0) === '#') {
+                        var safeTarget = target.replace(/"/g, '\\"');
+                        selector = '[data-bs-target="' + safeTarget + '"], [data-target="' + safeTarget + '"], [href="' + safeTarget + '"]';
+                    }
+                }
+                if (selector) tabs.push(selector);
+            });
+        } catch (_e2) {
+        }
+        var sectionsScroll = document.getElementById('crSectionsScroll');
+        return {
+            section: String(section || '').toLowerCase(),
+            scrollX: window.pageXOffset || document.documentElement.scrollLeft || 0,
+            scrollY: window.pageYOffset || document.documentElement.scrollTop || 0,
+            sectionsScrollTop: sectionsScroll ? sectionsScroll.scrollTop : null,
+            tabs: tabs
+        };
+    }
+
+    function restoreReportUiState(state) {
+        if (!state || typeof state !== 'object') return;
+        setTimeout(function () {
+            try {
+                var section = String(state.section || '').toLowerCase();
+                if (section) {
+                    CURRENT_SECTION_KEY = normSection(section);
+                    LAST_COMPONENT_SECTION_KEY = CURRENT_SECTION_KEY;
+                    var sectionSelector = '[data-section="' + cssAttrValue(section) + '"]';
+                    var sectionEl = document.querySelector('.list-group-item' + sectionSelector + ', ' + sectionSelector);
+                    if (sectionEl && typeof sectionEl.click === 'function' && !sectionEl.classList.contains('active')) {
+                        sectionEl.click();
+                    }
+                    ensureComponentTableRendered(CURRENT_SECTION_KEY || section);
+                    ensureComponentToolbar(CURRENT_SECTION_KEY || section);
+                }
+            } catch (_e) {
+            }
+            try {
+                (state.tabs || []).forEach(function (selector) {
+                    var tab = document.querySelector(selector);
+                    if (tab && typeof tab.click === 'function' && !tab.classList.contains('active')) tab.click();
+                });
+            } catch (_e2) {
+            }
+            try {
+                var sectionsScroll = document.getElementById('crSectionsScroll');
+                if (sectionsScroll && state.sectionsScrollTop !== null && typeof state.sectionsScrollTop !== 'undefined') {
+                    sectionsScroll.scrollTop = state.sectionsScrollTop;
+                }
+                window.scrollTo(state.scrollX || 0, state.scrollY || 0);
+            } catch (_e3) {
+            }
+        }, 0);
+    }
+
+    function isEditableElement(el) {
+        if (!el || el === document.body) return false;
+        var tag = String(el.tagName || '').toLowerCase();
+        if (el.isContentEditable) return true;
+        if (tag === 'textarea' || tag === 'select') return !(el.disabled || el.readOnly);
+        if (tag === 'input') {
+            var type = String(el.type || 'text').toLowerCase();
+            if (['button', 'checkbox', 'radio', 'submit', 'reset', 'hidden'].indexOf(type) !== -1) return false;
+            return !(el.disabled || el.readOnly);
+        }
+        return false;
+    }
+
+    function isReportRefreshUnsafe() {
+        try {
+            if (document.querySelector('.modal.show, dialog[open], [aria-modal="true"]')) return true;
+            if (isEditableElement(document.activeElement)) return true;
+            var uploadBtn = document.getElementById('cvUploadBtn');
+            if (uploadBtn && uploadBtn.disabled) return true;
+        } catch (_e) {
+            return true;
+        }
+        return false;
+    }
+
+    function queueDeferredReportRefresh() {
+        REPORT_VERSION_DEFERRED = true;
+        if (REPORT_VERSION_DEFERRED_TIMER) return;
+        REPORT_VERSION_DEFERRED_TIMER = setTimeout(function retryDeferredRefresh() {
+            REPORT_VERSION_DEFERRED_TIMER = null;
+            if (!REPORT_VERSION_DEFERRED) return;
+            if (isReportRefreshUnsafe()) {
+                queueDeferredReportRefresh();
+                return;
+            }
+            refreshReportAfterVersionChange().catch(function () {});
+        }, 1500);
+    }
+
+    async function refreshReportAfterVersionChange() {
+        if (REPORT_VERSION_REFRESH_IN_FLIGHT || LOAD_REPORT_IN_FLIGHT) {
+            queueDeferredReportRefresh();
+            return;
+        }
+        if (isReportRefreshUnsafe()) {
+            queueDeferredReportRefresh();
+            return;
+        }
+        REPORT_VERSION_DEFERRED = false;
+        REPORT_VERSION_REFRESH_IN_FLIGHT = true;
+        var state = captureReportUiState();
+        try {
+            var refreshed = await loadReport({ preserveUi: true, silentVersionRefresh: true, section: state.section || '' });
+            if (refreshed) {
+                var nextVersion = reportWorkflowVersionFromPayload(refreshed);
+                if (nextVersion !== null) REPORT_VERSION_CURRENT = nextVersion;
+            }
+        } finally {
+            REPORT_VERSION_REFRESH_IN_FLIGHT = false;
+            restoreReportUiState(state);
+            if (REPORT_VERSION_DEFERRED && !isReportRefreshUnsafe()) {
+                queueDeferredReportRefresh();
+            }
+        }
+    }
+
+    async function pollReportVersion() {
+        if (REPORT_VERSION_POLL_IN_FLIGHT || REPORT_VERSION_REFRESH_IN_FLIGHT || LOAD_REPORT_IN_FLIGHT) return;
+        if (!REPORT_PAYLOAD || !REPORT_PAYLOAD.case) return;
+        var cs = REPORT_PAYLOAD.case || {};
+        var applicationId = String(cs.application_id || CURRENT_APP_ID || qs('application_id') || '').trim();
+        var caseId = String(cs.case_id || qs('case_id') || '').trim();
+        if (!applicationId && !caseId) return;
+        REPORT_VERSION_POLL_IN_FLIGHT = true;
+        try {
+            var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
+            var url = base + '/api/shared/candidate_report_version.php?';
+            url += applicationId ? ('application_id=' + encodeURIComponent(applicationId)) : ('case_id=' + encodeURIComponent(caseId));
+            url += '&_=' + encodeURIComponent(String(Date.now()));
+            var res = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
+            var payload = await res.json().catch(function () { return null; });
+            if (!res.ok || !payload || payload.status !== 1 || !payload.data) return;
+            var nextVersion = payload.data.workflow_version;
+            if (nextVersion === null || typeof nextVersion === 'undefined' || nextVersion === '') return;
+            nextVersion = String(nextVersion);
+            if (REPORT_VERSION_CURRENT === null) {
+                REPORT_VERSION_CURRENT = nextVersion;
+                return;
+            }
+            if (nextVersion !== REPORT_VERSION_CURRENT) {
+                refreshReportAfterVersionChange().catch(function () {});
+            }
+        } catch (_e) {
+        } finally {
+            REPORT_VERSION_POLL_IN_FLIGHT = false;
+        }
+    }
+
+    function startReportVersionPolling(payload) {
+        if (String(qs('print') || '') === '1') return;
+        var role = getRole();
+        var pollRoles = ['verifier', 'validator', 'qa', 'db_verifier', 'client_admin', 'gss_admin'];
+        if (pollRoles.indexOf(role) === -1) return;
+        var version = reportWorkflowVersionFromPayload(payload || REPORT_PAYLOAD);
+        if (version !== null) REPORT_VERSION_CURRENT = version;
+        if (REPORT_VERSION_POLL_TIMER) return;
+        REPORT_VERSION_POLL_TIMER = setInterval(function () {
+            pollReportVersion().catch(function () {});
+        }, REPORT_VERSION_POLL_MS);
+    }
+
     async function loadReport(options) {
         if (LOAD_REPORT_IN_FLIGHT) {
             LOAD_REPORT_PENDING_OPTS = options || {};
@@ -8290,6 +8549,10 @@ function askActionConfirm(label) {
         }
         LOAD_REPORT_IN_FLIGHT = true;
         options = options || {};
+        if (options.section) {
+            CURRENT_SECTION_KEY = normSection(String(options.section || ''));
+            LAST_COMPONENT_SECTION_KEY = CURRENT_SECTION_KEY || LAST_COMPONENT_SECTION_KEY;
+        }
         try {
         var root = document.querySelector('.cr-report-root');
         var hasExistingPayload = !!(REPORT_PAYLOAD && typeof REPORT_PAYLOAD === 'object');
@@ -8340,6 +8603,10 @@ function askActionConfirm(label) {
             if (priorityBucket) {
                 url += '&priority_bucket=' + encodeURIComponent(priorityBucket);
             }
+            var reportMode = (qs('report_mode') || '').toString().trim().toLowerCase();
+            if (reportMode) {
+                url += '&report_mode=' + encodeURIComponent(reportMode);
+            }
         }
 
 
@@ -8376,6 +8643,7 @@ function askActionConfirm(label) {
             return;
         }
         REPORT_PAYLOAD = d;
+        startReportVersionPolling(d);
         applyRoleActionabilityFromPayload(d);
         resetComponentTableRenderState(d);
         applyCaseActionCardVisibility();

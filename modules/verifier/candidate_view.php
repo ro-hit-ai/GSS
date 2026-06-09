@@ -11,9 +11,11 @@ $fromBoard = isset($_GET['board']) && (string)$_GET['board'] === '1';
 $view = isset($_GET['view']) ? strtolower(trim((string)$_GET['view'])) : '';
 $filter = isset($_GET['filter']) ? strtolower(trim((string)$_GET['filter'])) : '';
 $priorityBucket = isset($_GET['priority_bucket']) ? strtolower(trim((string)$_GET['priority_bucket'])) : '';
+$reportMode = isset($_GET['report_mode']) ? strtolower(trim((string)$_GET['report_mode'])) : '';
 $allowedViews = ['mine', 'available', 'claimable', 'active', 'all', 'followup', 'participated', 'history', 'completed'];
 $allowedFilters = ['all', 'active_work', 'awaiting_evaluation', 'waiting_candidate', 'evaluated', 'reopened', 'downstream_processing', 'review_complete'];
 $allowedPriorityBuckets = ['p1', 'p2', 'p3'];
+$allowedReportModes = ['readonly'];
 
 if ($applicationId === '' && $caseId > 0) {
     require_once __DIR__ . '/../../config/db.php';
@@ -40,7 +42,7 @@ if ($applicationId === '' && $caseId <= 0) {
 // Direct-open support from legacy list routes: auto-claim case only when not coming
 // from the board. Board flow is explicit claim-first, open-second.
 $userId = (int)($_SESSION['auth_user_id'] ?? 0);
-if (!$fromBoard && $userId > 0) {
+if (!$fromBoard && $reportMode !== 'readonly' && $userId > 0) {
     require_once __DIR__ . '/../../config/db.php';
     try {
         $pdo = getDB();
@@ -78,6 +80,10 @@ if ($clientId > 0) {
 
 if (in_array($priorityBucket, $allowedPriorityBuckets, true)) {
     $target .= '&priority_bucket=' . urlencode($priorityBucket);
+}
+
+if (in_array($reportMode, $allowedReportModes, true)) {
+    $target .= '&report_mode=' . urlencode($reportMode);
 }
 
 if (in_array($view, $allowedViews, true)) {

@@ -31,7 +31,8 @@ ob_start();
     .vr-chip:hover{transform:translateY(-1px);border-color:rgba(96,165,250,0.45);color:#1d4ed8;}
     .vr-chip.active{background:linear-gradient(135deg,#2563eb 0%,#1d4ed8 100%);color:#fff;border-color:#2563eb;box-shadow:0 10px 22px rgba(37,99,235,0.24);}
     .vr-board-panel{margin-top:16px;border:1px solid rgba(148,163,184,0.2);border-radius:18px;overflow:hidden;background:rgba(255,255,255,0.94);box-shadow:0 18px 34px rgba(15,23,42,0.07);}
-    .vr-board-grid{width:100%;}
+    .vr-board-grid{width:100%;display:flex;flex-direction:column;gap:12px;padding:12px;}
+    #vrBoardRows{display:flex;flex-direction:column;gap:12px;}
     .vr-board-row{display:grid;grid-template-columns:minmax(130px,1fr) minmax(170px,1.15fr) minmax(360px,2.45fr) minmax(105px,.75fr) minmax(125px,.85fr) minmax(150px,.95fr) 120px;align-items:center;min-height:66px;border-top:1px solid rgba(148,163,184,0.16);}
     .vr-board-row:first-child{border-top:none;}
     .vr-board-head-row{background:linear-gradient(180deg,#f8fbff 0%,#eef5fc 100%);font-size:11px;font-weight:900;color:#64748b;letter-spacing:.08em;text-transform:uppercase;min-height:54px;}
@@ -42,6 +43,18 @@ ob_start();
     .vr-board-data-row.is-mine{background:#eef6ff;}
     .vr-board-data-row.is-locked{background:#f8fafc;color:#64748b;}
     .vr-board-data-row.is-completed{background:#f5fbf7;}
+    .vr-case-card{border:1px solid rgba(148,163,184,0.2);border-radius:16px;background:rgba(255,255,255,0.96);box-shadow:0 10px 24px rgba(15,23,42,0.05);overflow:hidden;}
+    .vr-case-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:14px 16px;background:linear-gradient(180deg,#f8fbff 0%,#eef5fc 100%);border-bottom:1px solid rgba(148,163,184,0.16);}
+    .vr-case-card-badges{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;text-align:right;}
+    .vr-priority-section-list{display:flex;flex-direction:column;}
+    .vr-priority-section{display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:74px;padding:13px 16px;border-top:1px solid rgba(148,163,184,0.14);}
+    .vr-priority-section:first-child{border-top:none;}
+    .vr-priority-section.is-clickable{cursor:pointer;}
+    .vr-priority-section.is-clickable:hover{background:#f8fbff;}
+    .vr-priority-section-main{display:flex;flex-direction:column;gap:8px;min-width:0;}
+    .vr-priority-section-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;color:#64748b;}
+    .vr-priority-section-meta strong{color:#0f172a;}
+    .vr-priority-section-action{display:flex;justify-content:flex-end;min-width:110px;}
     .vr-board-child-row{min-height:48px;background:#fff;border-top:1px solid rgba(148,163,184,0.12);}
     .vr-board-child-row .vr-board-cell{padding-top:9px;padding-bottom:9px;}
     .vr-board-child-state{font-weight:950;color:#64748b;text-transform:capitalize;}
@@ -93,13 +106,11 @@ ob_start();
     .vr-summary-strip{margin-top:14px;padding:10px 12px;border:1px solid rgba(148,163,184,0.18);border-radius:14px;background:rgba(255,255,255,0.84);display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
     .vr-summary-pill{display:inline-flex;align-items:center;gap:8px;border-radius:999px;padding:7px 12px;background:#fff;border:1px solid rgba(148,163,184,0.18);font-size:12px;color:#475569;font-weight:800;}
     .vr-summary-pill strong{color:#0f172a;}
-    @media (max-width: 1180px){
-        .vr-board-panel{overflow-x:auto;}
-        .vr-board-grid{min-width:1200px;}
-    }
     @media (max-width: 820px){
         .qa-like-main{padding:14px;}
         .vr-kpis{grid-template-columns:repeat(2,minmax(0,1fr));}
+        .vr-case-card-head,.vr-priority-section{align-items:flex-start;flex-direction:column;}
+        .vr-case-card-badges,.vr-priority-section-action{justify-content:flex-start;text-align:left;}
     }
     @media (max-width: 640px){
         .vr-kpis{grid-template-columns:1fr;}
@@ -150,7 +161,7 @@ ob_start();
         </div>
 
         <div class="vr-summary-strip">
-            <span class="vr-summary-pill"><strong>Component Worklist</strong> One application per row</span>
+            <span class="vr-summary-pill"><strong>Component Worklist</strong> One application per card</span>
             <span class="vr-summary-pill"><strong>Claim Model</strong> Component-level claims</span>
             <span class="vr-summary-pill"><strong>Work Surface</strong> Priority-gated components</span>
         </div>
@@ -167,15 +178,6 @@ ob_start();
 
         <div class="vr-board-panel">
             <div class="vr-board-grid">
-                <div class="vr-board-row vr-board-head-row">
-                    <div class="vr-board-cell">Application</div>
-                    <div class="vr-board-cell">Candidate</div>
-                    <div class="vr-board-cell">Components</div>
-                    <div class="vr-board-cell">Bucket</div>
-                    <div class="vr-board-cell">Claim State</div>
-                    <div class="vr-board-cell">Claimed By</div>
-                    <div class="vr-board-cell">Action</div>
-                </div>
                 <div id="vrBoardRows"></div>
             </div>
         </div>

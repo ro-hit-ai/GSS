@@ -232,13 +232,14 @@ try {
         throw new ValidationException('Invalid method. Expected POST');
     }
 
-    $pdo = getDB();
-    $pdo->beginTransaction();
-
     $application_id = $_SESSION['application_id'] ?? null;
     if (!$application_id) {
         throw new ValidationException('Session expired. Please log in again.');
     }
+    ccs_guard_correction_component_or_json('education');
+
+    $pdo = getDB();
+    $pdo->beginTransaction();
 
     $qualCount = count($_POST['qualification'] ?? []);
     if ($qualCount === 0) {

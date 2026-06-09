@@ -197,9 +197,10 @@ class Ecourt {
             'click',
             e => {
                 e.preventDefault();
+                const previousPage = window.Router?.getPreviousPage?.('ecourt') || 'employment';
                 window.Router?.navigateTo
-                    ? Router.navigateTo('employment')
-                    : (location.href = '?page=employment');
+                    ? Router.navigateTo(previousPage)
+                    : (location.href = `?page=${previousPage}`);
             }
         );
 
@@ -543,7 +544,8 @@ class Ecourt {
                 localStorage.setItem('completed-ecourt', '1');
             }
 
-            Router?.navigateTo?.('social');
+            const nextPage = window.Router?.getNextPage?.('ecourt') || 'social';
+            Router?.navigateTo?.(nextPage);
         } catch (e) {
             this.showNotification(e.message, true);
         } finally {

@@ -523,7 +523,8 @@ setupFormHandlers() {
         this.addEventListener(prevBtn, 'click', (e) => {
             e.preventDefault();
             if (window.Router) {
-                Router.navigateTo('basic-details');
+                const previousPage = typeof Router.getPreviousPage === 'function' ? Router.getPreviousPage('identification') : 'basic-details';
+                Router.navigateTo(previousPage);
             }
         });
     }
@@ -792,7 +793,7 @@ async submitForm(isDraft = false) {
                 
                 // Navigate to next page immediately
                 if (window.Router && window.Router.navigateTo) {
-                    const nextPage = 'contact';
+                    const nextPage = typeof window.Router.getNextPage === 'function' ? window.Router.getNextPage('identification') : 'contact';
                     console.log(`➡️ Navigating to: ${nextPage}`);
                     window.Router.navigateTo(nextPage);
                 } else {

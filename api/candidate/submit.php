@@ -123,15 +123,6 @@ try {
 
     $pdo->query("SELECT 1");
 
-    if (!is_authorization_completed($pdo, $application_id)) {
-        validator_activation_debug_log(
-            'source=submit'
-            . ' application_id=' . $application_id
-            . ' final_submit_completed=0 authorization_completed=0 queue_created=0 queue_seed_reason=blocked_missing_authorization'
-        );
-        throw new Exception('Please complete authorization before final submit.');
-    }
-
     // Correction mode submit: complete only targeted correction workflow.
     if (!empty($_SESSION['candidate_correction_mode']) && !empty($_SESSION['candidate_correction_session_id'])) {
         ccs_ensure_table($pdo);
@@ -152,13 +143,13 @@ try {
             if ($k !== '') $components[$k] = true;
         }
         $components = array_values(array_keys($components));
-        $pdo->beginTransaction();
-        $changed = ccs_resume_components_after_candidate_submit($pdo, (int)$corrRow['case_id'], $application_id, $components);
         $requestedRole = ccs_role_norm((string)($corrRow['requested_role'] ?? wf_mode_default_requested_role($pdo, (int)$corrRow['case_id'], $application_id)));
         $resumeStage = ccs_component_stage_for_role($requestedRole);
         if ($resumeStage === '') {
             $resumeStage = wf_mode_first_human_stage($pdo, (int)$corrRow['case_id'], $application_id);
         }
+        $pdo->beginTransaction();
+        $changed = ccs_resume_components_after_candidate_submit($pdo, (int)$corrRow['case_id'], $application_id, $components, 'correction_submitted', $resumeStage);
         $setAppPending = $pdo->prepare(
             "UPDATE Vati_Payfiller_Candidate_Applications
                 SET status = 'submitted',
@@ -181,7 +172,9 @@ try {
         if (empty($reconcile['ok'])) {
             throw new Exception((string)($reconcile['message'] ?? 'Correction lifecycle reconcile failed'));
         }
-        $pdo->commit();
+        if ($pdo->inTransaction()) {
+            $pdo->commit();
+        }
         ccs_timeline($pdo, $application_id, 0, 'candidate', 'candidate_correction', 'Candidate submitted requested corrections: ' . implode(', ', $components));
         unset(
             $_SESSION['candidate_correction_mode'],
@@ -198,6 +191,15 @@ try {
         ];
         echo json_encode($response);
         exit;
+    }
+
+    if (!is_authorization_completed($pdo, $application_id)) {
+        validator_activation_debug_log(
+            'source=submit'
+            . ' application_id=' . $application_id
+            . ' final_submit_completed=0 authorization_completed=0 queue_created=0 queue_seed_reason=blocked_missing_authorization'
+        );
+        throw new Exception('Please complete authorization before final submit.');
     }
 
     // Ensure candidate application lifecycle row exists; submit action must be idempotent.

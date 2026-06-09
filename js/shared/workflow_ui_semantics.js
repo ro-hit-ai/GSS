@@ -7,9 +7,9 @@
     }
 
     var TAXONOMY = {
-        component_status: ['approved', 'rejected', 'hold', 'waiting_candidate', 'insufficient_documents', 'in_progress', 'pending', 'reopened', 'blocked', 'invalidated_by_validator_reopen', 'invalidated_by_verifier_reopen'],
-        stage_status: ['pending', 'in_progress', 'completed', 'rejected', 'hold', 'insufficient_documents', 'waiting_candidate', 'blocked', 'reopened', 'invalidated_by_validator_reopen', 'invalidated_by_verifier_reopen'],
-        queue_operational: ['pending', 'in_progress', 'waiting_candidate', 'hold', 'insufficient_documents', 'reopened', 'blocked', 'done', 'completed'],
+        component_status: ['approved', 'rejected', 'hold', 'waiting_candidate', 'insufficient_documents', 'correction_submitted', 'in_progress', 'pending', 'reopened', 'blocked', 'invalidated_by_validator_reopen', 'invalidated_by_verifier_reopen'],
+        stage_status: ['pending', 'in_progress', 'correction_submitted', 'completed', 'rejected', 'hold', 'insufficient_documents', 'waiting_candidate', 'blocked', 'reopened', 'invalidated_by_validator_reopen', 'invalidated_by_verifier_reopen'],
+        queue_operational: ['pending', 'in_progress', 'correction_submitted', 'waiting_candidate', 'hold', 'insufficient_documents', 'reopened', 'blocked', 'done', 'completed'],
         case_status: ['pending_validator', 'pending_verifier', 'pending_qa', 'approved', 'completed', 'verified', 'clear', 'rejected', 'stop_bgv']
     };
 
@@ -20,6 +20,7 @@
             validator: {
                 pending: 'VA PENDING',
                 in_progress: 'VA PENDING',
+                correction_submitted: 'CORRECTION SUBMITTED',
                 hold: 'VA HOLD',
                 insufficient_documents: 'NEED DOCS',
                 approved: 'VA APPROVED',
@@ -41,6 +42,7 @@
             verifier: {
                 pending: 'VE PENDING',
                 in_progress: 'VE PENDING',
+                correction_submitted: 'CORRECTION SUBMITTED',
                 hold: 'VE HOLD',
                 insufficient_documents: 'NEED DOCS',
                 approved: 'VE APPROVED',
@@ -62,6 +64,7 @@
             qa: {
                 pending: 'QA PENDING',
                 in_progress: 'QA PENDING',
+                correction_submitted: 'CORRECTION SUBMITTED',
                 hold: 'QA HOLD',
                 insufficient_documents: 'NEED DOCS',
                 approved: 'QA APPROVED',
@@ -91,6 +94,7 @@
         if (s === 'rejected') return 'danger';
         if (s === 'invalidated_by_validator_reopen' || s === 'invalidated_by_verifier_reopen') return 'secondary';
         if (s === 'hold' || s === 'blocked') return 'warning';
+        if (s === 'correction_submitted') return 'info';
         if (s === 'insufficient_documents') return 'yellow';
         if (s === 'waiting_candidate' || s === 'reopened') return 'purple';
         if (s === 'mail_sent') return 'cyan';
@@ -152,6 +156,11 @@
         return labelByRole(s, role);
     }
 
+    function correctionSubmittedResult(status, role) {
+        if (norm(status) !== 'correction_submitted') return null;
+        return { owner: role, status: 'correction_submitted', label: labelByRole('correction_submitted', role) };
+    }
+
     function isVerifierFirstMode(mode) {
         return norm(mode) === 'verifier_first';
     }
@@ -165,6 +174,10 @@
         var ver = norm(row.verifier && row.verifier.status);
         var qa = norm(row.qa && row.qa.status);
         var cand = norm(row.candidate && row.candidate.status);
+        var correctionSubmitted = correctionSubmittedResult(val, 'validator')
+            || correctionSubmittedResult(ver, 'verifier')
+            || correctionSubmittedResult(qa, 'qa');
+        if (correctionSubmitted) return correctionSubmitted;
 
         // Stage-priority active owner resolution.
         // Legacy cases: validator unresolved -> verifier unresolved -> qa unresolved.

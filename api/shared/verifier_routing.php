@@ -1,5 +1,7 @@
 <?php
 require_once __DIR__ . '/case_component_binding.php';
+require_once __DIR__ . '/reference_component_compat.php';
+require_once __DIR__ . '/workflow_snapshot_service.php';
 
 function verifier_routing_components(): array
 {
@@ -319,17 +321,24 @@ function verifier_routing_expand_reference_rows(PDO $pdo, int $caseId, array $ro
         }
     }
 
-    $seen = [];
-    $deduped = [];
-    foreach ($out as $row) {
+    return reference_compat_filter_rows($out, 'component_key');
+}
+
+function verifier_routing_apply_resolved_workflow_statuses(PDO $pdo, int $caseId, array $rows): array
+{
+    if ($caseId <= 0 || !$rows) return $rows;
+    $workflowByComponent = ws_fetch_workflow_by_component($pdo, '', $caseId);
+    if (!$workflowByComponent) return $rows;
+
+    foreach ($rows as $idx => $row) {
+        if (!is_array($row)) continue;
         $key = verifier_routing_normalize_component((string)($row['component_key'] ?? ''));
         if ($key === '') continue;
-        if (isset($seen[$key])) continue;
-        $seen[$key] = true;
-        $row['component_key'] = $key;
-        $deduped[] = $row;
+        $fallback = strtolower(trim((string)($row['verifier_status'] ?? 'pending')));
+        $rows[$idx]['verifier_status'] = ws_resolved_stage_status($workflowByComponent, $key, 'verifier', $fallback);
     }
-    return $deduped;
+
+    return $rows;
 }
 
 function verifier_routing_case_component_rows(PDO $pdo, int $caseId, array $capabilities = []): array
@@ -352,6 +361,7 @@ function verifier_routing_case_component_rows(PDO $pdo, int $caseId, array $capa
         );
         $st->execute([$caseId]);
         $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $rows = verifier_routing_apply_resolved_workflow_statuses($pdo, $caseId, $rows);
         return verifier_routing_expand_reference_rows($pdo, $caseId, $rows, $capabilities);
     } catch (Throwable $e) {
         return [];
@@ -422,6 +432,7 @@ function verifier_routing_pending_higher_priority_count(PDO $pdo, int $userId, i
     foreach ($rowsByCase as $caseId => $caseRows) {
         $caseId = (int)$caseId;
         if ($excludeCaseId > 0 && $caseId === $excludeCaseId) continue;
+        $caseRows = verifier_routing_apply_resolved_workflow_statuses($pdo, $caseId, $caseRows);
         foreach (verifier_routing_expand_reference_rows($pdo, $caseId, $caseRows, $capabilities) as $row) {
             $key = verifier_routing_normalize_component((string)($row['component_key'] ?? ''));
             if (!verifier_routing_is_routeable($key)) continue;
@@ -531,7 +542,7 @@ function verifier_routing_case_state(PDO $pdo, int $caseId, int $userId): array
         ];
     }
 
-    return [
+    return reference_compat_apply_to_routing_state([
         'components' => $components,
         'visible_sections' => array_values(array_unique($visibleSections)),
         'owned_active_components' => array_values(array_unique($ownedActive)),
@@ -542,7 +553,7 @@ function verifier_routing_case_state(PDO $pdo, int $caseId, int $userId): array
         'bucket_pending_by_priority' => $bucketPendingByPriority,
         'can_open' => !empty($ownedActive) || !empty($completed),
         'can_claim' => !empty($claimableNext),
-    ];
+    ]);
 }
 
 function verifier_routing_claimable_components_for_case(PDO $pdo, int $caseId, int $userId): array

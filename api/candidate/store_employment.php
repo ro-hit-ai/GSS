@@ -212,6 +212,7 @@ try {
         echo json_encode(['success' => false, 'message' => 'Application ID not found']);
         exit;
     }
+    ccs_guard_correction_component_or_json('employment');
 
     $pdo = getDB();
     $pdo->beginTransaction();

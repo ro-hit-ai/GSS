@@ -133,11 +133,13 @@ try {
         throw new ValidationException("Session expired. Please login again.");
     }
 
+    $application_id = $_SESSION['application_id'];
+    ccs_guard_correction_component_or_json('contact');
+
     $pdo = getDB();
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $pdo->beginTransaction();
 
-    $application_id = $_SESSION['application_id'];
     $post = array_map('trim', $_POST);
 
 

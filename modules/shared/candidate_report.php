@@ -4886,15 +4886,38 @@ render_layout('Candidate Report', $roleLabel, $menu, $content);
             return id ? document.getElementById(id) : null;
         }
 
+        function isReadonlyReport() {
+            var mode = '';
+            try {
+                mode = String(new URLSearchParams(window.location.search || '').get('report_mode') || '').toLowerCase().trim();
+            } catch (_e) {
+                mode = '';
+            }
+            if (mode === 'readonly' || mode === 'read_only' || mode === 'view_only') return true;
+            try {
+                var bodyMode = String(document.body.dataset.crReportMode || '').toLowerCase().trim();
+                if (bodyMode === 'readonly' || bodyMode === 'read_only' || bodyMode === 'view_only') return true;
+                if (String(document.body.dataset.crCanTakeAction || '') === '0') return true;
+            } catch (_e2) {}
+            return false;
+        }
+
         function syncProxyButtons() {
             var proxies = document.querySelectorAll('.cr-sec-action[data-proxy-action]');
             if (!proxies.length) return;
+            var readonly = isReadonlyReport();
             proxies.forEach(function (btn) {
                 var action = String(btn.getAttribute('data-proxy-action') || '').toLowerCase().trim();
                 var canonical = getCanonicalButton(action);
-                // Keep proxy actions always available so validators can update decisions later.
-                btn.style.display = '';
-                btn.disabled = false;
+                if (readonly) {
+                    btn.style.display = 'none';
+                    btn.disabled = true;
+                    return;
+                }
+                if (canonical && canonical.style.display === 'none') {
+                    btn.style.display = 'none';
+                    btn.disabled = true;
+                }
             });
         }
 
@@ -4937,6 +4960,7 @@ render_layout('Candidate Report', $roleLabel, $menu, $content);
         });
 
         document.addEventListener('cv:section-changed', syncProxyButtons);
+        document.addEventListener('cr:actionability-updated', syncProxyButtons);
         document.addEventListener('cv:record-tab-changed', function () {
             syncProxyButtons();
             normalizeRecordTabLabels();

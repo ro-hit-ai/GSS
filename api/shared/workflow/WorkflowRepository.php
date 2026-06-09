@@ -23,6 +23,7 @@ final class WorkflowRepository
 
     private function ensureReopenAuditColumns(): void
     {
+        if ($this->pdo->inTransaction()) return;
         if (self::$reopenColumnsEnsured) return;
         self::$reopenColumnsEnsured = true;
         try {
@@ -58,6 +59,7 @@ final class WorkflowRepository
 
     private function ensureWorkflowStatusCapacity(): void
     {
+        if ($this->pdo->inTransaction()) return;
         if (self::$workflowStatusCapacityEnsured) return;
         self::$workflowStatusCapacityEnsured = true;
         try {
@@ -1090,7 +1092,7 @@ final class WorkflowRepository
              FROM Vati_Payfiller_Verifier_Group_Queue
              WHERE case_id = ?
                AND completed_at IS NULL
-               AND COALESCE(LOWER(TRIM(status)), 'pending') IN ('pending','in_progress','waiting_candidate','hold','insufficient_documents','reopened','blocked','followup')"
+               AND COALESCE(LOWER(TRIM(status)), 'pending') IN ('pending','in_progress','correction_submitted','waiting_candidate','hold','insufficient_documents','reopened','blocked','followup')"
         );
         $st->execute([$caseId]);
         return (int)($st->fetchColumn() ?: 0);

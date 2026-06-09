@@ -411,9 +411,10 @@ class Reference {
             'click',
             (e) => {
                 e.preventDefault();
+                const previousPage = window.Router?.getPreviousPage?.('reference') || 'social';
                 window.Router?.navigateTo
-                    ? Router.navigateTo('social')
-                    : (location.href = '?page=social');
+                    ? Router.navigateTo(previousPage)
+                    : (location.href = `?page=${previousPage}`);
             }
         );
     }
@@ -524,9 +525,10 @@ class Reference {
             window.Router?.markCompleted?.('reference');
             window.Router?.updateProgress?.();
             window.Forms?.clearDraft?.('reference');
+            const nextPage = window.Router?.getNextPage?.('reference') || 'success';
             window.Router?.navigateTo
-                ? Router.navigateTo('review')
-                : (location.href = '?page=review');
+                ? Router.navigateTo(nextPage)
+                : (location.href = '?page=' + encodeURIComponent(nextPage));
             return;
         }
 
@@ -569,9 +571,10 @@ class Reference {
                 window.Router?.markCompleted?.('reference');
                 window.Router?.updateProgress?.();
                 window.Forms?.clearDraft?.('reference');
+                const nextPage = window.Router?.getNextPage?.('reference') || 'success';
                 window.Router?.navigateTo
-                    ? Router.navigateTo('review')
-                    : (location.href = '?page=review');
+                    ? Router.navigateTo(nextPage)
+                    : (location.href = '?page=' + encodeURIComponent(nextPage));
             }
         } catch (e) {
             this.showNotification(e.message, true);

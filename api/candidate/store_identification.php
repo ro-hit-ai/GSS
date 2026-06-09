@@ -101,6 +101,7 @@ try {
     if (!$application_id) {
         throw new ValidationException("Session expired. Please log in again.");
     }
+    ccs_guard_correction_component_or_json('id');
 
     $isDraft = isset($_POST['draft']) && $_POST['draft'] === '1';
 

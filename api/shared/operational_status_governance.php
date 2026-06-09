@@ -212,7 +212,7 @@ function os_workflow_aggregate_map(PDO $pdo, array $caseIds, string $role): arra
                        SUM(CASE WHEN LOWER(TRIM(COALESCE(status,''))) = 'hold' THEN 1 ELSE 0 END) AS hold_count,
                        SUM(CASE WHEN LOWER(TRIM(COALESCE(status,''))) = 'insufficient_documents' THEN 1 ELSE 0 END) AS need_docs_count,
                        SUM(CASE WHEN LOWER(TRIM(COALESCE(status,''))) IN ('waiting_candidate','reopened') THEN 1 ELSE 0 END) AS waiting_candidate_count,
-                       SUM(CASE WHEN LOWER(TRIM(COALESCE(status,''))) IN ('pending','in_progress','blocked') THEN 1 ELSE 0 END) AS pending_like_count,
+                       SUM(CASE WHEN LOWER(TRIM(COALESCE(status,''))) IN ('pending','in_progress','correction_submitted','blocked') THEN 1 ELSE 0 END) AS pending_like_count,
                        COUNT(*) AS total_count
                   FROM Vati_Payfiller_Case_Component_Workflow
                  WHERE case_id IN ($ph) AND LOWER(TRIM(stage)) = ?
@@ -257,7 +257,7 @@ function os_queue_resolution_map(PDO $pdo, array $rows, string $role): array
             try {
                 $st = $pdo->prepare(
                     "SELECT
-                        SUM(CASE WHEN completed_at IS NULL AND LOWER(TRIM(COALESCE(status,''))) IN ('pending','in_progress','waiting_candidate','hold','insufficient_documents','reopened','blocked') THEN 1 ELSE 0 END) AS unresolved_rows,
+                        SUM(CASE WHEN completed_at IS NULL AND LOWER(TRIM(COALESCE(status,''))) IN ('pending','in_progress','correction_submitted','waiting_candidate','hold','insufficient_documents','reopened','blocked') THEN 1 ELSE 0 END) AS unresolved_rows,
                         SUM(CASE WHEN completed_at IS NOT NULL OR LOWER(TRIM(COALESCE(status,''))) IN ('done','completed','approved','rejected','hold','insufficient_documents','verified','clear') THEN 1 ELSE 0 END) AS resolved_rows
                      FROM Vati_Payfiller_Verifier_Group_Queue
                      WHERE case_id = ? AND UPPER(TRIM(group_key)) = ?"

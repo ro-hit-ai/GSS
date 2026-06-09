@@ -31,6 +31,124 @@ function ws_norm_component_key(string $k): string
     return $k;
 }
 
+function ws_is_split_reference_key(string $componentKey): bool
+{
+    $k = ws_norm_component_key($componentKey);
+    return $k === 'education_reference' || $k === 'employment_reference';
+}
+
+function ws_stage_meta_from_workflow_row(array $row): array
+{
+    return [
+        'status' => strtolower(trim((string)($row['status'] ?? ''))),
+        'completed_at' => $row['completed_at'] ?? null,
+        'updated_at' => $row['updated_at'] ?? null,
+        'reopen_reason' => $row['reopen_reason'] ?? null,
+        'reopened_by_user_id' => isset($row['reopened_by_user_id']) && (int)$row['reopened_by_user_id'] > 0 ? (int)$row['reopened_by_user_id'] : null,
+        'reopened_by_role' => $row['reopened_by_role'] ?? null,
+        'reopened_at' => $row['reopened_at'] ?? null,
+        'relocked_by_user_id' => isset($row['relocked_by_user_id']) && (int)$row['relocked_by_user_id'] > 0 ? (int)$row['relocked_by_user_id'] : null,
+        'relocked_by_role' => $row['relocked_by_role'] ?? null,
+        'relocked_at' => $row['relocked_at'] ?? null,
+        'invalidation_reason' => $row['invalidation_reason'] ?? null,
+        'invalidated_by_user_id' => isset($row['invalidated_by_user_id']) && (int)$row['invalidated_by_user_id'] > 0 ? (int)$row['invalidated_by_user_id'] : null,
+        'invalidated_by_role' => $row['invalidated_by_role'] ?? null,
+        'invalidated_source_stage' => $row['invalidated_source_stage'] ?? null,
+        'invalidated_at' => $row['invalidated_at'] ?? null,
+    ];
+}
+
+function ws_fetch_workflow_by_component(PDO $pdo, string $applicationId = '', int $caseId = 0): array
+{
+    $workflowByComponent = [];
+    if (!ws_workflow_table_available($pdo)) return $workflowByComponent;
+    if ($applicationId === '' && $caseId <= 0) return $workflowByComponent;
+
+    try {
+        $where = $caseId > 0 ? 'case_id = ?' : 'application_id = ?';
+        $param = $caseId > 0 ? $caseId : $applicationId;
+        try {
+            $workflowStmt = $pdo->prepare(
+                'SELECT component_key, stage, status, completed_at, updated_at,
+                        reopen_reason, reopened_by_user_id, reopened_by_role, reopened_at,
+                        relocked_by_user_id, relocked_by_role, relocked_at,
+                        invalidation_reason, invalidated_by_user_id, invalidated_by_role, invalidated_source_stage, invalidated_at
+                   FROM Vati_Payfiller_Case_Component_Workflow
+                  WHERE ' . $where
+            );
+            $workflowStmt->execute([$param]);
+            $workflowRows = $workflowStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        } catch (Throwable $e) {
+            $workflowStmt = $pdo->prepare(
+                'SELECT component_key, stage, status, completed_at, updated_at
+                   FROM Vati_Payfiller_Case_Component_Workflow
+                  WHERE ' . $where
+            );
+            $workflowStmt->execute([$param]);
+            $workflowRows = $workflowStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        }
+
+        foreach ($workflowRows as $row) {
+            $ck = ws_norm_component_key((string)($row['component_key'] ?? ''));
+            $stage = strtolower(trim((string)($row['stage'] ?? '')));
+            if ($ck === '' || $stage === '') continue;
+            if (!isset($workflowByComponent[$ck])) {
+                $workflowByComponent[$ck] = [];
+            }
+            $workflowByComponent[$ck][$stage] = ws_stage_meta_from_workflow_row($row);
+        }
+    } catch (Throwable $e) {
+        return [];
+    }
+
+    return $workflowByComponent;
+}
+
+function ws_component_has_workflow_rows(array $workflowByComponent, string $componentKey): bool
+{
+    $key = ws_norm_component_key($componentKey);
+    return $key !== '' && isset($workflowByComponent[$key]) && is_array($workflowByComponent[$key]) && !empty($workflowByComponent[$key]);
+}
+
+function ws_resolve_workflow_component_key(array $workflowByComponent, string $componentKey): string
+{
+    $key = ws_norm_component_key($componentKey);
+    if ($key === '') return '';
+    if (ws_is_split_reference_key($key)) {
+        if (ws_component_has_workflow_rows($workflowByComponent, $key)) return $key;
+        if (ws_component_has_workflow_rows($workflowByComponent, 'reference')) return 'reference';
+    }
+    return $key;
+}
+
+function ws_resolved_component_workflow_entry(array $workflowByComponent, string $componentKey): array
+{
+    $key = ws_norm_component_key($componentKey);
+    $sourceKey = ws_resolve_workflow_component_key($workflowByComponent, $key);
+    $stages = $sourceKey !== '' && isset($workflowByComponent[$sourceKey]) && is_array($workflowByComponent[$sourceKey])
+        ? $workflowByComponent[$sourceKey]
+        : [];
+    return [
+        'component_key' => $key,
+        'source_component_key' => $sourceKey !== '' ? $sourceKey : $key,
+        'stages' => $stages,
+        'stage_simple' => ws_component_stage_surface($stages, $key),
+    ];
+}
+
+function ws_resolved_stage_status(array $workflowByComponent, string $componentKey, string $stage, string $fallback = 'pending'): string
+{
+    $resolved = ws_resolved_component_workflow_entry($workflowByComponent, $componentKey);
+    $stageKey = strtolower(trim($stage));
+    $stages = $resolved['stages'];
+    if ($stageKey !== '' && isset($stages[$stageKey]) && is_array($stages[$stageKey])) {
+        $status = strtolower(trim((string)($stages[$stageKey]['status'] ?? '')));
+        if ($status !== '') return $status;
+    }
+    $fallback = strtolower(trim($fallback));
+    return $fallback !== '' ? $fallback : 'pending';
+}
+
 function ws_compute_component_stage_label(array $stages): string
 {
     $cand = strtolower(trim((string)($stages['candidate'] ?? '')));
@@ -48,6 +166,7 @@ function ws_compute_component_stage_label(array $stages): string
         if ($s === 'approved' && $stageKey === $finalStage) return 'Completed';
         if ($s === 'rejected') return $label . ' Reviewed (Rejected)';
         if ($s === 'hold') return $label . ' Reviewed (Hold)';
+        if ($s === 'correction_submitted') return 'Correction Submitted';
         if ($s === 'insufficient_documents') return $label . ' Reviewed (Waiting Candidate)';
         if ($s === 'invalidated_by_validator_reopen' || $s === 'invalidated_by_verifier_reopen') return $label . ' Reviewed (Invalidated)';
         if ($isEval($s)) return $label . ' Reviewed';
@@ -110,59 +229,7 @@ function ws_build_snapshot_contract(PDO $pdo, string $applicationId): array
         $componentRows = [];
     }
 
-    $workflowByComponent = [];
-    if (ws_workflow_table_available($pdo)) {
-        try {
-            $workflowRows = [];
-            try {
-                $workflowStmt = $pdo->prepare(
-                    'SELECT component_key, stage, status, completed_at, updated_at,
-                            reopen_reason, reopened_by_user_id, reopened_by_role, reopened_at,
-                            relocked_by_user_id, relocked_by_role, relocked_at,
-                            invalidation_reason, invalidated_by_user_id, invalidated_by_role, invalidated_source_stage, invalidated_at
-                       FROM Vati_Payfiller_Case_Component_Workflow
-                      WHERE application_id = ?'
-                );
-                $workflowStmt->execute([$applicationId]);
-                $workflowRows = $workflowStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-            } catch (Throwable $e) {
-                $workflowStmt = $pdo->prepare(
-                    'SELECT component_key, stage, status, completed_at, updated_at
-                       FROM Vati_Payfiller_Case_Component_Workflow
-                      WHERE application_id = ?'
-                );
-                $workflowStmt->execute([$applicationId]);
-                $workflowRows = $workflowStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-            }
-            foreach ($workflowRows as $row) {
-                $ck = ws_norm_component_key((string)($row['component_key'] ?? ''));
-                $stage = strtolower(trim((string)($row['stage'] ?? '')));
-                if ($ck === '' || $stage === '') continue;
-                if (!isset($workflowByComponent[$ck])) {
-                    $workflowByComponent[$ck] = [];
-                }
-                $workflowByComponent[$ck][$stage] = [
-                    'status' => strtolower(trim((string)($row['status'] ?? ''))),
-                    'completed_at' => $row['completed_at'] ?? null,
-                    'updated_at' => $row['updated_at'] ?? null,
-                    'reopen_reason' => $row['reopen_reason'] ?? null,
-                    'reopened_by_user_id' => isset($row['reopened_by_user_id']) && (int)$row['reopened_by_user_id'] > 0 ? (int)$row['reopened_by_user_id'] : null,
-                    'reopened_by_role' => $row['reopened_by_role'] ?? null,
-                    'reopened_at' => $row['reopened_at'] ?? null,
-                    'relocked_by_user_id' => isset($row['relocked_by_user_id']) && (int)$row['relocked_by_user_id'] > 0 ? (int)$row['relocked_by_user_id'] : null,
-                    'relocked_by_role' => $row['relocked_by_role'] ?? null,
-                    'relocked_at' => $row['relocked_at'] ?? null,
-                    'invalidation_reason' => $row['invalidation_reason'] ?? null,
-                    'invalidated_by_user_id' => isset($row['invalidated_by_user_id']) && (int)$row['invalidated_by_user_id'] > 0 ? (int)$row['invalidated_by_user_id'] : null,
-                    'invalidated_by_role' => $row['invalidated_by_role'] ?? null,
-                    'invalidated_source_stage' => $row['invalidated_source_stage'] ?? null,
-                    'invalidated_at' => $row['invalidated_at'] ?? null,
-                ];
-            }
-        } catch (Throwable $e) {
-            $workflowByComponent = [];
-        }
-    }
+    $workflowByComponent = ws_fetch_workflow_by_component($pdo, $applicationId);
 
     foreach ($componentRows as $component) {
         $componentKey = ws_norm_component_key((string)($component['component_key'] ?? ''));
@@ -172,10 +239,12 @@ function ws_build_snapshot_contract(PDO $pdo, string $applicationId): array
             $visibleSections[] = $componentKey;
         }
 
-        $w = $workflowByComponent[$componentKey] ?? [];
-        $stageSimple = ws_component_stage_surface($w, $componentKey);
+        $resolvedWorkflow = ws_resolved_component_workflow_entry($workflowByComponent, $componentKey);
+        $w = $resolvedWorkflow['stages'];
+        $stageSimple = $resolvedWorkflow['stage_simple'];
 
         $componentWorkflow[$componentKey] = [
+            '_source_component_key' => $resolvedWorkflow['source_component_key'],
             'candidate' => [
                 'status' => $stageSimple['candidate'],
                 'completed_at' => $w['candidate']['completed_at'] ?? null,

@@ -7,6 +7,8 @@ header('Expires: 0');
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../shared/verifier_case_queue.php';
+require_once __DIR__ . '/../shared/workflow_snapshot_service.php';
+require_once __DIR__ . '/../shared/workflow_semantics.php';
 
 auth_require_login('verifier');
 auth_session_start();
@@ -86,14 +88,6 @@ function vr_case_board_component_key(string $key): string
 
 function vr_case_board_status_from_event(string $eventType, string $message): string
 {
-    $text = strtolower(trim($eventType . ' ' . $message));
-    if ($text === '') return '';
-    if (strpos($text, 'reject') !== false) return 'Rejected';
-    if (strpos($text, 'hold') !== false) return 'Hold';
-    if (strpos($text, 'insufficient') !== false || strpos($text, 'need docs') !== false || strpos($text, 'correction') !== false) return 'Insufficiency';
-    if (strpos($text, 'mail') !== false || strpos($text, 'email') !== false) return 'Mail Sent';
-    if (strpos($text, 'approve') !== false) return 'Approved';
-    if (strpos($text, 'complete') !== false) return 'Completed';
     return '';
 }
 
@@ -157,6 +151,24 @@ function vr_case_board_display_status(array $history, string $state): string
     if ($s === 'claimable_next') return 'Ready';
     if ($s === 'locked_future') return 'Locked';
     return '';
+}
+
+function vr_case_board_workflow_display_status(array $workflowByComponent, string $componentKey, string $state): string
+{
+    $resolved = ws_resolved_component_workflow_entry($workflowByComponent, $componentKey);
+    $surface = is_array($resolved['stage_simple'] ?? null) ? $resolved['stage_simple'] : [];
+    $status = strtolower(trim((string)($surface['verifier'] ?? '')));
+    if ($status !== '' && $status !== 'pending') {
+        return wf_role_label_from_status($status, 'verifier');
+    }
+
+    $s = strtolower(trim($state));
+    if ($s === 'context') return 'Context';
+    if ($s === 'completed') return 'Completed';
+    if ($s === 'owned_active') return $status !== '' ? wf_role_label_from_status($status, 'verifier') : 'Active';
+    if ($s === 'claimable_next') return 'Ready';
+    if ($s === 'locked_future') return 'Locked';
+    return $status !== '' ? wf_role_label_from_status($status, 'verifier') : '';
 }
 
 try {
@@ -233,13 +245,15 @@ try {
             continue;
         }
 
-        $routingState = verifier_routing_case_state($pdo, $caseId, $userId);
+        $routingState = reference_compat_apply_to_routing_state(verifier_routing_case_state($pdo, $caseId, $userId));
         $componentHistory = vr_case_board_component_history($pdo, (string)($row['application_id'] ?? ''));
+        $workflowByComponent = ws_fetch_workflow_by_component($pdo, (string)($row['application_id'] ?? ''), $caseId);
         foreach (($routingState['components'] ?? []) as $componentKey => $componentState) {
             $history = vr_case_board_history_for_component($componentHistory, (string)$componentKey);
             $routingState['components'][$componentKey]['history'] = $history;
-            $routingState['components'][$componentKey]['display_status'] = vr_case_board_display_status(
-                $history,
+            $routingState['components'][$componentKey]['display_status'] = vr_case_board_workflow_display_status(
+                $workflowByComponent,
+                (string)$componentKey,
                 (string)($componentState['state'] ?? '')
             );
         }
@@ -251,6 +265,7 @@ try {
             $routingState['completed_components'] ?? [],
             $routingState['locked_future_components'] ?? []
         )));
+        $matchingComponents = reference_compat_effective_keys($matchingComponents);
         if ($state === 'hidden_unrelated' && !$matchingComponents) {
             continue;
         }
@@ -326,4 +341,3 @@ try {
     http_response_code(500);
     echo json_encode(['status' => 0, 'message' => $e->getMessage()]);
 }
-

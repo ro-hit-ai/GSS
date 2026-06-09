@@ -7,6 +7,7 @@ session_start();
 
 require_once __DIR__ . '/../../config/env.php';
 require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../../api/shared/candidate_correction_service.php';
 
 if (empty($_SESSION['logged_in']) || empty($_SESSION['application_id'])) {
     header('Location: ' . app_url('/modules/candidate/login.php'));
@@ -21,6 +22,22 @@ if (empty($_SESSION['candidate_login_marker'])) {
 }
 
 $applicationId = (string)$_SESSION['application_id'];
+
+try {
+    ccs_ensure_candidate_correction_mode(
+        getDB(),
+        (int)($_SESSION['case_id'] ?? 0),
+        $applicationId
+    );
+} catch (Throwable $e) {
+}
+
+if (!empty($_SESSION['candidate_correction_mode'])) {
+    $requestedPage = strtolower(trim((string)($_GET['page'] ?? '')));
+    if ($requestedPage !== '') {
+        ccs_guard_candidate_page($requestedPage);
+    }
+}
 
 $userName = $_SESSION['user_name'] ?? "Candidate";
 $userEmail = $_SESSION['user_email'] ?? '';
@@ -121,6 +138,7 @@ if (!$jsAppBaseUrl) {
         console.log("🌐 APP_BASE_URL set to:", window.APP_BASE_URL);
         window.CANDIDATE_APP_ID = <?php echo json_encode((string)$applicationId); ?>;
         window.CANDIDATE_LOGIN_MARKER = <?php echo json_encode((string)($_SESSION['candidate_login_marker'] ?? '')); ?>;
+        window.CANDIDATE_CORRECTION_MODE = <?php echo !empty($_SESSION['candidate_correction_mode']) ? '1' : '0'; ?>;
     </script>
 
 </head>
@@ -413,13 +431,28 @@ function closeFormPreview() {
                 const container = document.getElementById("page-content");
                 if (!container) return;
 
+                if (pageId === 'correction-error') {
+                    container.innerHTML = Router.getFallbackContent
+                        ? Router.getFallbackContent(pageId)
+                        : '<div class="container py-5"><div class="alert alert-danger">Unable to load correction configuration. Please reopen the correction link or contact support.</div></div>';
+                    return;
+                }
+
                 const url = `${window.APP_BASE_URL}/modules/candidate/${pageId}.php?t=${Date.now()}`;
                 
                 try {
                     const response = await fetch(url, { credentials: "include" });
+                    if (response.redirected && /\/modules\/candidate\/index\.php/i.test(response.url || '')) {
+                        window.location.assign(response.url);
+                        return;
+                    }
                     if (!response.ok) throw new Error(`HTTP ${response.status}`);
                     
                     const html = await response.text();
+                    if (/^\s*<!doctype html/i.test(html) || /<body[^>]*class=["'][^"']*candidate-page/i.test(html)) {
+                        window.location.assign(response.url || `?page=${encodeURIComponent(pageId)}`);
+                        return;
+                    }
                     container.innerHTML = html;
                     
                     if (Router.initializePage) {

@@ -507,6 +507,11 @@ try {
     }
 
     // Correction mode override: candidate should only access targeted pages.
+    ccs_ensure_candidate_correction_mode(
+        $pdo,
+        (int)($case['case_id'] ?? $caseId),
+        (string)($case['application_id'] ?? $applicationId)
+    );
     $correctionMode = !empty($_SESSION['candidate_correction_mode']);
     if ($correctionMode) {
         $rawPages = (string)($_SESSION['candidate_correction_allowed_pages'] ?? '');
@@ -515,10 +520,10 @@ try {
             $clean = [];
             foreach ($parsed as $p) {
                 $v = strtolower(trim((string)$p));
+                if (in_array($v, ['review', 'review-confirmation', 'authorization'], true)) continue;
                 if ($v !== '') $clean[$v] = true;
             }
             $enabledPages = array_values(array_keys($clean));
-            if (!in_array('review-confirmation', $enabledPages, true)) $enabledPages[] = 'review-confirmation';
             if (!in_array('success', $enabledPages, true)) $enabledPages[] = 'success';
         }
     }

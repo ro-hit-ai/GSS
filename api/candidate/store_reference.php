@@ -153,13 +153,17 @@ try {
         echo json_encode(['success' => false, 'message' => 'Session expired. Please login again.']);
         exit;
     }
+    $isDraft = isset($_POST['draft']) && $_POST['draft'] === '1';
+    $hasEducationReference = isset($_POST['has_education_reference']) && $_POST['has_education_reference'] === '1';
+    $hasEmploymentReference = isset($_POST['has_employment_reference']) && $_POST['has_employment_reference'] === '1';
+    $requestedReferenceComponents = [];
+    if ($hasEducationReference) $requestedReferenceComponents[] = 'education_reference';
+    if ($hasEmploymentReference) $requestedReferenceComponents[] = 'employment_reference';
+    ccs_guard_all_correction_components_or_json($requestedReferenceComponents ?: ['reference']);
 
     $pdo = getDB();
     $pdo->beginTransaction();
 
-    $isDraft = isset($_POST['draft']) && $_POST['draft'] === '1';
-    $hasEducationReference = isset($_POST['has_education_reference']) && $_POST['has_education_reference'] === '1';
-    $hasEmploymentReference = isset($_POST['has_employment_reference']) && $_POST['has_employment_reference'] === '1';
     $educationVisibleCount = max(1, (int)($_POST['education_reference_visible_count'] ?? 1));
     $employmentVisibleCount = max(1, (int)($_POST['employment_reference_visible_count'] ?? 1));
 

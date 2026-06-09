@@ -81,6 +81,7 @@ final class WorkflowGuardService
         $action = strtolower(trim($action));
         $allowed = [
             'pending' => ['hold', 'insufficient_documents', 'reject', 'approve'],
+            'correction_submitted' => ['hold', 'insufficient_documents', 'reject', 'approve'],
             'reopened' => ['hold', 'insufficient_documents', 'reject', 'approve'],
             'waiting_candidate' => ['hold', 'insufficient_documents', 'reject', 'approve'],
             'blocked' => ['hold', 'insufficient_documents', 'reject', 'approve'],

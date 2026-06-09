@@ -10,6 +10,7 @@ require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../services/candidate/EducationService.php';
 require_once __DIR__ . '/../../services/candidate/EmploymentService.php';
 require_once __DIR__ . '/../../services/candidate/SidebarService.php';
+require_once __DIR__ . '/../shared/reference_component_compat.php';
 
 function sidebar_json(array $payload, int $code = 200): void {
     http_response_code($code);
@@ -203,6 +204,7 @@ try {
             $activeCorrections[(string)$component] = ['status' => (string)($row['status'] ?? 'active')];
         }
     }
+    $activeCorrections = reference_compat_effective_component_map($activeCorrections);
 
     $requiredComponents = [];
     $caseComponentRows = sidebar_try_fetch_all($pdo, "
@@ -217,6 +219,7 @@ try {
             $requiredComponents[$componentKey] = true;
         }
     }
+    $requiredComponents = array_fill_keys(reference_compat_effective_keys(array_keys($requiredComponents)), true);
     $hasRequiredComponentScope = !empty($requiredComponents);
 
     $sections = [];

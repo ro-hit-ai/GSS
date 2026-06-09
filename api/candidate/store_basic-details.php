@@ -186,6 +186,7 @@ try {
     if (!$application_id) {
         sendError('Application ID not found');
     }
+    ccs_guard_correction_component_or_json('basic');
 
     $pdo = getDB();
 

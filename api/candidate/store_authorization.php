@@ -5,6 +5,7 @@ error_reporting(E_ALL);
 
 session_start();
 require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../shared/candidate_correction_service.php';
 
 function validator_activation_debug_log(string $message): void
 {
@@ -27,6 +28,8 @@ try {
     if (!$application_id) {
         throw new Exception("Application session expired.");
     }
+
+    ccs_guard_correction_component_or_json('authorization');
 
     if (empty($_POST['agree_check'])) {
         throw new Exception("You must agree to the authorization terms.");

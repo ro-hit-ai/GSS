@@ -318,9 +318,9 @@
             var appId = String(applicationId || '').trim();
             var href;
             if (appId) {
-                href = 'candidate_view.php?application_id=' + encodeURIComponent(appId);
+                href = 'candidate_view.php?application_id=' + encodeURIComponent(appId) + '&report_mode=readonly';
             } else {
-                href = 'candidate_view.php';
+                href = 'candidate_view.php?report_mode=readonly';
             }
             var g = getSelectedGroup();
             if (g) {

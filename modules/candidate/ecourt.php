@@ -7,12 +7,16 @@ $fatalError = '';
 
 $envOk = @include_once __DIR__ . '/../../config/env.php';
 $dbOk = @include_once __DIR__ . '/../../config/db.php';
+$correctionServiceOk = @include_once __DIR__ . '/../../api/shared/candidate_correction_service.php';
 
 if (!$envOk) {
     $fatalError = $fatalError !== '' ? $fatalError : 'Failed to load env.php';
 }
 if (!$dbOk) {
     $fatalError = $fatalError !== '' ? $fatalError : 'Failed to load db.php';
+}
+if (!$correctionServiceOk) {
+    $fatalError = $fatalError !== '' ? $fatalError : 'Failed to load candidate correction service.';
 }
 
 $application_id = '';
@@ -25,6 +29,8 @@ try {
     if ($fatalError !== '') {
         throw new RuntimeException($fatalError);
     }
+
+    ccs_guard_candidate_page('ecourt');
 
     $application_id = getApplicationId();
     $pdo = getDB();

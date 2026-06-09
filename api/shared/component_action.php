@@ -163,6 +163,7 @@ function allowed_actions_for_status(string $status): array {
 
     switch ($s) {
         case 'pending':
+        case 'correction_submitted':
             return ['hold', 'insufficient_documents', 'reject', 'approve'];
         case 'waiting_candidate':
         case 'blocked':
@@ -195,6 +196,53 @@ function is_action_allowed_for_status(string $status, string $action): bool {
 function is_stage_approved_equivalent(string $status): bool {
     $s = strtolower(trim($status));
     return in_array($s, ['approved', 'rejected', 'hold', 'insufficient_documents', 'completed', 'clear', 'verified'], true);
+}
+
+function deny_verifier_component_ownership(PDO $pdo, int $caseId, string $applicationId, string $componentKey, int $userId, string $reason, array $routingState = []): void {
+    if ((string)getenv('WF_STATUS_DEBUG_LOGS') === '1') {
+        @file_put_contents(__DIR__ . '/../../logs/workflow_transition.log', json_encode([
+            'ts' => date('c'),
+            'event' => 'verifier_component_action_denied',
+            'case_id' => $caseId,
+            'application_id' => $applicationId,
+            'component_key' => $componentKey,
+            'actor_user_id' => $userId,
+            'actor_role' => 'verifier',
+            'reason' => $reason,
+            'owned_active_components' => array_values(array_map('strval', $routingState['owned_active_components'] ?? [])),
+            'claimable_next_components' => array_values(array_map('strval', $routingState['claimable_next_components'] ?? [])),
+            'locked_future_components' => array_values(array_map('strval', $routingState['locked_future_components'] ?? [])),
+        ], JSON_UNESCAPED_SLASHES) . PHP_EOL, FILE_APPEND);
+    }
+    http_response_code(403);
+    echo json_encode([
+        'status' => 0,
+        'code' => 'WF_NOT_ASSIGNED',
+        'message' => 'Not assigned to this component',
+        'data' => [
+            'component_key' => $componentKey,
+            'ownership_required' => 'owned_active_components',
+            'reason' => $reason,
+        ],
+    ]);
+    exit;
+}
+
+function enforce_verifier_owned_active_component(PDO $pdo, int $caseId, string $applicationId, string $componentKey, int $userId): void {
+    if ($caseId <= 0 || $applicationId === '' || $componentKey === '' || $userId <= 0) {
+        deny_verifier_component_ownership($pdo, $caseId, $applicationId, $componentKey, $userId, 'bad_ownership_check_input');
+    }
+    $routingState = verifier_routing_case_state($pdo, $caseId, $userId);
+    $owned = [];
+    foreach (($routingState['owned_active_components'] ?? []) as $ownedKey) {
+        $nk = norm_component_key((string)$ownedKey);
+        if ($nk !== '') $owned[$nk] = true;
+    }
+    $componentKey = norm_component_key($componentKey);
+    if (!isset($owned[$componentKey])) {
+        $componentState = strtolower(trim((string)($routingState['components'][$componentKey]['state'] ?? 'hidden_unrelated')));
+        deny_verifier_component_ownership($pdo, $caseId, $applicationId, $componentKey, $userId, 'component_not_owned_active:' . $componentState, $routingState);
+    }
 }
 
 function prev_stage(string $stage): string {
@@ -751,6 +799,9 @@ try {
         && component_supports_item_workflow($componentKey);
     $stage = role_to_stage($role);
     $overrideReasonContext = '';
+    if ($role === 'verifier' && in_array($action, ['approve', 'reject', 'hold', 'insufficient_documents'], true)) {
+        enforce_verifier_owned_active_component($pdo, $caseId, $applicationId, $componentKey, $userId);
+    }
 
     // Canonical workflow engine is mandatory. Legacy/manual mutation path is retained
     // only as dead fallback code for emergency rollback outside normal runtime.

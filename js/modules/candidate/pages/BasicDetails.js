@@ -641,7 +641,10 @@ static validate(final = true) {
         if (ok) {
             if (window.Router) {
                 if (typeof Router.markCompleted === 'function') Router.markCompleted("basic-details");
-                if (typeof Router.navigateTo === 'function') Router.navigateTo("identification");
+                if (typeof Router.navigateTo === 'function') {
+                    const nextPage = typeof Router.getNextPage === 'function' ? Router.getNextPage("basic-details") : "identification";
+                    Router.navigateTo(nextPage);
+                }
             } else {
                 window.location.href = '/candidate/identification.php';
             }

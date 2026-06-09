@@ -1,6 +1,9 @@
 <?php
 session_start();
 require_once __DIR__ . '/../../config/env.php';
+require_once __DIR__ . '/../../api/shared/candidate_correction_service.php';
+
+ccs_guard_candidate_page('success');
 
 if (isset($_GET['action']) && $_GET['action'] === 'logout') {
     header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');

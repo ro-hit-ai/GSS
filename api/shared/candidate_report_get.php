@@ -4,7 +4,9 @@ require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../config/env.php';
 require_once __DIR__ . '/../../includes/integration.php';
 require_once __DIR__ . '/case_component_binding.php';
+require_once __DIR__ . '/reference_component_compat.php';
 require_once __DIR__ . '/workflow_snapshot_service.php';
+require_once __DIR__ . '/workflow_semantics.php';
 require_once __DIR__ . '/workflow_status_semantics.php';
 require_once __DIR__ . '/workflow/WorkflowLockService.php';
 require_once __DIR__ . '/workflow_mode.php';
@@ -241,7 +243,29 @@ function component_stage_surface($componentWorkflowOut, string $componentKey): a
     }
     $ck = ws_norm_component_key($componentKey);
     $st = isset($componentWorkflowOut[$ck]) && is_array($componentWorkflowOut[$ck]) ? $componentWorkflowOut[$ck] : [];
+    if (!$st && ws_is_split_reference_key($ck) && isset($componentWorkflowOut['reference']) && is_array($componentWorkflowOut['reference'])) {
+        $st = $componentWorkflowOut['reference'];
+    }
     return ws_component_stage_surface($st, $ck);
+}
+
+function report_component_workflow_display_status(array $componentWorkflowOut, string $componentKey, string $role, string $state = ''): string {
+    $roleNorm = strtolower(trim($role));
+    $stage = $roleNorm;
+    if ($roleNorm === 'db_verifier') $stage = 'verifier';
+    if ($roleNorm === 'team_lead') $stage = 'qa';
+    $surface = component_stage_surface($componentWorkflowOut, $componentKey);
+    $status = $stage !== '' ? strtolower(trim((string)($surface[$stage] ?? ''))) : '';
+    if ($status !== '' && $status !== 'pending') {
+        return wf_role_label_from_status($status, $stage);
+    }
+    $s = strtolower(trim($state));
+    if ($s === 'context') return 'Context';
+    if ($s === 'completed') return 'Completed';
+    if ($s === 'owned_active') return $status !== '' ? wf_role_label_from_status($status, $stage) : 'Active';
+    if ($s === 'claimable_next') return 'Ready';
+    if ($s === 'locked_future') return 'Locked';
+    return $status !== '' ? wf_role_label_from_status($status, $stage) : '';
 }
 
 function get_int(string $key, int $default = 0): int {
@@ -271,7 +295,7 @@ function report_reference_component_key(array $referenceRow): string {
 function report_filter_reference_payload_by_components($reference, array $visibleSections) {
     if (!is_array($reference)) return $reference;
     $visible = [];
-    foreach ($visibleSections as $section) {
+    foreach (reference_compat_effective_keys($visibleSections) as $section) {
         $key = ws_norm_component_key((string)$section);
         if ($key !== '') $visible[$key] = true;
     }
@@ -308,14 +332,6 @@ function report_component_key_for_timeline(string $key): string {
 }
 
 function report_status_from_timeline_event(string $eventType, string $message): string {
-    $text = strtolower(trim($eventType . ' ' . $message));
-    if ($text === '') return '';
-    if (strpos($text, 'reject') !== false) return 'Rejected';
-    if (strpos($text, 'hold') !== false) return 'Hold';
-    if (strpos($text, 'insufficient') !== false || strpos($text, 'need docs') !== false || strpos($text, 'correction') !== false) return 'Insufficiency';
-    if (strpos($text, 'mail') !== false || strpos($text, 'email') !== false) return 'Mail Sent';
-    if (strpos($text, 'approve') !== false) return 'Approved';
-    if (strpos($text, 'complete') !== false) return 'Completed';
     return '';
 }
 
@@ -939,8 +955,8 @@ try {
     // Snapshot model: report view must read only existing case component snapshot rows.
     // visible_sections must be derived strictly from this snapshot.
     $contract = ws_build_snapshot_contract($pdo, $applicationId);
-    $requiredComponents = $contract['visible_sections'];
-    $outAssigned = $contract['assigned_components'];
+    $requiredComponents = reference_compat_effective_keys($contract['visible_sections'] ?? []);
+    $outAssigned = reference_compat_filter_rows(is_array($contract['assigned_components'] ?? null) ? $contract['assigned_components'] : [], 'component_key');
     $componentWorkflowOut = $contract['component_workflow'];
     $mappingStatus = (string)($contract['mapping_status'] ?? 'ok');
     if (isset($componentWorkflowOut['reports']) && is_array($componentWorkflowOut['reports'])) {
@@ -975,7 +991,7 @@ try {
             }
             $healedKeys = array_values(array_unique($healedKeys));
             if (count($healedKeys) > count($requiredComponents)) {
-                $requiredComponents = $healedKeys;
+                $requiredComponents = reference_compat_effective_keys($healedKeys);
                 $mappingStatus = 'ok';
                 error_log('SNAPSHOT_HEAL: success components=' . json_encode($requiredComponents));
             } else {
@@ -985,6 +1001,7 @@ try {
     } catch (Throwable $e) {
         error_log('SNAPSHOT_HEAL: failed ' . $e->getMessage());
     }
+    $requiredComponents = reference_compat_effective_keys($requiredComponents);
 
     $allowedSet = session_allowed_sections($pdo);
     $assignedComponents = $outAssigned;
@@ -1182,6 +1199,8 @@ try {
     $lockReasons = [];
     $verifierRoutingState = [];
     $selectedPriorityBucket = '';
+    $reportMode = strtolower(trim(get_str('report_mode', '')));
+    $isVerifierReadonlyReport = ($role === 'verifier' && in_array($reportMode, ['readonly', 'read_only', 'view_only'], true));
     foreach ($outAssigned as $it0) {
         $k0 = ws_norm_component_key((string)($it0['component_key'] ?? ''));
         if ($k0 === '') continue;
@@ -1197,8 +1216,10 @@ try {
         foreach (($verifierRoutingState['components'] ?? []) as $componentKey => $componentState) {
             $history = report_component_history_for_key($reportTimelineHistory, (string)$componentKey);
             $verifierRoutingState['components'][$componentKey]['history'] = $history;
-            $verifierRoutingState['components'][$componentKey]['display_status'] = report_component_display_status(
-                $history,
+            $verifierRoutingState['components'][$componentKey]['display_status'] = report_component_workflow_display_status(
+                $componentWorkflowOut,
+                (string)$componentKey,
+                $role,
                 (string)($componentState['state'] ?? '')
             );
         }
@@ -1266,6 +1287,20 @@ try {
             $verifierRoutingState['visible_sections'] = $visibleSections;
             $verifierRoutingState['selected_priority_bucket'] = $selectedPriorityBucket;
         }
+        $visibleSections = reference_compat_effective_keys($visibleSections);
+        $actionableMap = reference_compat_effective_component_map($actionableMap);
+        $readonlyMap = reference_compat_effective_component_map($readonlyMap);
+        $lockedMap = reference_compat_effective_component_map($lockedMap);
+        $lockReasons = reference_compat_effective_component_map($lockReasons);
+        $verifierRoutingState = reference_compat_apply_to_routing_state($verifierRoutingState);
+        if ($isVerifierReadonlyReport) {
+            $actionableMap = [];
+            $readonlyMap = [];
+            foreach ($visibleSections as $visibleKey) {
+                $nk = ws_norm_component_key((string)$visibleKey);
+                if ($nk !== '') $readonlyMap[$nk] = true;
+            }
+        }
         unset($actionableMap['basic']);
         $readonlyMap['basic'] = true;
         $reference = report_filter_reference_payload_by_components($reference, $visibleSections);
@@ -1316,9 +1351,14 @@ try {
                 }
             }
         }
+        $corrSet = reference_compat_effective_component_map($corrSet);
         $visibleSections = wf_candidate_visible_sections($clientRequiredMap, $corrSet);
     }
-    $visibleSections = array_values(array_unique($visibleSections));
+    $visibleSections = reference_compat_effective_keys(array_values(array_unique($visibleSections)));
+    $actionableMap = reference_compat_effective_component_map($actionableMap);
+    $readonlyMap = reference_compat_effective_component_map($readonlyMap);
+    $lockedMap = reference_compat_effective_component_map($lockedMap);
+    $lockReasons = reference_compat_effective_component_map($lockReasons);
     $visibleSectionsMap = [];
     foreach ($visibleSections as $k) {
         $visibleSectionsMap[$k] = true;
@@ -1339,6 +1379,7 @@ try {
             return isset($visibleSectionsMap[$k]);
         }));
     }
+    $visibleAssigned = reference_compat_filter_rows($visibleAssigned, 'component_key');
 
     $verifierCaseOwnedForAccess = ($role === 'verifier') && !empty($verifierRoutingState['can_open']);
     if ($verifierCaseOwnedForAccess || $role === 'verifier') {
@@ -1383,7 +1424,10 @@ try {
 
         $caseIdForVerifier = (int)($case['case_id'] ?? 0);
         if (verifier_case_queue_is_case_model($pdo, $caseIdForVerifier, $applicationId)) {
-            if (empty($verifierRoutingState['can_open'])) {
+            $readonlyVisibleSections = array_values(array_filter($visibleSections, static function ($key) {
+                return ws_norm_component_key((string)$key) !== 'basic';
+            }));
+            if (empty($verifierRoutingState['can_open']) && !($isVerifierReadonlyReport && !empty($readonlyVisibleSections))) {
                 http_response_code(403);
                 echo json_encode(['status' => 0, 'message' => 'Forbidden']);
                 exit;
@@ -1552,9 +1596,14 @@ try {
                 'readonly_components' => array_values(array_keys($readonlyMap)),
                 'locked_components' => array_values(array_keys($lockedMap)),
                 'lock_reasons' => $lockReasons,
+                'report_mode' => $isVerifierReadonlyReport ? 'readonly' : $reportMode,
                 'internal_operational_components' => ($role === 'validator') ? ['reports'] : [],
                 'visibility_mode' => ($role === 'verifier') ? 'priority_gated_component_state' : (($role === 'validator') ? 'validator_operational_template' : (($role === 'candidate') ? 'candidate_entitlement' : 'operational')),
-                'actionability_reason' => ($role === 'verifier') ? 'owned_active_only' : (($role === 'validator') ? 'visible_not_equal_actionable' : 'default')
+                'actionability_reason' => $isVerifierReadonlyReport ? 'report_readonly' : (($role === 'verifier') ? 'owned_active_only' : (($role === 'validator') ? 'visible_not_equal_actionable' : 'default'))
+            ],
+            'permissions' => [
+                'can_take_action' => $isVerifierReadonlyReport ? 0 : 1,
+                'report_mode' => $isVerifierReadonlyReport ? 'readonly' : $reportMode,
             ],
             'verifier_routing_state' => $role === 'verifier' ? $verifierRoutingState : null,
             'component_item_workflow' => $itemWorkflowByComponent,

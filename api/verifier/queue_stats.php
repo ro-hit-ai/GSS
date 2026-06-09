@@ -8,6 +8,7 @@ require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/queue_visibility.php';
 require_once __DIR__ . '/../shared/workflow_status_semantics.php';
+require_once __DIR__ . '/../shared/reference_component_compat.php';
 
 auth_require_login('verifier');
 
@@ -25,7 +26,7 @@ function verifier_stats_group_components(string $groupKey): array
         $k = strtolower(trim((string)$c));
         if ($k !== '') $out[$k] = true;
     }
-    return array_values(array_keys($out));
+    return reference_compat_effective_keys(array_keys($out));
 }
 
 try {
@@ -159,7 +160,7 @@ try {
         foreach ($allowedGroups as $gk) {
             foreach (verifier_stats_group_components($gk) as $ck) $components[$ck] = true;
         }
-        $components = array_values(array_keys($components));
+        $components = reference_compat_effective_keys(array_keys($components));
         if ($components) {
             $ph = implode(',', array_fill(0, count($components), '?'));
             $sqlP = "SELECT

@@ -81,25 +81,27 @@ try {
 
     $caseId = (int)$row['case_id'];
     $applicationId = (string)$row['application_id'];
+    $requestedRole = ccs_role_norm((string)($row['requested_role'] ?? wf_mode_default_requested_role($pdo, $caseId, $applicationId)));
+    $resumeStage = ccs_component_stage_for_role($requestedRole);
+    if ($resumeStage === '') {
+        $resumeStage = wf_mode_first_human_stage($pdo, $caseId, $applicationId);
+    }
     $pdo->beginTransaction();
-    $changed = ccs_resume_components_after_candidate_submit($pdo, $caseId, $applicationId, $components);
+    $changed = ccs_resume_components_after_candidate_submit($pdo, $caseId, $applicationId, $components, 'correction_submitted', $resumeStage);
     ccs_mark_cycles_candidate_submitted($pdo, (int)$row['correction_session_id'], $components);
 
     $u = $pdo->prepare("UPDATE Vati_Payfiller_Candidate_Correction_Sessions SET status = 'submitted', updated_at = NOW(), completed_by_role = 'candidate' WHERE correction_session_id = ? AND status = 'active'");
     $u->execute([(int)$row['correction_session_id']]);
     if ((int)$u->rowCount() <= 0) {
-        $pdo->rollBack();
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         http_response_code(409);
         echo json_encode(['status' => 0, 'message' => 'Correction submit collision detected. Please refresh.']);
         exit;
     }
     $u2 = $pdo->prepare("UPDATE Vati_Payfiller_Candidate_Correction_Sessions SET status = 'completed', completed_at = NOW(), updated_at = NOW() WHERE correction_session_id = ?");
     $u2->execute([(int)$row['correction_session_id']]);
-    $requestedRole = ccs_role_norm((string)($row['requested_role'] ?? wf_mode_default_requested_role($pdo, $caseId, $applicationId)));
-    $resumeStage = ccs_component_stage_for_role($requestedRole);
-    if ($resumeStage === '') {
-        $resumeStage = wf_mode_first_human_stage($pdo, $caseId, $applicationId);
-    }
     $svc = new WorkflowTransitionService($pdo);
     $reconcile = $svc->reconcileCorrectionLifecycle(
         $caseId,
@@ -113,7 +115,9 @@ try {
     if (empty($reconcile['ok'])) {
         throw new RuntimeException((string)($reconcile['message'] ?? 'Correction lifecycle reconcile failed'));
     }
-    $pdo->commit();
+    if ($pdo->inTransaction()) {
+        $pdo->commit();
+    }
     ccs_timeline($pdo, $applicationId, 0, 'candidate', 'candidate_correction', 'Candidate submitted correction components: ' . implode(', ', $components));
 
     echo json_encode([

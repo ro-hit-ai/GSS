@@ -14,6 +14,9 @@ class EducationManager extends TabManager {
         this.visibleEducationCount = 0;
         this.deferVisibleEducationPersistence = false;
         this.marksheetSelectedFiles = new Map();
+        this.institutionSearchTimers = new Map();
+        this.institutionSearchControllers = new Map();
+        this.institutionSearchQueries = new Map();
         this.activeEducationTimelineWarnings = new Set();
         this.qualificationRules = {
             '10th': {
@@ -494,6 +497,8 @@ class EducationManager extends TabManager {
 
     setupInstitutionSearch() {
         this.institutionSearchTimers = this.institutionSearchTimers || new Map();
+        this.institutionSearchControllers = this.institutionSearchControllers || new Map();
+        this.institutionSearchQueries = this.institutionSearchQueries || new Map();
         this.addEventListener(document, 'input', (e) => {
             const input = e.target.closest('[data-institution-search]');
             if (!input) return;
@@ -502,7 +507,7 @@ class EducationManager extends TabManager {
         this.addEventListener(document, 'focusin', (e) => {
             const input = e.target.closest('[data-institution-search]');
             if (!input) return;
-            this.handleInstitutionInput(input);
+            this.handleInstitutionFocus(input);
         });
         this.addEventListener(document, 'click', (e) => {
             const trigger = e.target.closest('[data-institution-trigger]');
@@ -512,7 +517,7 @@ class EducationManager extends TabManager {
                 const input = card?.querySelector('[data-institution-search]');
                 if (input) {
                     input.focus();
-                    this.handleInstitutionInput(input);
+                    this.handleInstitutionFocus(input);
                 }
                 return;
             }
@@ -536,10 +541,31 @@ class EducationManager extends TabManager {
         });
     }
 
+    handleInstitutionFocus(input) {
+        const card = input.closest('.education-card');
+        if (!card) return;
+        const panel = this.getInstitutionPanel(card, input);
+        if (!panel) return;
+
+        const value = input.value.trim();
+        if (value.length < 2) {
+            panel.innerHTML = '<div class="institution-search-empty">Type at least 2 characters</div>';
+            panel.style.display = value ? 'block' : 'none';
+            return;
+        }
+
+        panel.style.display = 'block';
+        this.scheduleInstitutionSearch(card, value);
+    }
+
     handleInstitutionInput(input) {
         const card = input.closest('.education-card');
         if (!card) return;
         const value = input.value.trim();
+        const key = this.getMarksheetCardKey(card);
+        clearTimeout(this.institutionSearchTimers.get(key));
+        this.institutionSearchQueries.set(key, value);
+
         this.setInstitutionFields(card, {
             id: '',
             name: value,
@@ -547,33 +573,63 @@ class EducationManager extends TabManager {
             matchStatus: value ? 'manual_pending' : ''
         });
 
-        const shell = input.closest('.institution-select-shell');
-        const panel = card.querySelector('[data-institution-panel]');
+        const panel = this.getInstitutionPanel(card, input);
         if (!panel) return;
 
-        // Anchor the panel relative to the shell
-        if (shell && panel.parentElement !== shell) {
-            shell.appendChild(panel);
-        }
-
         if (value.length < 2) {
+            this.abortInstitutionSearch(key);
             panel.innerHTML = '<div class="institution-search-empty">Type at least 2 characters</div>';
             panel.style.display = value ? 'block' : 'none';
             return;
         }
 
+        this.scheduleInstitutionSearch(card, value);
+    }
+
+    getInstitutionPanel(card, input) {
+        const panel = card?.querySelector('[data-institution-panel]');
+        if (!panel) return null;
+        const shell = input?.closest('.institution-select-shell');
+        if (shell && panel.parentElement !== shell) {
+            shell.appendChild(panel);
+        }
+        return panel;
+    }
+
+    scheduleInstitutionSearch(card, value) {
         const key = this.getMarksheetCardKey(card);
         clearTimeout(this.institutionSearchTimers.get(key));
+        this.institutionSearchQueries.set(key, value);
         this.institutionSearchTimers.set(key, setTimeout(() => {
             this.fetchInstitutionResults(card, value);
         }, 300));
     }
 
+    abortInstitutionSearch(key) {
+        const controller = this.institutionSearchControllers.get(key);
+        if (controller) {
+            controller.abort();
+            this.institutionSearchControllers.delete(key);
+        }
+    }
+
+    clearInstitutionSearchState(card, value = '') {
+        const key = this.getMarksheetCardKey(card);
+        clearTimeout(this.institutionSearchTimers.get(key));
+        this.institutionSearchQueries.set(key, value);
+        this.abortInstitutionSearch(key);
+    }
+
     async fetchInstitutionResults(card, query) {
+        const key = this.getMarksheetCardKey(card);
+        if (this.institutionSearchQueries.get(key) !== query) return;
         const panel = card.querySelector('[data-institution-panel]');
         if (!panel) return;
         panel.innerHTML = '<div class="institution-search-empty">Searching institutions...</div>';
         panel.style.display = 'block';
+        this.abortInstitutionSearch(key);
+        const controller = new AbortController();
+        this.institutionSearchControllers.set(key, controller);
 
         try {
             const qualification = card.querySelector('select[name="qualification[]"]')?.value || '';
@@ -582,13 +638,26 @@ class EducationManager extends TabManager {
             if (type) params.set('type', type);
             const base = (window.APP_BASE_URL || '').replace(/\/$/, '');
             const response = await fetch(`${base}/api/master/institutions/search.php?${params.toString()}`, {
-                credentials: 'same-origin'
+                credentials: 'same-origin',
+                signal: controller.signal
             });
             const data = await response.json();
+            if (
+                this.institutionSearchControllers.get(key) !== controller ||
+                this.institutionSearchQueries.get(key) !== query ||
+                (card.querySelector('[data-institution-search]')?.value || '').trim() !== query
+            ) {
+                return;
+            }
             const rows = Array.isArray(data.data) ? data.data : [];
             this.renderInstitutionResults(card, query, rows);
-        } catch (_e) {
+        } catch (e) {
+            if (e && e.name === 'AbortError') return;
             panel.innerHTML = '<div class="institution-search-empty">Institution search unavailable. You can enter manually.</div>';
+        } finally {
+            if (this.institutionSearchControllers.get(key) === controller) {
+                this.institutionSearchControllers.delete(key);
+            }
         }
     }
 
@@ -622,6 +691,7 @@ class EducationManager extends TabManager {
         const university = option.dataset.university || '';
         const input = card.querySelector('[data-institution-search]');
         if (input) input.value = name;
+        this.clearInstitutionSearchState(card, name);
         this.setInstitutionFields(card, {
             id: option.dataset.id || '',
             name,
@@ -642,6 +712,7 @@ class EducationManager extends TabManager {
         const name = button.dataset.name || card.querySelector('[data-institution-search]')?.value || '';
         const input = card.querySelector('[data-institution-search]');
         if (input) input.value = name;
+        this.clearInstitutionSearchState(card, name);
         this.setInstitutionFields(card, {
             id: '',
             name,
@@ -1681,7 +1752,8 @@ setupFileHandlers() {
                 e.stopImmediatePropagation();
                 console.log('â¬…ï¸ Previous button clicked - navigating to contact');
                 if (window.Router && window.Router.navigateTo) {
-                    window.Router.navigateTo('contact');
+                    const previousPage = typeof window.Router.getPreviousPage === 'function' ? window.Router.getPreviousPage('education') : 'contact';
+                    window.Router.navigateTo(previousPage);
                 } else {
                     window.location.href = `${window.APP_BASE_URL}/modules/candidate/contact.php`;
                 }
@@ -2013,7 +2085,8 @@ async submitForm(isDraft = false) {
                             window.Router.markCompleted('education');
                         }
                         if (window.Router.navigateTo) {
-                            window.Router.navigateTo('employment');
+                            const nextPage = typeof window.Router.getNextPage === 'function' ? window.Router.getNextPage('education') : 'employment';
+                            window.Router.navigateTo(nextPage);
                         } else {
                             window.location.href = `${window.APP_BASE_URL}/modules/candidate/employment.php`;
                         }
@@ -2092,4 +2165,3 @@ if (typeof window !== 'undefined') {
 }
 
 console.log('âœ… Education.js module loaded');
-

@@ -67,6 +67,7 @@ function wf_role_label_from_status(string $status, string $role): string
         'validator' => [
             'pending' => 'VA Pending',
             'in_progress' => 'Under Evaluation',
+            'correction_submitted' => 'Correction Submitted',
             'approved' => 'VA Approved',
             'rejected' => 'VA Rejected',
             'hold' => 'VA Hold',
@@ -84,6 +85,7 @@ function wf_role_label_from_status(string $status, string $role): string
         'verifier' => [
             'pending' => 'VE Pending',
             'in_progress' => 'Under Review',
+            'correction_submitted' => 'Correction Submitted',
             'approved' => 'VE Approved',
             'rejected' => 'VE Rejected',
             'hold' => 'VE Hold',
@@ -101,6 +103,7 @@ function wf_role_label_from_status(string $status, string $role): string
         'qa' => [
             'pending' => 'QA Pending',
             'in_progress' => 'Under QA Review',
+            'correction_submitted' => 'Correction Submitted',
             'approved' => 'QA Approved',
             'rejected' => 'QA Rejected',
             'hold' => 'QA Hold',

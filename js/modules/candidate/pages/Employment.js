@@ -454,7 +454,8 @@ class EmploymentManager extends TabManager {
                 e.stopImmediatePropagation();
                 console.log('⬅️ Previous button clicked - navigating to education');
                 if (window.Router && window.Router.navigateTo) {
-                    window.Router.navigateTo('education');
+                    const previousPage = typeof window.Router.getPreviousPage === 'function' ? window.Router.getPreviousPage('employment') : 'education';
+                    window.Router.navigateTo(previousPage);
                 }
             });
         }
@@ -1363,7 +1364,8 @@ class EmploymentManager extends TabManager {
                     window.Router.markCompleted("employment");
                 }
                 if (window.Router.navigateTo) {
-                    window.Router.navigateTo("ecourt");
+                    const nextPage = typeof window.Router.getNextPage === 'function' ? window.Router.getNextPage("employment") : "ecourt";
+                    window.Router.navigateTo(nextPage);
                     return;
                 }
             }
@@ -1425,7 +1427,8 @@ class EmploymentManager extends TabManager {
                         }
                         
                         if (window.Router.navigateTo) {
-                            window.Router.navigateTo('ecourt');
+                            const nextPage = typeof window.Router.getNextPage === 'function' ? window.Router.getNextPage('employment') : 'ecourt';
+                            window.Router.navigateTo(nextPage);
                         } else {
                             window.location.href = `${window.APP_BASE_URL}/modules/candidate/ecourt.php`;
                         }

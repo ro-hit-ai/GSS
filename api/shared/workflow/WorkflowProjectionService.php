@@ -49,7 +49,7 @@ final class WorkflowProjectionService
                 if ($validatorStatus === 'hold') { $counts['hold']++; continue; }
                 if ($validatorStatus === 'insufficient_documents') { $counts['insufficient_documents']++; continue; }
                 if ($validatorStatus === 'waiting_candidate' || $validatorStatus === 'reopened' || $validatorStatus === 'blocked') { $counts['waiting_candidate']++; continue; }
-                if ($validatorStatus === 'in_progress') { $counts['in_progress']++; continue; }
+                if ($validatorStatus === 'in_progress' || $validatorStatus === 'correction_submitted') { $counts['in_progress']++; continue; }
                 $counts['pending']++;
             }
             $counts['evaluated'] = $counts['approved'] + $counts['rejected'] + $counts['hold'] + $counts['insufficient_documents'];
@@ -139,7 +139,7 @@ final class WorkflowProjectionService
                     if ($verifierStatus === 'hold') { $counts['hold']++; $resolvedActiveComponents[] = ['component' => $part, 'status' => 'hold']; continue; }
                     if ($verifierStatus === 'insufficient_documents') { $counts['insufficient_documents']++; $resolvedActiveComponents[] = ['component' => $part, 'status' => 'insufficient_documents']; continue; }
                     if ($verifierStatus === 'waiting_candidate' || $verifierStatus === 'reopened' || $verifierStatus === 'blocked') { $counts['waiting_candidate']++; $unresolvedActiveComponents[] = ['component' => $part, 'reason' => 'verifier_waiting_candidate', 'verifier_status' => $verifierStatus]; continue; }
-                    if ($verifierStatus === 'in_progress') { $counts['in_progress']++; $unresolvedActiveComponents[] = ['component' => $part, 'reason' => 'verifier_in_progress']; continue; }
+                    if ($verifierStatus === 'in_progress' || $verifierStatus === 'correction_submitted') { $counts['in_progress']++; $unresolvedActiveComponents[] = ['component' => $part, 'reason' => 'verifier_in_progress']; continue; }
                     $counts['pending']++;
                     $unresolvedActiveComponents[] = ['component' => $part, 'reason' => 'verifier_pending'];
                 }
@@ -206,7 +206,7 @@ final class WorkflowProjectionService
                 if ($s === 'hold') { $counts['hold']++; continue; }
                 if ($s === 'insufficient_documents') { $counts['insufficient_documents']++; continue; }
                 if ($s === 'waiting_candidate' || $s === 'reopened' || $s === 'blocked') { $counts['waiting_candidate']++; continue; }
-                if ($s === 'in_progress') { $counts['in_progress']++; continue; }
+                if ($s === 'in_progress' || $s === 'correction_submitted') { $counts['in_progress']++; continue; }
                 $counts['pending']++;
             }
             $counts['evaluated'] = $counts['approved'] + $counts['rejected'] + $counts['hold'] + $counts['insufficient_documents'];

@@ -45,10 +45,254 @@ function ccs_allowed_component_match(array $allowedSet, string $component): bool
     return false;
 }
 
+function ccs_page_from_component_key(string $component): string {
+    $component = ccs_component_norm($component);
+    $map = [
+        'basic' => 'basic-details',
+        'id' => 'identification',
+        'contact' => 'contact',
+        'education' => 'education',
+        'employment' => 'employment',
+        'reference' => 'reference',
+        'education_reference' => 'reference',
+        'employment_reference' => 'reference',
+        'socialmedia' => 'social',
+        'ecourt' => 'ecourt',
+    ];
+    return $map[$component] ?? '';
+}
+
+function ccs_pages_from_components(array $components): array {
+    $pages = [];
+    foreach ($components as $component) {
+        $page = ccs_page_from_component_key((string)$component);
+        if ($page !== '') $pages[$page] = true;
+    }
+    if ($pages) $pages['success'] = true;
+    unset($pages['review'], $pages['review-confirmation'], $pages['authorization']);
+    return array_keys($pages);
+}
+
+function ccs_restore_candidate_correction_session(PDO $pdo, int $caseId = 0, string $applicationId = ''): ?array {
+    if (session_status() === PHP_SESSION_NONE) {
+        @session_start();
+    }
+
+    ccs_ensure_table($pdo);
+    $sessionId = (int)($_SESSION['candidate_correction_session_id'] ?? 0);
+    $row = null;
+
+    if ($sessionId > 0) {
+        $st = $pdo->prepare("SELECT * FROM Vati_Payfiller_Candidate_Correction_Sessions WHERE correction_session_id = ? AND status IN ('active','submitted') AND (expires_at IS NULL OR expires_at >= NOW()) LIMIT 1");
+        $st->execute([$sessionId]);
+        $candidate = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+        if ($candidate) {
+            $rowCaseId = (int)($candidate['case_id'] ?? 0);
+            $rowAppId = (string)($candidate['application_id'] ?? '');
+            $caseOk = $caseId <= 0 || $rowCaseId === $caseId;
+            $appOk = $applicationId === '' || $rowAppId === $applicationId;
+            if ($caseOk && $appOk) $row = $candidate;
+        }
+    }
+
+    if (!$row && ($caseId > 0 || $applicationId !== '')) {
+        $where = [];
+        $params = [];
+        if ($caseId > 0) {
+            $where[] = 'case_id = ?';
+            $params[] = $caseId;
+        }
+        if ($applicationId !== '') {
+            $where[] = 'application_id = ?';
+            $params[] = $applicationId;
+        }
+        $sql = "SELECT * FROM Vati_Payfiller_Candidate_Correction_Sessions WHERE status IN ('active','submitted') AND (expires_at IS NULL OR expires_at >= NOW()) AND (" . implode(' OR ', $where) . ") ORDER BY correction_session_id DESC LIMIT 1";
+        $st = $pdo->prepare($sql);
+        $st->execute($params);
+        $row = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+    }
+
+    if (!$row) return null;
+
+    $components = json_decode((string)($row['allowed_components_json'] ?? '[]'), true);
+    if (!is_array($components) || !$components) return null;
+    $pages = ccs_pages_from_components($components);
+    if (!$pages) return null;
+
+    $_SESSION['case_id'] = (int)($row['case_id'] ?? $caseId);
+    $_SESSION['application_id'] = (string)($row['application_id'] ?? $applicationId);
+    $_SESSION['logged_in'] = true;
+    $_SESSION['candidate_correction_mode'] = 1;
+    $_SESSION['candidate_correction_session_id'] = (int)$row['correction_session_id'];
+    $_SESSION['candidate_correction_token'] = (string)($row['token'] ?? ($_SESSION['candidate_correction_token'] ?? ''));
+    $_SESSION['candidate_correction_allowed_components'] = json_encode(array_values($components), JSON_UNESCAPED_UNICODE);
+    $_SESSION['candidate_correction_allowed_pages'] = json_encode($pages, JSON_UNESCAPED_UNICODE);
+
+    return $row;
+}
+
+function ccs_ensure_candidate_correction_mode(?PDO $pdo = null, int $caseId = 0, string $applicationId = ''): bool {
+    if (session_status() === PHP_SESSION_NONE) {
+        @session_start();
+    }
+    if (!empty($_SESSION['candidate_correction_mode'])) return true;
+    try {
+        if (!$pdo && function_exists('getDB')) $pdo = getDB();
+        if (!$pdo) return false;
+        if ($caseId <= 0) $caseId = (int)($_SESSION['case_id'] ?? 0);
+        if ($applicationId === '') $applicationId = (string)($_SESSION['application_id'] ?? '');
+        return ccs_restore_candidate_correction_session($pdo, $caseId, $applicationId) !== null;
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+function ccs_session_allowed_components_set(): array {
+    if (session_status() === PHP_SESSION_NONE) {
+        @session_start();
+    }
+    $raw = (string)($_SESSION['candidate_correction_allowed_components'] ?? '');
+    $arr = json_decode($raw, true);
+    if (!is_array($arr)) return [];
+    $set = [];
+    foreach ($arr as $component) {
+        $key = ccs_component_norm((string)$component);
+        if ($key !== '') $set[$key] = true;
+    }
+    return $set;
+}
+
+function ccs_session_allowed_pages(): array {
+    if (session_status() === PHP_SESSION_NONE) {
+        @session_start();
+    }
+    $raw = (string)($_SESSION['candidate_correction_allowed_pages'] ?? '');
+    $arr = json_decode($raw, true);
+    $pages = [];
+    if (is_array($arr)) {
+        foreach ($arr as $page) {
+            $key = strtolower(trim((string)$page));
+            if ($key !== '') $pages[$key] = true;
+        }
+    }
+    if (!$pages) {
+        foreach (array_keys(ccs_session_allowed_components_set()) as $component) {
+            $page = ccs_page_from_component_key($component);
+            if ($page !== '') $pages[$page] = true;
+        }
+        if ($pages) $pages['success'] = true;
+    }
+    unset($pages['review'], $pages['review-confirmation'], $pages['authorization']);
+    return array_keys($pages);
+}
+
+function ccs_correction_first_allowed_page(): string {
+    $pages = ccs_session_allowed_pages();
+    foreach ($pages as $page) {
+        if ($page !== 'success') return $page;
+    }
+    return in_array('success', $pages, true) ? 'success' : '';
+}
+
+function ccs_guard_candidate_page(string $pageId): void {
+    if (session_status() === PHP_SESSION_NONE) {
+        @session_start();
+    }
+    if (empty($_SESSION['candidate_correction_mode']) && !ccs_ensure_candidate_correction_mode()) return;
+    $pageId = strtolower(trim($pageId));
+    $allowed = ccs_session_allowed_pages();
+    if (in_array($pageId, $allowed, true)) return;
+
+    $target = ccs_correction_first_allowed_page();
+    if ($target === '') {
+        http_response_code(403);
+        echo 'Unable to load correction configuration. Please reopen the correction link or contact support.';
+        exit;
+    }
+    header('Location: ' . app_url('/modules/candidate/index.php?page=' . urlencode($target)));
+    exit;
+}
+
+function ccs_guard_correction_component_or_json($components): void {
+    if (session_status() === PHP_SESSION_NONE) {
+        @session_start();
+    }
+    if (empty($_SESSION['candidate_correction_mode']) && !ccs_ensure_candidate_correction_mode()) return;
+    $allowedSet = ccs_session_allowed_components_set();
+    $components = is_array($components) ? $components : [$components];
+    foreach ($components as $component) {
+        if (ccs_allowed_component_match($allowedSet, (string)$component)) return;
+    }
+    http_response_code(403);
+    echo json_encode([
+        'success' => false,
+        'message' => 'This correction session is not allowed to update the requested component.'
+    ]);
+    exit;
+}
+
+function ccs_guard_all_correction_components_or_json(array $components): void {
+    if (session_status() === PHP_SESSION_NONE) {
+        @session_start();
+    }
+    if (empty($_SESSION['candidate_correction_mode']) && !ccs_ensure_candidate_correction_mode()) return;
+    $allowedSet = ccs_session_allowed_components_set();
+    $checked = false;
+    foreach ($components as $component) {
+        $component = ccs_component_norm((string)$component);
+        if ($component === '') continue;
+        $checked = true;
+        if (!ccs_allowed_component_match($allowedSet, $component)) {
+            http_response_code(403);
+            echo json_encode([
+                'success' => false,
+                'message' => 'This correction session is not allowed to update the requested component.'
+            ]);
+            exit;
+        }
+    }
+    if (!$checked) {
+        ccs_guard_correction_component_or_json('reference');
+    }
+}
+
 function ccs_component_storage_candidates(string $component): array {
     $component = ccs_component_norm($component);
     if (ccs_is_reference_split($component)) return [$component, 'reference'];
     return $component !== '' ? [$component] : [];
+}
+
+function ccs_component_resume_candidates(string $component): array {
+    $component = ccs_component_norm($component);
+    if ($component === '') return [];
+
+    $aliases = [
+        'basic' => ['basic', 'basic_details', 'basic_detail'],
+        'id' => ['id', 'identification'],
+        'contact' => ['contact', 'contact_information', 'contact_details', 'contact_detail'],
+        'education' => ['education', 'education_details', 'education_detail'],
+        'employment' => ['employment', 'employment_details', 'employment_detail'],
+        'reference' => ['reference', 'references', 'education_reference', 'employment_reference'],
+        'education_reference' => ['education_reference', 'reference', 'references'],
+        'employment_reference' => ['employment_reference', 'reference', 'references'],
+        'socialmedia' => ['socialmedia', 'social_media', 'social', 'social-media'],
+        'ecourt' => ['ecourt', 'e_court', 'ecourt_check'],
+    ];
+
+    $out = $aliases[$component] ?? [$component];
+    foreach (ccs_component_storage_candidates($component) as $candidate) {
+        if ($candidate !== '') $out[] = $candidate;
+    }
+    foreach (ccs_component_overlap_keys($component) as $candidate) {
+        if ($candidate !== '') $out[] = $candidate;
+    }
+
+    $normalized = [];
+    foreach ($out as $candidate) {
+        $candidate = strtolower(trim((string)$candidate));
+        if ($candidate !== '') $normalized[$candidate] = true;
+    }
+    return array_keys($normalized);
 }
 
 function ccs_component_overlap_keys(string $component): array {
@@ -349,29 +593,53 @@ function ccs_update_components_waiting_candidate(PDO $pdo, int $caseId, string $
     return $count;
 }
 
-function ccs_resume_components_after_candidate_submit(PDO $pdo, int $caseId, string $applicationId, array $components): int {
+function ccs_resume_components_after_candidate_submit(PDO $pdo, int $caseId, string $applicationId, array $components, string $targetStatus = 'correction_submitted', string $requestedStage = ''): int {
     if ($caseId <= 0 || $applicationId === '' || !$components) return 0;
+    $targetStatus = strtolower(trim($targetStatus));
+    if (!in_array($targetStatus, ['pending', 'correction_submitted'], true)) {
+        $targetStatus = 'correction_submitted';
+    }
+    $requestedStage = strtolower(trim($requestedStage));
+    if (!in_array($requestedStage, ['validator', 'verifier', 'qa'], true)) {
+        $requestedStage = '';
+    }
+    $stageFilter = $requestedStage !== ''
+        ? 'AND LOWER(TRIM(stage)) = ?'
+        : "AND LOWER(TRIM(stage)) IN ('validator','verifier','qa')";
     $st = $pdo->prepare(
         "UPDATE Vati_Payfiller_Case_Component_Workflow
-            SET status = 'pending',
+            SET status = ?,
                 updated_by_role = 'candidate',
                 completed_at = NULL,
                 updated_at = NOW()
           WHERE case_id = ?
             AND application_id = ?
             AND LOWER(TRIM(component_key)) = ?
-            AND LOWER(TRIM(stage)) IN ('validator','verifier','qa')
-            AND LOWER(TRIM(COALESCE(status,''))) IN ('waiting_candidate','reopened','hold','insufficient_documents','blocked')"
+            {$stageFilter}
+            AND LOWER(TRIM(COALESCE(status,''))) IN (
+                'waiting_candidate',
+                'insufficient_documents',
+                'need_docs',
+                'need docs',
+                'need-docs',
+                'candidate_pending',
+                'pending_candidate',
+                'reopened',
+                'hold',
+                'blocked',
+                'pending'
+            )"
     );
     $count = 0;
     foreach ($components as $c) {
-        $changed = 0;
-        foreach (ccs_component_storage_candidates((string)$c) as $componentKey) {
-            $st->execute([$caseId, $applicationId, $componentKey]);
-            $changed += (int)$st->rowCount();
-            if ($changed > 0) break;
+        foreach (ccs_component_resume_candidates((string)$c) as $componentKey) {
+            $params = [$targetStatus, $caseId, $applicationId, $componentKey];
+            if ($requestedStage !== '') {
+                $params[] = $requestedStage;
+            }
+            $st->execute($params);
+            $count += (int)$st->rowCount();
         }
-        $count += $changed;
     }
     return $count;
 }
@@ -425,7 +693,12 @@ function ccs_progress_component_after_candidate_save(PDO $pdo, string $applicati
     $componentKey = ccs_component_norm($component);
     if ($componentKey === '' || !isset($allowedSet[$componentKey])) return 0;
 
-    $changed = ccs_resume_components_after_candidate_submit($pdo, (int)$row['case_id'], $applicationId, [$componentKey]);
+    $requestedRole = ccs_role_norm((string)($row['requested_role'] ?? wf_mode_default_requested_role($pdo, (int)$row['case_id'], $applicationId)));
+    $requestedStage = ccs_component_stage_for_role($requestedRole);
+    if ($requestedStage === '') {
+        $requestedStage = wf_mode_first_human_stage($pdo, (int)$row['case_id'], $applicationId);
+    }
+    $changed = ccs_resume_components_after_candidate_submit($pdo, (int)$row['case_id'], $applicationId, [$componentKey], 'pending', $requestedStage);
     if ($changed > 0) {
         ccs_mark_cycles_candidate_submitted($pdo, $sessionId, [$componentKey]);
     }

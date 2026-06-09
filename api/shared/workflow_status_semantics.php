@@ -15,7 +15,7 @@ function wf_is_invalidated_status(string $status): bool
 function wf_is_operationally_active_status(string $status): bool
 {
     $s = strtolower(trim($status));
-    return in_array($s, ['waiting_candidate', 'reopened', 'blocked'], true);
+    return in_array($s, ['correction_submitted', 'waiting_candidate', 'reopened', 'blocked'], true);
 }
 
 function wf_is_resolved_status(string $status): bool
@@ -27,7 +27,7 @@ function wf_is_resolved_status(string $status): bool
 function wf_is_active_queue_status(string $status): bool
 {
     $s = strtolower(trim($status));
-    return in_array($s, ['pending', 'in_progress', 'waiting_candidate', 'reopened', 'blocked', 'followup'], true);
+    return in_array($s, ['pending', 'in_progress', 'correction_submitted', 'waiting_candidate', 'reopened', 'blocked', 'followup'], true);
 }
 
 function wf_should_remain_visible_to_role(string $status): bool

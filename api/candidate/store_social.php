@@ -18,6 +18,7 @@ try {
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     
     $application_id = $_SESSION['application_id'];
+    ccs_guard_correction_component_or_json('socialmedia');
     $post = array_map('trim', $_POST);
 
     /* ================= VALIDATION ================= */

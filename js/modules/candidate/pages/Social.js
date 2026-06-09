@@ -96,9 +96,10 @@ class Social {
             this.on(prevBtn, "click", (e) => {
                 e.preventDefault();
                 if (window.Router?.navigateTo) {
-                    Router.navigateTo("ecourt");
+                    const previousPage = window.Router?.getPreviousPage?.("social") || "ecourt";
+                    Router.navigateTo(previousPage);
                 } else {
-                    window.location.href = "?page=ecourt";
+                    window.location.href = "?page=" + encodeURIComponent(window.Router?.getPreviousPage?.("social") || "ecourt");
                 }
             });
         }
@@ -247,9 +248,10 @@ class Social {
         }
 
         if (window.Router?.navigateTo) {
-            Router.navigateTo("reference");
+            const nextPage = window.Router?.getNextPage?.("social") || "reference";
+            Router.navigateTo(nextPage);
         } else {
-            window.location.href = "?page=reference";
+            window.location.href = `?page=${nextPage}`;
         }
     }
 

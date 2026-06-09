@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/workflow_semantics.php';
 require_once __DIR__ . '/verifier_routing.php';
+require_once __DIR__ . '/reference_component_compat.php';
 
 function verifier_case_queue_registered_components(): array
 {
@@ -92,7 +93,7 @@ function verifier_case_queue_required_components(PDO $pdo, int $caseId): array
             }
             $out[$k] = true;
         }
-        return array_values(array_keys($out));
+        return reference_compat_effective_keys(array_keys($out));
     } catch (Throwable $e) {
         return [];
     }
@@ -271,7 +272,7 @@ function verifier_case_queue_compute_status(PDO $pdo, int $caseId): string
             $hasFollowup = true;
             continue;
         }
-        if (in_array($status, ['in_progress', 'pending', 'submitted', ''], true)) {
+        if (in_array($status, ['in_progress', 'correction_submitted', 'pending', 'submitted', ''], true)) {
             $hasInProgress = true;
         }
     }
@@ -358,6 +359,7 @@ function verifier_case_queue_assign_components(PDO $pdo, int $caseId, int $assig
         $key = verifier_routing_normalize_component((string)$key);
         return verifier_routing_is_routeable($key) ? $key : '';
     }, $components)));
+    $components = reference_compat_effective_keys($components);
     if (!$components) return;
     $ph = implode(',', array_fill(0, count($components), '?'));
     $params = array_merge([$assignedUserId > 0 ? $assignedUserId : null, $caseId], $components);

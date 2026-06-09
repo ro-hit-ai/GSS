@@ -90,9 +90,10 @@ class Contact {
             this.on(prevBtn, "click", (e) => {
                 e.preventDefault();
                 if (window.Router?.navigateTo) {
-                    Router.navigateTo("identification");
+                    const previousPage = window.Router?.getPreviousPage?.("contact") || "identification";
+                    Router.navigateTo(previousPage);
                 } else {
-                    window.location.href = "?page=identification";
+                    window.location.href = "?page=" + encodeURIComponent(window.Router?.getPreviousPage?.("contact") || "identification");
                 }
             });
         }
@@ -637,9 +638,10 @@ class Contact {
             localStorage.setItem("completed-contact", "1");
         }
 
+        const nextPage = window.Router?.getNextPage?.("contact") || "education";
         window.Router?.navigateTo
-            ? Router.navigateTo("education")
-            : (window.location.href = "?page=education");
+            ? Router.navigateTo(nextPage)
+            : (window.location.href = `?page=${nextPage}`);
     }
 
     static buildPayload() {
