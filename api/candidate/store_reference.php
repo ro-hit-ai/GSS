@@ -204,9 +204,25 @@ try {
         exit;
     }
 
-    $savedData = ReferenceService::replaceGrouped($pdo, (string)$application_id, $educationRows, $employmentRows);
+    $savedData = ReferenceService::replaceGroupedScoped(
+        $pdo,
+        (string)$application_id,
+        $educationRows,
+        $employmentRows,
+        $hasEducationReference,
+        $hasEmploymentReference
+    );
 
     foreach (reference_progress_component_keys($pdo, (string)$application_id) as $componentKey) {
+        if ($componentKey === 'education_reference' && !$educationRows) {
+            continue;
+        }
+        if ($componentKey === 'employment_reference' && !$employmentRows) {
+            continue;
+        }
+        if ($componentKey === 'reference' && !$educationRows && !$employmentRows) {
+            continue;
+        }
         ccs_progress_component_after_candidate_save($pdo, (string)$application_id, $componentKey, $isDraft);
     }
     $pdo->commit();

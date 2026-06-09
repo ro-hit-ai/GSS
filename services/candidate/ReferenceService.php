@@ -47,15 +47,31 @@ final class ReferenceService
 
     public static function replaceGrouped(PDO $pdo, string $applicationId, array $educationRows, array $employmentRows): array
     {
+        return self::replaceGroupedScoped($pdo, $applicationId, $educationRows, $employmentRows, true, true);
+    }
+
+    public static function replaceGroupedScoped(PDO $pdo, string $applicationId, array $educationRows, array $employmentRows, bool $replaceEducation, bool $replaceEmployment): array
+    {
         try {
-            self::replaceType($pdo, $applicationId, 'education', $educationRows);
-            self::replaceType($pdo, $applicationId, 'employment', $employmentRows);
+            $existing = self::fetchGrouped($pdo, $applicationId);
+            $mergedEducationRows = $replaceEducation ? $educationRows : ($existing['education'] ?? []);
+            $mergedEmploymentRows = $replaceEmployment ? $employmentRows : ($existing['employment'] ?? []);
+
+            if ($replaceEducation) {
+                self::replaceType($pdo, $applicationId, 'education', $educationRows);
+            }
+            if ($replaceEmployment) {
+                self::replaceType($pdo, $applicationId, 'employment', $employmentRows);
+            }
         } catch (Throwable $e) {
-            self::upsertLegacy($pdo, $applicationId, $educationRows[0] ?? [], $employmentRows[0] ?? []);
+            $existing = self::fetchGrouped($pdo, $applicationId);
+            $mergedEducationRows = $replaceEducation ? $educationRows : ($existing['education'] ?? []);
+            $mergedEmploymentRows = $replaceEmployment ? $employmentRows : ($existing['employment'] ?? []);
+            self::upsertLegacy($pdo, $applicationId, $mergedEducationRows[0] ?? [], $mergedEmploymentRows[0] ?? []);
             return self::fetchGrouped($pdo, $applicationId);
         }
 
-        self::upsertLegacy($pdo, $applicationId, $educationRows[0] ?? [], $employmentRows[0] ?? []);
+        self::upsertLegacy($pdo, $applicationId, $mergedEducationRows[0] ?? [], $mergedEmploymentRows[0] ?? []);
         return self::fetchGrouped($pdo, $applicationId);
     }
 

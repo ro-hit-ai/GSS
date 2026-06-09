@@ -143,15 +143,22 @@ var PDF_VIEWER_STATE = {
         section = normSection(section);
         row = row && typeof row === 'object' ? row : {};
         if (row.item_key) return String(row.item_key).toLowerCase().trim();
-        if (section === 'id' && row.document_index != null && String(row.document_index).trim() !== '') {
-            return 'id:' + String(row.document_index).trim().toLowerCase();
+        var rowId = row.id != null ? String(row.id).trim().toLowerCase() : '';
+        if (section === 'id') {
+            var documentIndex = row.document_index != null ? String(row.document_index).trim().toLowerCase() : '';
+            var proofGroup = row.proof_group != null ? String(row.proof_group).trim().toLowerCase() : '';
+            if (documentIndex && proofGroup) return 'id:' + documentIndex + ':' + proofGroup;
+            if (rowId) return 'id:row:' + rowId;
+            if (documentIndex) return 'id:' + documentIndex;
         }
         if (section === 'education' && row.education_index != null && String(row.education_index).trim() !== '') {
             return 'education:' + String(row.education_index).trim().toLowerCase();
         }
+        if (section === 'education' && rowId) return 'education:row:' + rowId;
         if (section === 'employment' && row.employment_index != null && String(row.employment_index).trim() !== '') {
             return 'employment:' + String(row.employment_index).trim().toLowerCase();
         }
+        if (section === 'employment' && rowId) return 'employment:row:' + rowId;
         return section + ':' + String((parseInt(String(idx || '0'), 10) || 0) + 1);
     }
 
@@ -6842,6 +6849,16 @@ if (uploadInput) {
             });
         }
 
+        function setReviewActionbarVisible(visible) {
+            var actionbar = document.getElementById('crReviewActionbar');
+            if (!actionbar) return;
+            if (visible) {
+                actionbar.style.removeProperty('display');
+            } else {
+                actionbar.style.setProperty('display', 'none', 'important');
+            }
+        }
+
         function normalizeStageStatus(status) {
             var s = String(status || '').toLowerCase().trim();
             if (!s || s === 'in_progress' || s === 'in-progress' || s === 'submitted') return 'pending';
@@ -6853,7 +6870,7 @@ if (uploadInput) {
             correction_submitted: ['hold', 'insufficient_documents', 'reject', 'approve'],
             hold: ['approve', 'reject', 'insufficient_documents'],
             insufficient_documents: ['approve', 'hold', 'reject', 'insufficient_documents'],
-            approved: ['hold', 'insufficient_documents', 'reject'],
+            approved: ['hold', 'insufficient_documents', 'reject', 'approve'],
             rejected: ['hold', 'insufficient_documents', 'approve'],
             waiting_candidate: ['hold', 'insufficient_documents', 'reject', 'approve'],
             blocked: ['hold', 'insufficient_documents', 'reject', 'approve'],
@@ -6994,11 +7011,11 @@ if (uploadInput) {
                     if (key === 'reference' && (activeIdentity === 'education_reference' || activeIdentity === 'employment_reference')) {
                         key = activeIdentity;
                     }
-                    var showActions = isActionableComponent(key);
-                    var isReadonly = (getRole() === 'validator' && !showActions);
                     var roleNow = getRole();
                     var stageNow = roleToStage(roleNow);
                     var stageStatus = getStageStatusFor(key, stageNow, '');
+                    var showActions = isActionableComponent(key);
+                    var isReadonly = (getRole() === 'validator' && !showActions);
                     var allowed = allowedActionsForStageStatus(stageStatus);
                     var isInvalidatedStage = (stageStatus === 'invalidated_by_validator_reopen' || stageStatus === 'invalidated_by_verifier_reopen');
                     var lockHint = lockMetaTextForComponent(key, stageNow, stageStatus);
@@ -7048,14 +7065,17 @@ if (uploadInput) {
                 var componentKey = currentSectionKey();
                 if (!componentKey || componentKey === 'timeline') {
                     setComponentActionButtonsEnabled(false);
+                    setReviewActionbarVisible(false);
                     return;
                 }
                 if (!isActionableComponent(componentKey)) {
                     setComponentActionButtonsEnabled(false);
+                    setReviewActionbarVisible(false);
                     return;
                 }
                 var itemKey = getActiveItemKeyForSection(componentKey);
                 var st = getStageStatusFor(componentKey, stage, itemKey);
+                setReviewActionbarVisible(true);
                 setComponentActionAvailabilityForStatus(st);
             } catch (_e) {
             }

@@ -12,10 +12,20 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var state = {
         rows: [],
+        bucketCounts: {},
         bucket: 'claimable',
         loading: false,
-        claimInFlightKey: ''
+        claimInFlightKey: '',
+        dashboardVersion: '',
+        cacheTimestamp: 0,
+        cachePendingValidation: false,
+        versionCheckInFlight: false,
+        pendingRefreshAfterCheck: false
     };
+    var CACHE_SCHEMA = 1;
+    var CACHE_KEY = 'vrDashboardCache:v' + CACHE_SCHEMA + ':u' + String(window.AUTH_USER_ID || 0);
+    var POLL_INTERVAL_MS = 60000;
+    var pollTimer = null;
 
     function setMessage(text, type) {
         if (!messageEl) return;
@@ -88,6 +98,69 @@ document.addEventListener('DOMContentLoaded', function () {
         if (s === 'followup') cls = 'followup_state';
         if (s === 'completed') cls = 'completed_state';
         return '<span class="vr-badge ' + esc(cls) + '">' + esc(claimStateLabel(row)) + '</span>';
+    }
+
+    function storageAvailable() {
+        try {
+            return !!window.sessionStorage;
+        } catch (_e) {
+            return false;
+        }
+    }
+
+    function readDashboardCache() {
+        if (!storageAvailable()) return null;
+        try {
+            var raw = window.sessionStorage.getItem(CACHE_KEY);
+            if (!raw) return null;
+            var parsed = JSON.parse(raw);
+            if (!parsed || parsed.schema !== CACHE_SCHEMA || !Array.isArray(parsed.rows)) return null;
+            return parsed;
+        } catch (_e) {
+            return null;
+        }
+    }
+
+    function writeDashboardCache() {
+        if (!storageAvailable()) return;
+        try {
+            window.sessionStorage.setItem(CACHE_KEY, JSON.stringify({
+                schema: CACHE_SCHEMA,
+                rows: state.rows,
+                counts: state.bucketCounts || {},
+                filters: {
+                    bucket: state.bucket
+                },
+                version: state.dashboardVersion || '',
+                timestamp: state.cacheTimestamp || Date.now()
+            }));
+        } catch (_e) {}
+    }
+
+    function hydrateFromCache() {
+        var cached = readDashboardCache();
+        if (!cached) return false;
+        state.rows = cached.rows;
+        state.bucketCounts = cached.counts || {};
+        state.bucket = cached.filters && cached.filters.bucket ? String(cached.filters.bucket).toLowerCase() : state.bucket;
+        state.dashboardVersion = String(cached.version || '');
+        state.cacheTimestamp = parseInt(String(cached.timestamp || '0'), 10) || Date.now();
+        state.cachePendingValidation = true;
+        renderRows();
+        setMessage('Showing cached dashboard while checking for updates.', 'info');
+        return true;
+    }
+
+    function markCacheValidated() {
+        if (!state.cachePendingValidation) return;
+        state.cachePendingValidation = false;
+        renderRows();
+        setMessage('', '');
+    }
+
+    function dashboardVersionFromPayload(data) {
+        var payload = data && data.data ? data.data : {};
+        return String(payload.dashboard_version || payload.version || '').trim();
     }
 
     function bucketBadgeHtml(row, bucketOverride) {
@@ -315,6 +388,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function groupActionHtml(row, group, key) {
         var groupState = priorityGroupState(group);
+        if (state.cachePendingValidation && (row.can_claim || row.can_open)) {
+            return '<button type="button" class="vr-action-btn" disabled>Checking...</button>';
+        }
         if (state.bucket === 'claimable' && row.can_claim && groupState === 'claimable_next') {
             var disabled = state.claimInFlightKey && state.claimInFlightKey !== key;
             return '<button type="button" class="vr-action-btn claim" data-action="claim" data-row-key="' + esc(key) + '" data-case-id="' + esc(String(row.case_id || '')) + '" data-priority="' + esc(String(group.priority || '')) + '"' + (disabled ? ' disabled' : '') + '>' + esc(claimButtonLabel(row)) + '</button>';
@@ -335,13 +411,13 @@ document.addEventListener('DOMContentLoaded', function () {
         if (groupState === 'owned_active' || groupState === 'followup') out.push('is-mine');
         if (groupState === 'locked_future') out.push('is-locked');
         if (groupState === 'completed') out.push('is-completed');
-        if (row && row.can_open && (groupState === 'owned_active' || groupState === 'completed')) out.push('is-clickable');
+        if (!state.cachePendingValidation && row && row.can_open && (groupState === 'owned_active' || groupState === 'completed')) out.push('is-clickable');
         return out.join(' ');
     }
 
     function prioritySectionHtml(row, group, key, claimedBy, claimedMeta) {
         var groupState = priorityGroupState(group);
-        var actionable = row.can_open && (groupState === 'owned_active' || groupState === 'completed');
+        var actionable = !state.cachePendingValidation && row.can_open && (groupState === 'owned_active' || groupState === 'completed');
         return ''
         + '<div class="' + esc(prioritySectionClass(row, group)) + '" data-row-key="' + esc(key) + '" data-priority="' + esc(String(group.priority || '')) + '" data-open-url="' + esc(appendPriorityBucket(row.open_url, group.priority)) + '" data-actionable="' + (actionable ? '1' : '0') + '">'
         +   '<div class="vr-priority-section-main">'
@@ -401,10 +477,11 @@ document.addEventListener('DOMContentLoaded', function () {
         }).join('');
     }
 
-    function loadBoard() {
+    function loadBoard(options) {
+        options = options || {};
         if (state.loading) return Promise.resolve();
         state.loading = true;
-        setMessage('', '');
+        if (!options.silent) setMessage('', '');
         return fetch(base + '/api/verifier/dashboard_board.php?_ts=' + Date.now(), { credentials: 'same-origin' })
             .then(function (res) { return res.json(); })
             .then(function (data) {
@@ -412,16 +489,77 @@ document.addEventListener('DOMContentLoaded', function () {
                     throw new Error((data && data.message) ? data.message : 'Failed to load verifier dashboard');
                 }
                 state.rows = data.data.rows;
+                state.bucketCounts = data.data.bucket_counts || {};
+                state.dashboardVersion = String(options.version || state.dashboardVersion || '');
+                state.cacheTimestamp = Date.now();
+                state.cachePendingValidation = false;
+                writeDashboardCache();
                 renderRows();
             })
             .catch(function (err) {
-                state.rows = [];
-                renderRows();
+                if (!options.silent && !state.rows.length) {
+                    state.rows = [];
+                    renderRows();
+                }
                 setMessage((err && err.message) ? err.message : 'Failed to load verifier dashboard', 'danger');
             })
             .finally(function () {
                 state.loading = false;
             });
+    }
+
+    function checkDashboardVersion(options) {
+        options = options || {};
+        if (state.versionCheckInFlight) {
+            if (options.forceRefresh) state.pendingRefreshAfterCheck = true;
+            return Promise.resolve();
+        }
+        if (document.visibilityState === 'hidden' && !options.forceWhenHidden) return Promise.resolve();
+        if (state.claimInFlightKey) return Promise.resolve();
+
+        state.versionCheckInFlight = true;
+        return fetch(base + '/api/verifier/dashboard_version.php?_ts=' + Date.now(), { credentials: 'same-origin' })
+            .then(function (res) { return res.json(); })
+            .then(function (data) {
+                if (!data || data.status !== 1 || !data.data) {
+                    throw new Error((data && data.message) ? data.message : 'Failed to check dashboard version');
+                }
+                var nextVersion = dashboardVersionFromPayload(data);
+                if (!nextVersion) {
+                    if (state.cachePendingValidation) return loadBoard({ silent: true });
+                    return null;
+                }
+                if (options.forceRefresh || !state.dashboardVersion || state.dashboardVersion !== nextVersion) {
+                    return loadBoard({ silent: state.rows.length > 0, version: nextVersion });
+                }
+                markCacheValidated();
+                state.dashboardVersion = nextVersion;
+                state.cacheTimestamp = Date.now();
+                writeDashboardCache();
+                return null;
+            })
+            .catch(function (err) {
+                if (!state.rows.length) {
+                    return loadBoard({ silent: false });
+                }
+                setMessage((err && err.message) ? err.message : 'Unable to confirm dashboard freshness. Use Refresh if actions look stale.', 'warning');
+                return null;
+            })
+            .finally(function () {
+                state.versionCheckInFlight = false;
+                if (state.pendingRefreshAfterCheck) {
+                    state.pendingRefreshAfterCheck = false;
+                    checkDashboardVersion({ forceRefresh: true });
+                }
+            });
+    }
+
+    function startPolling() {
+        if (pollTimer) window.clearInterval(pollTimer);
+        pollTimer = window.setInterval(function () {
+            if (document.visibilityState === 'hidden') return;
+            checkDashboardVersion();
+        }, POLL_INTERVAL_MS);
     }
 
     function reportUrlForRow(row, priority) {
@@ -479,11 +617,13 @@ document.addEventListener('DOMContentLoaded', function () {
             if (!btn) return;
             state.bucket = String(btn.getAttribute('data-bucket') || 'claimable').toLowerCase();
             renderRows();
+            writeDashboardCache();
         });
     }
 
     if (rowsHost) {
         rowsHost.addEventListener('click', function (e) {
+            if (state.cachePendingValidation) return;
             var actionBtn = e.target && e.target.closest ? e.target.closest('[data-action]') : null;
             if (actionBtn) {
                 var action = String(actionBtn.getAttribute('data-action') || '');
@@ -512,14 +652,26 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (refreshBtn) {
         refreshBtn.addEventListener('click', function () {
-            loadBoard();
+            checkDashboardVersion({ forceRefresh: true });
         });
     }
 
-    loadBoard();
-    setInterval(function () {
-        if (document.visibilityState === 'hidden') return;
-        if (state.claimInFlightKey) return;
-        loadBoard();
-    }, 15000);
+    document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState !== 'hidden') {
+            checkDashboardVersion();
+        }
+    });
+    window.addEventListener('focus', function () {
+        checkDashboardVersion();
+    });
+    window.addEventListener('pageshow', function () {
+        checkDashboardVersion();
+    });
+
+    if (!hydrateFromCache()) {
+        checkDashboardVersion({ forceRefresh: true });
+    } else {
+        checkDashboardVersion();
+    }
+    startPolling();
 });

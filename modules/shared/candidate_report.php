@@ -255,7 +255,7 @@ if ($role === 'company_recruiter') {
 
 $backToListHref = '';
 if ($role === 'verifier') {
-    $backToListHref = '../verifier/candidates_list.php';
+    $backToListHref = '../verifier/dashboard.php';
     $incomingView = strtolower(trim((string)($_GET['list_view'] ?? $_GET['view'] ?? '')));
     $allowedViews = ['mine', 'available', 'followup', 'participated', 'history', 'completed'];
     if ($incomingView === '' && isset($_SESSION['verifier_last_list_view'])) {
@@ -427,7 +427,7 @@ ob_start();
         margin-bottom:10px;
     }
     .cr-report-root.cr-validator-workspace .cr-hero-row-kpis{
-        margin-bottom:10px;
+        margin-bottom:0;
     }
     .cr-report-root.cr-validator-workspace .cr-hero-row-actions{
         padding-top:0;
@@ -709,6 +709,38 @@ ob_start();
         white-space:nowrap;
         width:100%;
     }
+    .cr-report-root.cr-validator-workspace .cr-hero-inline-actions{
+        display:flex;
+        align-items:center;
+        justify-content:flex-end;
+        gap:10px;
+        flex-wrap:wrap;
+        min-height:68px;
+        grid-column:5 / 6;
+        justify-self:end;
+        align-self:stretch;
+    }
+    .cr-report-root.cr-validator-workspace .cr-hero-inline-actions .cr-action-btn{
+        min-height:46px;
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        padding:10px 18px;
+        border-radius:999px;
+        text-decoration:none;
+        font-weight:900;
+    }
+    .cr-report-root.cr-validator-workspace .cr-hero-inline-actions .cr-back-to-list-btn{
+        color:#ffffff;
+        border-color:rgba(37,99,235,0.80);
+        background:linear-gradient(135deg,#2563eb 0%,#0ea5e9 100%);
+        box-shadow:0 12px 24px rgba(37,99,235,0.24), inset 0 1px 0 rgba(255,255,255,0.28);
+    }
+    .cr-report-root.cr-validator-workspace .cr-hero-inline-actions .cr-back-to-list-btn:hover{
+        filter:none;
+        transform:translateY(-1px);
+        box-shadow:0 16px 28px rgba(37,99,235,0.30), inset 0 1px 0 rgba(255,255,255,0.32);
+    }
     .cr-report-root.cr-validator-workspace .cr-actions{
         align-self:auto;
         gap:12px;
@@ -798,6 +830,7 @@ ob_start();
         display:flex;
         flex-direction:column;
         gap:16px;
+        transform:translateY(-12px);
     }
     .cr-report-root.cr-validator-workspace .cr-sections-scroll{
         order:1;
@@ -2397,6 +2430,7 @@ ob_start();
 }
 .cr-report-root.cr-validator-workspace .cr-content .candidate-section{
     border:1px solid #e5e7eb !important;
+    border-top:4px solid #0d83d4 !important;
     border-radius:10px !important;
     background:#fff !important;
     box-shadow:none !important;
@@ -3184,6 +3218,9 @@ ob_start();
         top:auto;
         overflow:visible;
     }
+    .cr-report-root.cr-validator-workspace .cr-main{
+        transform:none;
+    }
     .cr-report-root.cr-validator-workspace .cr-sidebar{
         order:1;
         padding:12px;
@@ -3350,6 +3387,11 @@ ob_start();
     .cr-report-root.cr-validator-workspace .cr-stat{
         min-height:62px;
         padding:10px 12px;
+    }
+    .cr-report-root.cr-validator-workspace .cr-hero-inline-actions{
+        grid-column:auto;
+        justify-self:start;
+        justify-content:flex-start;
     }
     .cr-report-root.cr-validator-workspace .cr-nav .list-group-item{
         min-width:188px;
@@ -3602,6 +3644,9 @@ ob_start();
         padding:9px 10px;
         min-height:58px;
     }
+    .cr-report-root.cr-validator-workspace .cr-hero-inline-actions{
+        min-height:58px;
+    }
     .cr-report-root.cr-validator-workspace .cr-stat b{
         font-size:10px;
     }
@@ -3760,7 +3805,7 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
     </div>
     <?php endif; ?>
 
-    <div class="modal fade" id="cvCorrectionModal" tabindex="-1" aria-hidden="true">
+    <!-- <div class="modal fade" id="cvCorrectionModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
@@ -3782,7 +3827,7 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
                 </div>
             </div>
         </div>
-    </div>
+    </div> -->
 <?php endif; ?>
 
     <div class="cr-hero cr-validator-case-strip" style="margin-top:10px;">
@@ -3800,37 +3845,19 @@ $enableWorkspaceClass = $workspaceRoles && !$isPrint && (!$isEmbed || $role === 
                     <div class="cr-stat"><b>Flow</b><span id="cvHeaderWorkflowMode">-</span></div>
                     <div class="cr-stat"><b>TAT</b><span id="cvHeaderTat">-</span></div>
                     <div class="cr-stat"><b>Reviewed</b><span id="cvHeaderReviewed">0 / 0 sections</span></div>
-                </div>
-            </div>
-
-            <div class="cr-hero-row cr-hero-row-actions">
-                <div class="cr-hero-toolbar">
-                    <div class="cr-actions cr-actions-primary">
-                        <?php if (in_array($role, ['verifier', 'validator', 'qa', 'gss_admin', 'client_admin', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
-                            <button type="button" class="cr-action-btn" id="cvOpenCorrectionModal">Request Candidate Correction</button>
-                        <?php endif; ?>
-                    </div>
-                    <div class="cr-actions cr-actions-secondary">
-                        <?php if (in_array($role, ['verifier', 'validator', 'qa', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
-                            <button type="button" class="cr-action-btn" id="cvOpenMailModal">Mail</button>
-                        <?php endif; ?>
+                    <div class="cr-hero-inline-actions">
                         <?php if (in_array($role, ['verifier', 'validator', 'qa', 'gss_admin', 'client_admin', 'team_lead'], true) && !$isPrint && !$isEmbed): ?>
                             <button type="button" class="cr-action-btn" id="cvResendCandidateAccessBtn" style="display:none;">Resend Candidate Access</button>
                         <?php endif; ?>
                         <?php if ($backToListHref !== '' && !$isPrint && !$isEmbed): ?>
-                            <a href="<?= htmlspecialchars($backToListHref) ?>" class="cr-action-btn">Back To List</a>
-                        <?php endif; ?>
-                        <?php if ($role === 'verifier' && !$isPrint && !$isEmbed): ?>
-                            <button type="button" class="cr-action-btn" id="cvPrintLetterBtn">Print Letter</button>
+                            <a href="<?= htmlspecialchars($backToListHref) ?>" class="cr-action-btn cr-back-to-list-btn">Back To List</a>
                         <?php endif; ?>
                         <?php if ($role === 'client_admin' && !$isPrint && !$isEmbed): ?>
                             <button type="button" class="cr-action-btn cr-dark" id="cvEscalateTlBtn">Escalate To Team Lead</button>
                             <button type="button" class="cr-action-btn cr-danger" id="cvEscalateGssBtn">Escalate To GSS Admin</button>
                         <?php endif; ?>
+                        <span id="cvResendMetaBadge" style="display:none;">Resend info</span>
                     </div>
-                </div>
-                <div class="cr-resend-helper">
-                    <span id="cvResendMetaBadge" style="display:none;">Resend info</span>
                 </div>
             </div>
         </div>
@@ -4907,14 +4934,7 @@ render_layout('Candidate Report', $roleLabel, $menu, $content);
             if (!proxies.length) return;
             var readonly = isReadonlyReport();
             proxies.forEach(function (btn) {
-                var action = String(btn.getAttribute('data-proxy-action') || '').toLowerCase().trim();
-                var canonical = getCanonicalButton(action);
                 if (readonly) {
-                    btn.style.display = 'none';
-                    btn.disabled = true;
-                    return;
-                }
-                if (canonical && canonical.style.display === 'none') {
                     btn.style.display = 'none';
                     btn.disabled = true;
                 }

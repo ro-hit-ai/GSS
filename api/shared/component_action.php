@@ -173,7 +173,7 @@ function allowed_actions_for_status(string $status): array {
         case 'insufficient_documents':
             return ['approve', 'hold', 'reject', 'insufficient_documents'];
         case 'approved':
-            return ['hold', 'insufficient_documents', 'reject'];
+            return ['hold', 'insufficient_documents', 'reject', 'approve'];
         case 'rejected':
             return ['hold', 'insufficient_documents', 'approve'];
         case 'completed':
@@ -240,7 +240,14 @@ function enforce_verifier_owned_active_component(PDO $pdo, int $caseId, string $
     }
     $componentKey = norm_component_key($componentKey);
     if (!isset($owned[$componentKey])) {
-        $componentState = strtolower(trim((string)($routingState['components'][$componentKey]['state'] ?? 'hidden_unrelated')));
+        $componentRouting = $routingState['components'][$componentKey] ?? [];
+        $componentState = strtolower(trim((string)($componentRouting['state'] ?? 'hidden_unrelated')));
+        $isAssignedCompleted = $componentState === 'completed'
+            && strtolower(trim((string)($componentRouting['assigned_role'] ?? ''))) === 'verifier'
+            && (int)($componentRouting['assigned_user_id'] ?? 0) === $userId;
+        if ($isAssignedCompleted) {
+            return;
+        }
         deny_verifier_component_ownership($pdo, $caseId, $applicationId, $componentKey, $userId, 'component_not_owned_active:' . $componentState, $routingState);
     }
 }

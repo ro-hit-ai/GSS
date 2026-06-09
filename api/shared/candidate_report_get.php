@@ -135,16 +135,24 @@ function item_key_for_row(string $componentKey, array $row, int $idx): string {
     $k = ws_norm_component_key($componentKey);
     $seq = $idx + 1;
     if ($k === 'id') {
-        $v = $row['document_index'] ?? '';
-        if ($v !== '' && $v !== null) return 'id:' . norm_item_key((string)$v);
+        $documentIndex = norm_item_key((string)($row['document_index'] ?? ''));
+        $proofGroup = norm_item_key((string)($row['proof_group'] ?? ''));
+        if ($documentIndex !== '' && $proofGroup !== '') return 'id:' . $documentIndex . ':' . $proofGroup;
+        $rowId = norm_item_key((string)($row['id'] ?? ''));
+        if ($rowId !== '') return 'id:row:' . $rowId;
+        if ($documentIndex !== '') return 'id:' . $documentIndex;
     }
     if ($k === 'education') {
-        $v = $row['education_index'] ?? '';
-        if ($v !== '' && $v !== null) return 'education:' . norm_item_key((string)$v);
+        $educationIndex = norm_item_key((string)($row['education_index'] ?? ''));
+        if ($educationIndex !== '') return 'education:' . $educationIndex;
+        $rowId = norm_item_key((string)($row['id'] ?? ''));
+        if ($rowId !== '') return 'education:row:' . $rowId;
     }
     if ($k === 'employment') {
-        $v = $row['employment_index'] ?? '';
-        if ($v !== '' && $v !== null) return 'employment:' . norm_item_key((string)$v);
+        $employmentIndex = norm_item_key((string)($row['employment_index'] ?? ''));
+        if ($employmentIndex !== '') return 'employment:' . $employmentIndex;
+        $rowId = norm_item_key((string)($row['id'] ?? ''));
+        if ($rowId !== '') return 'employment:row:' . $rowId;
     }
     return $k . ':' . (string)$seq;
 }
@@ -930,6 +938,7 @@ try {
                 }
                 $row = $groupRows[$groupKey];
                 $row['document_index'] = $docIndex;
+                $row['proof_group'] = (string)($row['proof_group'] ?? $groupKey);
                 $row['document_type'] = (string)($row['document_type'] ?? '');
                 $row['upload_document'] = (string)($row['upload_document'] ?? '');
                 $identification[] = $row;
@@ -1237,7 +1246,18 @@ try {
         }
         foreach (($verifierRoutingState['completed_components'] ?? []) as $completedKey) {
             $nk = ws_norm_component_key((string)$completedKey);
-            if ($nk !== '') $readonlyMap[$nk] = true;
+            if ($nk === '') continue;
+            $componentState = $verifierRoutingState['components'][$completedKey]
+                ?? $verifierRoutingState['components'][$nk]
+                ?? [];
+            $assignedRole = strtolower(trim((string)($componentState['assigned_role'] ?? '')));
+            $assignedUserId = (int)($componentState['assigned_user_id'] ?? 0);
+            if (!$isVerifierReadonlyReport && $assignedRole === 'verifier' && $assignedUserId === (int)$userId) {
+                $actionableMap[$nk] = true;
+                unset($readonlyMap[$nk]);
+            } else {
+                $readonlyMap[$nk] = true;
+            }
         }
         foreach (($verifierRoutingState['claimable_next_components'] ?? []) as $claimableKey) {
             $nk = ws_norm_component_key((string)$claimableKey);
