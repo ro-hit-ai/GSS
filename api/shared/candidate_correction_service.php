@@ -718,7 +718,7 @@ function ccs_snapshot_document_versions(PDO $pdo, int $caseId, string $applicati
     }
 }
 
-function ccs_log_workflow_communication(PDO $pdo, int $caseId, string $applicationId, array $components, string $reason, int $userId, string $userName, string $role, string $threadId): void {
+function ccs_log_workflow_communication(PDO $pdo, int $caseId, string $applicationId, array $components, string $reason, int $userId, string $userName, string $role, string $threadId, string $messageId = '', string $threadOwnerRole = '', string $primaryComponentKey = ''): array {
     wc_ensure_tables($pdo);
     $componentKeys = [];
     foreach ($components as $component) {
@@ -729,14 +729,20 @@ function ccs_log_workflow_communication(PDO $pdo, int $caseId, string $applicati
     }
     $componentKeys = array_keys($componentKeys);
     if (!$componentKeys) {
-        return;
+        return ['primary' => null, 'by_component' => []];
     }
 
     $subject = 'Candidate Correction Requested';
     $componentList = implode(', ', $componentKeys);
+    $threadOwnerRole = function_exists('wc_norm_thread_owner_role')
+        ? wc_norm_thread_owner_role($threadOwnerRole !== '' ? $threadOwnerRole : $role)
+        : strtolower(trim($threadOwnerRole !== '' ? $threadOwnerRole : $role));
+    $messageId = function_exists('wc_norm_msg_id') ? wc_norm_msg_id($messageId) : strtolower(trim($messageId, "<> \t\r\n"));
+    $primaryComponentKey = ccs_component_norm($primaryComponentKey !== '' ? $primaryComponentKey : (string)($componentKeys[0] ?? ''));
     $st = $pdo->prepare("INSERT INTO Vati_Payfiller_Workflow_Communications
-        (application_id, case_id, component_key, role_key, action_key, subject, body, notes, sent_by_user_id, sent_by_name, sent_at, delivery_status, communication_type, direction, actor_role, actor_name, workflow_stage, thread_id, source_table, source_message_key)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'sent', 'correction_request', 'outgoing', ?, ?, ?, ?, 'Vati_Payfiller_Candidate_Correction_Sessions', ?)");
+        (application_id, case_id, component_key, role_key, action_key, subject, body, notes, sent_by_user_id, sent_by_name, sent_at, delivery_status, communication_type, direction, actor_role, actor_name, workflow_stage, thread_id, thread_owner_role, source_table, source_message_key, message_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'sent', 'correction_request', 'outgoing', ?, ?, ?, ?, ?, 'Vati_Payfiller_Candidate_Correction_Sessions', ?, ?)");
+    $result = ['primary' => null, 'by_component' => []];
     foreach ($componentKeys as $componentKey) {
         $body = 'Correction requested for component: ' . $componentKey;
         if (count($componentKeys) > 1) {
@@ -746,8 +752,26 @@ function ccs_log_workflow_communication(PDO $pdo, int $caseId, string $applicati
             $body .= ' | reason: ' . $reason;
         }
         $srcKey = 'corr:' . $caseId . ':' . $componentKey . ':' . sha1($applicationId . '|' . $componentKey . '|' . $componentList . '|' . $reason . '|' . date('YmdHi'));
-        $st->execute([$applicationId, $caseId, $componentKey, $role, 'correction_request', $subject, $body, $reason !== '' ? $reason : null, $userId > 0 ? $userId : null, $userName !== '' ? $userName : null, $role, $userName !== '' ? $userName : null, $role, $threadId, $srcKey]);
+        $rowThreadId = (function_exists('wc_build_thread_id') && $applicationId !== '' && $threadOwnerRole !== '')
+            ? wc_build_thread_id($applicationId, $componentKey, $threadOwnerRole)
+            : $threadId;
+        $rowMessageId = ($messageId !== '' && $componentKey === $primaryComponentKey) ? $messageId : null;
+        $st->execute([$applicationId, $caseId, $componentKey, $role, 'correction_request', $subject, $body, $reason !== '' ? $reason : null, $userId > 0 ? $userId : null, $userName !== '' ? $userName : null, $role, $userName !== '' ? $userName : null, $role, $rowThreadId, $threadOwnerRole !== '' ? $threadOwnerRole : null, $srcKey, $rowMessageId]);
+        $communicationId = (int)$pdo->lastInsertId();
+        $rowMeta = [
+            'communication_id' => $communicationId,
+            'component_key' => $componentKey,
+            'message_id' => $rowMessageId,
+            'thread_id' => $rowThreadId,
+            'thread_owner_role' => $threadOwnerRole,
+            'source_message_key' => $srcKey,
+        ];
+        $result['by_component'][$componentKey] = $rowMeta;
+        if ($componentKey === $primaryComponentKey) {
+            $result['primary'] = $rowMeta;
+        }
     }
+    return $result;
 }
 
 function ccs_active_session_conflicts(PDO $pdo, int $caseId, array $components): array {
@@ -858,7 +882,8 @@ function ccs_resend_existing_session_if_mail_missing(PDO $pdo, array $sessionRow
         $components,
         (string)($sessionRow['correction_reason'] ?? ''),
         (string)($sessionRow['token'] ?? ''),
-        (string)($sessionRow['requested_role'] ?? '')
+        (string)($sessionRow['requested_role'] ?? ''),
+        $sessionId
     );
     if ($sent) {
         try {
@@ -883,11 +908,53 @@ function ccs_candidate_correction_url(string $token): string {
     return $url;
 }
 
-function ccs_send_mail(PDO $pdo, array $case, array $components, string $reason, string $token, string $role): bool {
+function ccs_send_mail(PDO $pdo, array $case, array $components, string $reason, string $token, string $role, int $correctionSessionId = 0, array $workflowMailMeta = []): bool {
     $appId = (string)($case['application_id'] ?? '');
+    $caseId = (int)($case['case_id'] ?? 0);
     $name = trim((string)($case['candidate_first_name'] ?? '') . ' ' . (string)($case['candidate_last_name'] ?? ''));
     $to = trim((string)($case['candidate_email'] ?? ''));
-    if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL)) return false;
+    if (function_exists('php_sendnodemailer_trace')) {
+        php_sendnodemailer_trace('enter_ccs_send_mail', [
+            'applicationId' => $appId,
+            'caseId' => $caseId,
+            'components' => $components,
+            'role' => $role,
+            'correctionSessionId' => $correctionSessionId,
+            'workflowMailMeta' => $workflowMailMeta,
+            'candidate_email_present' => $to !== '',
+            'candidate_email_valid' => $to !== '' && (bool)filter_var($to, FILTER_VALIDATE_EMAIL),
+        ]);
+    }
+    if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL)) {
+        if (function_exists('php_sendnodemailer_trace')) {
+            php_sendnodemailer_trace('ccs_send_mail_invalid_recipient', [
+                'applicationId' => $appId,
+                'caseId' => $caseId,
+                'correctionSessionId' => $correctionSessionId,
+            ]);
+        }
+        return false;
+    }
+    $componentKey = '';
+    foreach ($components as $component) {
+        $normalizedComponent = ccs_component_norm((string)$component);
+        if ($normalizedComponent !== '') {
+            $componentKey = $normalizedComponent;
+            break;
+        }
+    }
+    $ownerRole = trim((string)($workflowMailMeta['thread_owner_role'] ?? $workflowMailMeta['ownerRole'] ?? ''));
+    $ownerRole = $ownerRole !== '' ? $ownerRole : (function_exists('wc_norm_thread_owner_role')
+        ? wc_norm_thread_owner_role((string)$role)
+        : strtolower(trim((string)$role)));
+    $phpThreadId = trim((string)($workflowMailMeta['thread_id'] ?? $workflowMailMeta['phpThreadId'] ?? ''));
+    $phpThreadId = $phpThreadId !== '' ? $phpThreadId : (($componentKey !== '' && function_exists('wc_build_thread_id'))
+        ? wc_build_thread_id($appId, $componentKey, $ownerRole)
+        : '');
+    $messageId = trim((string)($workflowMailMeta['message_id'] ?? $workflowMailMeta['messageId'] ?? ''));
+    $messageId = $messageId !== '' ? trim($messageId, "<> \t\r\n") : ('wc.' . strtolower(preg_replace('/[^a-zA-Z0-9]+/', '', $appId)) . '.' . bin2hex(random_bytes(8)) . '@payfiller.com');
+    $communicationId = (int)($workflowMailMeta['communication_id'] ?? $workflowMailMeta['communicationId'] ?? 0);
+    $sourceMessageKey = trim((string)($workflowMailMeta['source_message_key'] ?? $workflowMailMeta['sourceMessageKey'] ?? ''));
     $url = ccs_candidate_correction_url($token);
     $safeUrl = htmlspecialchars($url);
     $safeName = htmlspecialchars($name !== '' ? $name : 'Candidate');
@@ -904,11 +971,88 @@ function ccs_send_mail(PDO $pdo, array $case, array $components, string $reason,
         . '</div>';
     app_mail_set_log_meta([
         'application_id' => $appId,
-        'case_id' => (int)($case['case_id'] ?? 0),
+        'case_id' => $caseId,
         'event_type' => 'candidate.correction.request',
-        'role' => $role
+        'role' => $role,
+        'component_key' => $componentKey !== '' ? $componentKey : null,
+        'sender_role' => $role
     ]);
-    $ok = send_app_mail($to, $subject, $body, 'VATI GSS', ['application_id' => $appId, 'event_type' => 'candidate.correction.request']);
+    $headers = [
+        'Message-ID' => '<' . $messageId . '>',
+    ];
+    if ($phpThreadId !== '') {
+        $headers['X-Workflow-Thread-Id'] = $phpThreadId;
+    }
+    $nodeMetadata = [
+        'application_id' => $appId,
+        'applicationId' => $appId,
+        'sourceCaseId' => $appId,
+        'case_id' => $caseId > 0 ? $caseId : null,
+        'caseId' => $caseId > 0 ? $caseId : null,
+        'component_key' => $componentKey !== '' ? $componentKey : null,
+        'componentKey' => $componentKey !== '' ? $componentKey : null,
+        'role' => $role,
+        'senderRole' => $role,
+        'ownerRole' => $ownerRole !== '' ? $ownerRole : null,
+        'threadOwnerRole' => $ownerRole !== '' ? $ownerRole : null,
+        'phpThreadId' => $phpThreadId !== '' ? $phpThreadId : null,
+        'threadId' => $phpThreadId !== '' ? $phpThreadId : null,
+        'messageId' => $messageId,
+        'communication_id' => $communicationId > 0 ? $communicationId : null,
+        'communicationId' => $communicationId > 0 ? $communicationId : null,
+        'source_message_key' => $sourceMessageKey !== '' ? $sourceMessageKey : null,
+        'sourceMessageKey' => $sourceMessageKey !== '' ? $sourceMessageKey : null,
+        'correctionSessionId' => $correctionSessionId > 0 ? $correctionSessionId : null,
+        'event_type' => 'candidate.correction.request',
+        'workflow' => [
+            'applicationId' => $appId,
+            'sourceCaseId' => $appId,
+            'componentKey' => $componentKey !== '' ? $componentKey : null,
+            'senderRole' => $role,
+            'ownerRole' => $ownerRole !== '' ? $ownerRole : null,
+            'threadId' => $phpThreadId !== '' ? $phpThreadId : null,
+            'messageId' => $messageId,
+            'communicationId' => $communicationId > 0 ? $communicationId : null,
+            'sourceMessageKey' => $sourceMessageKey !== '' ? $sourceMessageKey : null,
+            'correctionSessionId' => $correctionSessionId > 0 ? $correctionSessionId : null,
+        ],
+    ];
+    $nodeResult = function_exists('send_via_node')
+        ? send_via_node($to, $subject, $body, 'VATI GSS', [], $nodeMetadata, $headers)
+        : ['success' => false, 'error' => 'send_via_node unavailable'];
+    $ok = (bool)($nodeResult['success'] ?? false);
+    if (function_exists('php_sendnodemailer_trace')) {
+        php_sendnodemailer_trace('ccs_send_mail_after_send_via_node', [
+            'applicationId' => $appId,
+            'caseId' => $caseId,
+            'correctionSessionId' => $correctionSessionId,
+            'success' => $ok,
+            'error' => $ok ? null : (string)($nodeResult['error'] ?? $nodeResult['message'] ?? 'Unknown Node error'),
+            'nodeResult' => $nodeResult,
+        ]);
+    }
+    if (!$ok) {
+        if (function_exists('php_sendnodemailer_trace')) {
+            php_sendnodemailer_trace('ccs_send_mail_before_send_app_mail_fallback', [
+                'applicationId' => $appId,
+                'caseId' => $caseId,
+                'correctionSessionId' => $correctionSessionId,
+            ]);
+        }
+        $ok = send_app_mail($to, $subject, $body, 'VATI GSS', [
+            'application_id' => $appId,
+            'event_type' => 'candidate.correction.request',
+            'headers' => $headers,
+        ]);
+        if (function_exists('php_sendnodemailer_trace')) {
+            php_sendnodemailer_trace('ccs_send_mail_after_send_app_mail_fallback', [
+                'applicationId' => $appId,
+                'caseId' => $caseId,
+                'correctionSessionId' => $correctionSessionId,
+                'success' => (bool)$ok,
+            ]);
+        }
+    }
     app_mail_clear_log_meta();
     return $ok;
 }

@@ -205,9 +205,36 @@ try {
     }
     $pdo->commit();
 
-    $mailSent = ccs_send_mail($pdo, $case, $components, $reason, $token, $role);
+    $primaryComponentKey = '';
+    foreach ($components as $component) {
+        $normalizedComponent = ccs_component_norm((string)$component);
+        if ($normalizedComponent !== '') {
+            $primaryComponentKey = $normalizedComponent;
+            break;
+        }
+    }
+    $ownerRole = function_exists('wc_norm_thread_owner_role')
+        ? wc_norm_thread_owner_role($role)
+        : strtolower(trim($role));
+    $phpThreadId = ($primaryComponentKey !== '' && function_exists('wc_build_thread_id'))
+        ? wc_build_thread_id($applicationId, $primaryComponentKey, $ownerRole)
+        : 'app:' . strtolower($applicationId);
+    $messageId = 'wc.' . strtolower(preg_replace('/[^a-zA-Z0-9]+/', '', $applicationId)) . '.' . bin2hex(random_bytes(8)) . '@payfiller.com';
+    $workflowCommunication = ['primary' => null, 'by_component' => []];
     try {
-        ccs_log_workflow_communication($pdo, $caseId, $applicationId, $components, $reason, $userId, $userName, $role, 'app:' . strtolower($applicationId));
+        $workflowCommunication = ccs_log_workflow_communication($pdo, $caseId, $applicationId, $components, $reason, $userId, $userName, $role, $phpThreadId, $messageId, $ownerRole, $primaryComponentKey);
+    } catch (Throwable $e) {
+    }
+
+    $primaryCommunication = is_array($workflowCommunication['primary'] ?? null) ? $workflowCommunication['primary'] : [];
+    $mailSent = ccs_send_mail($pdo, $case, $components, $reason, $token, $role, $sessionId, [
+        'message_id' => $messageId,
+        'thread_id' => (string)($primaryCommunication['thread_id'] ?? $phpThreadId),
+        'thread_owner_role' => $ownerRole,
+        'communication_id' => (int)($primaryCommunication['communication_id'] ?? 0),
+        'source_message_key' => (string)($primaryCommunication['source_message_key'] ?? ''),
+    ]);
+    try {
         $timelineComponents = [];
         foreach ($components as $component) {
             $componentKey = ccs_component_norm((string)$component);
@@ -231,6 +258,10 @@ try {
             'components' => $components,
             'invite_url' => ccs_candidate_correction_url($token),
             'mail_sent' => $mailSent ? 1 : 0,
+            'communication_id' => (int)($primaryCommunication['communication_id'] ?? 0),
+            'message_id' => $messageId,
+            'thread_id' => (string)($primaryCommunication['thread_id'] ?? $phpThreadId),
+            'thread_owner_role' => $ownerRole,
             'workflow_rows_changed' => $changedRows
         ]
     ]);

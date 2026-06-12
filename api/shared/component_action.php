@@ -618,13 +618,17 @@ function send_component_action_email(PDO $pdo, string $applicationId, string $co
         return false;
     }
 
+    $caseId = isset($ctx['case_id']) ? (int)$ctx['case_id'] : 0;
     app_mail_set_log_meta([
         'application_id' => $applicationId,
+        'case_id' => $caseId > 0 ? $caseId : null,
         'event_type' => 'component.action.email',
         'section' => $componentKey,
+        'component_key' => $componentKey,
+        'role' => $role,
+        'sender_role' => $role,
         'action' => $action
     ]);
-    $caseId = isset($ctx['case_id']) ? (int)$ctx['case_id'] : 0;
     $threadOwnerRole = function_exists('wc_norm_thread_owner_role')
         ? wc_norm_thread_owner_role((string)$role)
         : strtolower(trim((string)$role));
@@ -632,14 +636,54 @@ function send_component_action_email(PDO $pdo, string $applicationId, string $co
         ? wc_build_thread_id($applicationId, $componentKey, $threadOwnerRole)
         : ('wf:' . strtolower($applicationId) . ':' . strtolower(trim((string)$componentKey)) . ':' . strtolower($threadOwnerRole));
     $messageId = 'wc.' . strtolower(preg_replace('/[^a-zA-Z0-9]+/', '', $applicationId)) . '.' . bin2hex(random_bytes(8)) . '@payfiller.com';
-    $ok = send_app_mail($to, $subject, $body, 'VATI GSS', [
+    $headers = [
+        'Message-ID' => '<' . $messageId . '>',
+        'X-Workflow-Thread-Id' => $threadId,
+    ];
+    $mailOptions = [
         'application_id' => $applicationId,
         'event_type' => 'component.action.email',
-        'headers' => [
-            'Message-ID' => '<' . $messageId . '>',
-            'X-Workflow-Thread-Id' => $threadId,
-        ]
-    ]);
+        'headers' => $headers,
+    ];
+    $ok = false;
+    if ($action === 'insufficient_documents') {
+        $nodeMetadata = [
+            'application_id' => $applicationId,
+            'applicationId' => $applicationId,
+            'sourceCaseId' => $applicationId,
+            'case_id' => $caseId > 0 ? $caseId : null,
+            'caseId' => $caseId > 0 ? $caseId : null,
+            'component_key' => $componentKey,
+            'componentKey' => $componentKey,
+            'role' => $role,
+            'senderRole' => $role,
+            'ownerRole' => $threadOwnerRole,
+            'threadOwnerRole' => $threadOwnerRole,
+            'phpThreadId' => $threadId,
+            'threadId' => $threadId,
+            'messageId' => $messageId,
+            'event_type' => 'component.action.email',
+            'action' => $action,
+            'workflow' => [
+                'applicationId' => $applicationId,
+                'sourceCaseId' => $applicationId,
+                'componentKey' => $componentKey,
+                'senderRole' => $role,
+                'ownerRole' => $threadOwnerRole,
+                'threadId' => $threadId,
+                'messageId' => $messageId,
+            ],
+        ];
+        $nodeResult = function_exists('send_via_node')
+            ? send_via_node($to, $subject, $body, 'VATI GSS', [], $nodeMetadata, $headers)
+            : ['success' => false, 'error' => 'send_via_node unavailable'];
+        $ok = (bool)($nodeResult['success'] ?? false);
+        if (!$ok) {
+            $ok = send_app_mail($to, $subject, $body, 'VATI GSS', $mailOptions);
+        }
+    } else {
+        $ok = send_app_mail($to, $subject, $body, 'VATI GSS', $mailOptions);
+    }
     app_mail_clear_log_meta();
     if ($ok) {
         try {

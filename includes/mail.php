@@ -203,17 +203,47 @@ function app_node_api_json_request(string $method, string $path, ?array $payload
  * Send email via Node.js service
  */
 function send_via_node(string $to, string $subject, string $htmlBody, ?string $fromName = null, array $attachments = [], array $metadata = [], array $headers = []): array {
+    if (function_exists('php_sendnodemailer_trace')) {
+        php_sendnodemailer_trace('enter_send_via_node', [
+            'to_present' => trim($to) !== '',
+            'subject' => $subject,
+            'fromName' => $fromName,
+            'attachments_count' => count($attachments),
+            'metadata' => $metadata,
+            'headers' => $headers,
+        ]);
+    }
     if (!function_exists('sendNodeMailer')) {
+        if (function_exists('php_sendnodemailer_trace')) {
+            php_sendnodemailer_trace('send_via_node_missing_sendNodeMailer');
+        }
         return ['success' => false, 'error' => 'sendNodeMailer() not found'];
     }
 
     $queueId = app_mail_pick_queue_id($metadata);
+    if (function_exists('php_sendnodemailer_trace')) {
+        php_sendnodemailer_trace('send_via_node_before_sendNodeMailer', [
+            'queueId' => $queueId,
+            'metadata' => $metadata,
+            'headers' => $headers,
+        ]);
+    }
     $response = sendNodeMailer($to, $subject, $htmlBody, $queueId, $headers, $metadata);
     if (!is_array($response)) {
+        if (function_exists('php_sendnodemailer_trace')) {
+            php_sendnodemailer_trace('send_via_node_invalid_response', ['response_type' => gettype($response)]);
+        }
         return ['success' => false, 'error' => 'Invalid Node mailer response'];
     }
 
     $ok = (bool)($response['success'] ?? false);
+    if (function_exists('php_sendnodemailer_trace')) {
+        php_sendnodemailer_trace('send_via_node_after_sendNodeMailer', [
+            'success' => $ok,
+            'error' => $ok ? null : (string)($response['error'] ?? $response['message'] ?? 'Unknown Node error'),
+            'response' => $response,
+        ]);
+    }
     return [
         'success' => $ok,
         'error' => $ok ? null : (string)($response['error'] ?? $response['message'] ?? 'Unknown Node error'),
