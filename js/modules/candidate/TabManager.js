@@ -69,7 +69,7 @@ class TabManager {
         
         // Determine total cards
         let total = 1;
-        if (this.currentData.length > 0) {
+       if (this.currentData.length > 0 && !(this.requiredCount > 0)) {
             total = Math.max(this.currentData.length, 1);
         } else if (this.countSelect) {
             total = Math.max(1, parseInt(this.countSelect.value || '1', 10));

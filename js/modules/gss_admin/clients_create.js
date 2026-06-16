@@ -1522,7 +1522,16 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         // Keep required-count and TAT/cost fields in sync while restoring from summary.
-        applyJobRoleRequiredCounts(jrId, stageKey, lvl);
+        // applyJobRoleRequiredCounts fetches from API; after it resolves, re-apply the
+        // counts from the summary so they are not overwritten by stale API data.
+        applyJobRoleRequiredCounts(jrId, stageKey, lvl).then(function () {
+            rows.forEach(function (s) {
+                var vtId = s && typeof s.verification_type_id !== 'undefined' ? (parseInt(s.verification_type_id || '0', 10) || 0) : 0;
+                if (vtId <= 0) return;
+                var rc = s && typeof s.required_count !== 'undefined' ? (parseInt(s.required_count || '1', 10) || 1) : 1;
+                setTypeRequiredCount(vtId, rc);
+            });
+        });
         if (lvl) {
             loadTatCost(urlClientId, lvl, jrId).then(function () {
                 syncInlineTatCost(lvl, jrId);

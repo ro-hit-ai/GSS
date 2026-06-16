@@ -1,4 +1,4 @@
-class EducationManager extends TabManager {
+﻿class EducationManager extends TabManager {
     constructor() {
         super(
             'education',
@@ -113,18 +113,21 @@ class EducationManager extends TabManager {
     }
 
     async init() {
-        console.log('ðŸ“š EducationManager.init() called');
+        console.log('Ã°Å¸â€œÅ¡ EducationManager.init() called');
         this.loadPageData();
+
+        // Initialise requiredCount BEFORE super.init() so renderTabs() can
+        // prioritise it over currentData.length when the role demands multiple tabs.
+        this.requiredCount = (window.CANDIDATE_CASE_CONFIG &&
+            window.CANDIDATE_CASE_CONFIG.required_counts
+                ? parseInt(window.CANDIDATE_CASE_CONFIG.required_counts.education || '0', 10) || 0
+                : 0);
+
         await super.init();
 
-        this.requiredCount = 0;
-
         try {
-            var req = window.CANDIDATE_CASE_CONFIG && window.CANDIDATE_CASE_CONFIG.required_counts
-                ? parseInt(window.CANDIDATE_CASE_CONFIG.required_counts.education || '0', 10) || 0
-                : 0;
+            var req = this.requiredCount; // already resolved above
             if (req > 0 && this.countSelect) {
-                this.requiredCount = req;
                 this.deferVisibleEducationPersistence = true;
                 this.countSelect.value = String(req);
                 this.handleCountChange();
@@ -155,7 +158,7 @@ class EducationManager extends TabManager {
         this.maxEducationCount = this.getMaxEducationCount();
         this.cards.forEach((card, index) => card && this.prepareExtendedInputs(card, index));
         this.fullEducationCount = this.cards.filter(Boolean).length;
-        this.visibleEducationCount = Math.max(1, this.savedRows.length || 1);
+        this.visibleEducationCount = Math.max(this.requiredCount || 1, this.savedRows.length || 1);
         this.setupFormHandlers();
         this.setupStateController();
         this.setupInstitutionSearch();
@@ -164,8 +167,8 @@ class EducationManager extends TabManager {
         this.setupFileHandlers();
         this.refreshEducationState();
 
-        console.log('âœ… Education module initialized successfully');
-        console.log(`ðŸ“Š Cards loaded: ${this.cards.length}, Data rows: ${this.savedRows.length}`);
+        console.log('Ã¢Å“â€¦ Education module initialized successfully');
+        console.log(`Ã°Å¸â€œÅ  Cards loaded: ${this.cards.length}, Data rows: ${this.savedRows.length}`);
 
         return this;
     }
@@ -262,27 +265,27 @@ class EducationManager extends TabManager {
     loadPageData() {
         const dataEl = document.getElementById('educationData');
         if (!dataEl) {
-            console.warn('âš ï¸ Education data element not found');
+            console.warn('Ã¢Å¡Â Ã¯Â¸Â Education data element not found');
             this.savedRows = [];
             return;
         }
 
         try {
             this.savedRows = JSON.parse(dataEl.dataset.rows || '[]');
-            console.log(`ðŸ“¥ Loaded ${this.savedRows.length} education records from DB`);
+            console.log(`Ã°Å¸â€œÂ¥ Loaded ${this.savedRows.length} education records from DB`);
         } catch (e) {
-            console.error('âŒ Failed to parse education data', e);
+            console.error('Ã¢ÂÅ’ Failed to parse education data', e);
             this.savedRows = [];
         }
     }
 
     async initCards() {
         if (!this.savedRows || this.savedRows.length === 0) {
-            console.log('ðŸ“­ No saved education data to populate');
+            console.log('Ã°Å¸â€œÂ­ No saved education data to populate');
             return;
         }
 
-        console.log(`ðŸ”„ Initializing cards for ${this.savedRows.length} records`);
+        console.log(`Ã°Å¸â€â€ž Initializing cards for ${this.savedRows.length} records`);
 
         var maxPopulate = this.cards.length;
         if (this.requiredCount && this.requiredCount > 0) {
@@ -291,7 +294,7 @@ class EducationManager extends TabManager {
 
         for (let i = 0; i < maxPopulate; i++) {
             if (this.cards[i] && this.savedRows[i]) {
-                console.log(`ðŸ“ Populating card ${i} with data:`, this.savedRows[i]);
+                console.log(`Ã°Å¸â€œÂ Populating card ${i} with data:`, this.savedRows[i]);
                 this.populateCard(this.cards[i], this.savedRows[i], i);
             }
         }
@@ -469,7 +472,7 @@ class EducationManager extends TabManager {
         this.applyQualificationRules(card);
         this.applyCardState(card);
 
-        console.log(`âœ… Card ${index} populated successfully`);
+        console.log(`Ã¢Å“â€¦ Card ${index} populated successfully`);
     }
 
     prepareExtendedInputs(card, index) {
@@ -671,7 +674,7 @@ class EducationManager extends TabManager {
                     data-name="${this.escapeAttr(row.name)}"
                     data-university="${this.escapeAttr(row.university || row.board || '')}">
                 <span class="institution-search-name">${this.escapeHtml(row.name)}</span>
-                <span class="institution-search-meta">${this.escapeHtml([row.city, row.state, row.university || row.board].filter(Boolean).join(' · '))}</span>
+                <span class="institution-search-meta">${this.escapeHtml([row.city, row.state, row.university || row.board].filter(Boolean).join(' Â· '))}</span>
             </button>
         `).join('');
 
@@ -1512,7 +1515,7 @@ class EducationManager extends TabManager {
     }
 
     setupInsufficientDocsHandlers() {
-        console.log('ðŸ”§ Setting up insufficient documents handlers');
+        console.log('Ã°Å¸â€Â§ Setting up insufficient documents handlers');
         
         document.addEventListener('change', (e) => {
             if (e.target.matches('input[name="insufficient_education_docs[]"]')) {
@@ -1520,7 +1523,7 @@ class EducationManager extends TabManager {
                 const card = checkbox.closest('.education-card');
                 if (card) {
                     const cardIndex = card.dataset.cardIndex || 'unknown';
-                    console.log(`ðŸ”˜ Insufficient education docs checkbox changed in card ${cardIndex}: ${checkbox.checked}`);
+                    console.log(`Ã°Å¸â€Ëœ Insufficient education docs checkbox changed in card ${cardIndex}: ${checkbox.checked}`);
                     this.applyCardState(card);
                 }
             }
@@ -1528,7 +1531,7 @@ class EducationManager extends TabManager {
     }
 
 setupFileHandlers() {
-    console.log('ðŸ”§ Setting up education file handlers');
+    console.log('Ã°Å¸â€Â§ Setting up education file handlers');
 
     this.addEventListener(document, 'click', (e) => {
         const trigger = e.target.closest('[data-file-choose]');
@@ -1621,9 +1624,9 @@ setupFileHandlers() {
 
             if (!card || input.files.length === 0) return;
 
-                console.log(`ðŸ“„ File selected: ${input.files[0].name}`);
+                console.log(`Ã°Å¸â€œâ€ž File selected: ${input.files[0].name}`);
 
-                // ðŸ”¥ FORCE CLEAR INSUFFICIENT STATE
+                // Ã°Å¸â€Â¥ FORCE CLEAR INSUFFICIENT STATE
                 const insufficientCheckbox =
                     card.querySelector('input[name="insufficient_education_docs[]"]');
 
@@ -1631,7 +1634,7 @@ setupFileHandlers() {
                     insufficientCheckbox.checked = false;
                 }
 
-            // ðŸ”¥ CLEAR DB "INSUFFICIENT_DOCUMENTS" FALLBACK
+            // Ã°Å¸â€Â¥ CLEAR DB "INSUFFICIENT_DOCUMENTS" FALLBACK
             const oldMarksheet =
                 card.querySelector(`[name^="old_marksheet_file"]`);
             const oldDegree =
@@ -1689,7 +1692,7 @@ setupFileHandlers() {
 
 
     renderPreview(card, selector, file, label, folder = 'education') {
-        console.log(`ðŸ–¼ï¸ Rendering preview for ${label}: ${file}`);
+        console.log(`Ã°Å¸â€“Â¼Ã¯Â¸Â Rendering preview for ${label}: ${file}`);
         
         // Clear any existing content first
         const previewElement = card.querySelector(selector);
@@ -1701,18 +1704,18 @@ setupFileHandlers() {
         const result = super.renderPreview(card, selector, file, label, folder);
         
         if (result) {
-            console.log(`âœ… Preview rendered for ${label} in card`);
+            console.log(`Ã¢Å“â€¦ Preview rendered for ${label} in card`);
         }
         
         return result;
     }
 
     setupFormHandlers() {
-        console.log('ðŸ”§ Setting up education form handlers');
+        console.log('Ã°Å¸â€Â§ Setting up education form handlers');
         
         const form = document.getElementById('educationForm');
         if (!form) {
-            console.error('âŒ Education form not found');
+            console.error('Ã¢ÂÅ’ Education form not found');
             return;
         }
 
@@ -1720,7 +1723,7 @@ setupFileHandlers() {
         form.onsubmit = (e) => {
             e.preventDefault();
             e.stopImmediatePropagation();
-            console.log('âŒ Form submission prevented (handled by EducationManager)');
+            console.log('Ã¢ÂÅ’ Form submission prevented (handled by EducationManager)');
             return false;
         };
 
@@ -1738,7 +1741,7 @@ setupFileHandlers() {
                 await this.submitForm(false);
             });
         } else {
-            console.warn('âš ï¸ Next button not found');
+            console.warn('Ã¢Å¡Â Ã¯Â¸Â Next button not found');
         }
 
         // Handle Previous button
@@ -1750,7 +1753,7 @@ setupFileHandlers() {
             newPrevBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopImmediatePropagation();
-                console.log('â¬…ï¸ Previous button clicked - navigating to contact');
+                console.log('Ã¢Â¬â€¦Ã¯Â¸Â Previous button clicked - navigating to contact');
                 if (window.Router && window.Router.navigateTo) {
                     const previousPage = typeof window.Router.getPreviousPage === 'function' ? window.Router.getPreviousPage('education') : 'contact';
                     window.Router.navigateTo(previousPage);
@@ -1766,12 +1769,12 @@ setupFileHandlers() {
             if (draftBtn) {
                 e.preventDefault();
                 e.stopImmediatePropagation();
-                console.log('ðŸ’¾ Save draft button clicked');
+                console.log('Ã°Å¸â€™Â¾ Save draft button clicked');
                 this.saveDraft();
             }
         });
         
-        console.log('âœ… Education form handlers setup complete');
+        console.log('Ã¢Å“â€¦ Education form handlers setup complete');
     }
 
     loadFromLocalStorage() {
@@ -1779,12 +1782,12 @@ setupFileHandlers() {
             localStorage.removeItem('education_draft');
             const raw = localStorage.getItem(this.getEducationDraftStorageKey());
             if (!raw) {
-                console.log('ðŸ“­ No education draft found in localStorage');
+                console.log('Ã°Å¸â€œÂ­ No education draft found in localStorage');
                 return;
             }
 
             const data = JSON.parse(raw);
-            console.log('ðŸ“¥ Loading education draft from localStorage:', data);
+            console.log('Ã°Å¸â€œÂ¥ Loading education draft from localStorage:', data);
 
             const count = Math.max(
                 data['qualification[]']?.length || 0,
@@ -1794,7 +1797,7 @@ setupFileHandlers() {
 
             if (!count) return;
 
-            console.log(`ðŸ”„ Ensuring ${count} cards for localStorage data`);
+            console.log(`Ã°Å¸â€â€ž Ensuring ${count} cards for localStorage data`);
             while (this.cards.length < count) {
                 this.addCard(this.cards.length, null);
             }
@@ -1826,9 +1829,9 @@ setupFileHandlers() {
                 }
             }
 
-            console.log('âœ… Education draft loaded from localStorage');
+            console.log('Ã¢Å“â€¦ Education draft loaded from localStorage');
         } catch (error) {
-            console.error('âŒ Error loading education draft from localStorage:', error);
+            console.error('Ã¢ÂÅ’ Error loading education draft from localStorage:', error);
         }
     }
 
@@ -1853,7 +1856,7 @@ setupFileHandlers() {
             const data = await response.json();
 
             if (data.success) {
-                this.showNotification('âœ… Education Draft saved successfully!');
+                this.showNotification('Ã¢Å“â€¦ Education Draft saved successfully!');
                 localStorage.removeItem(this.getEducationDraftStorageKey());
                 localStorage.removeItem('education_draft');
             } else {
@@ -1861,15 +1864,15 @@ setupFileHandlers() {
             }
 
         } catch (err) {
-            console.error('âŒ Save draft error:', err);
-            this.showNotification('âŒ Network / Server error', true);
+            console.error('Ã¢ÂÅ’ Save draft error:', err);
+            this.showNotification('Ã¢ÂÅ’ Network / Server error', true);
         } finally {
             this.isSubmitting = false;
         }
     }
 
 validateForm(isFinalSubmit = false) {
-    console.log(`ðŸ“‹ Validating education form (isFinalSubmit: ${isFinalSubmit})`);
+    console.log(`Ã°Å¸â€œâ€¹ Validating education form (isFinalSubmit: ${isFinalSubmit})`);
     this.refreshEducationTimelineIntelligence();
 
     const form = document.getElementById('educationForm');
@@ -2139,23 +2142,23 @@ if (typeof window !== 'undefined') {
 
     window.Education = {
         onPageLoad: async () => {
-            console.log('ðŸ“š Education.onPageLoad() called');
+            console.log('Ã°Å¸â€œÅ¡ Education.onPageLoad() called');
             
             try {
                 if (!window.educationManager) {
-                    console.log('ðŸ†• Creating new EducationManager instance');
+                    console.log('Ã°Å¸â€ â€¢ Creating new EducationManager instance');
                     window.educationManager = new EducationManager();
                 }
                 
                 await window.educationManager.init();
-                console.log('âœ… Education page loaded successfully');
+                console.log('Ã¢Å“â€¦ Education page loaded successfully');
             } catch (error) {
-                console.error('âŒ Error in Education.onPageLoad:', error);
+                console.error('Ã¢ÂÅ’ Error in Education.onPageLoad:', error);
             }
         },
         
         cleanup: () => {
-            console.log('ðŸ§¹ Cleaning up Education module');
+            console.log('Ã°Å¸Â§Â¹ Cleaning up Education module');
             if (window.educationManager) {
                 window.educationManager.cleanup();
                 window.educationManager = null;
@@ -2164,4 +2167,4 @@ if (typeof window !== 'undefined') {
     };
 }
 
-console.log('âœ… Education.js module loaded');
+console.log('Ã¢Å“â€¦ Education.js module loaded');

@@ -48,14 +48,21 @@ class EmploymentManager extends TabManager {
     async init() {
         console.log('💼 EmploymentManager.init() called');
         this.loadPageData();
+
+        // Initialise requiredCount / configuredRequiredCount BEFORE super.init()
+        // so renderTabs() can prioritise them over currentData.length.
+        {
+            var _req = window.CANDIDATE_CASE_CONFIG && window.CANDIDATE_CASE_CONFIG.required_counts
+                ? parseInt(window.CANDIDATE_CASE_CONFIG.required_counts.employment || '0', 10) || 0
+                : 0;
+            this.configuredRequiredCount = _req > 0 ? _req : 0;
+            this.requiredCount = this.isFresher ? 0 : this.configuredRequiredCount;
+        }
+
         await super.init();
 
         try {
-            var req = window.CANDIDATE_CASE_CONFIG && window.CANDIDATE_CASE_CONFIG.required_counts
-                ? parseInt(window.CANDIDATE_CASE_CONFIG.required_counts.employment || '0', 10) || 0
-                : 0;
-            this.configuredRequiredCount = req > 0 ? req : 0;
-            this.requiredCount = this.configuredRequiredCount;
+            var req = this.configuredRequiredCount; // already resolved above
 
             var initialCount = this.isFresher
                 ? 1
@@ -96,7 +103,7 @@ class EmploymentManager extends TabManager {
         this.loadFromLocalStorage();
         this.fullEmploymentCount = this.cards.filter(Boolean).length;
         this.maxEmploymentCount = this.getMaxEmploymentCount();
-        this.visibleEmploymentCount = this.isFresher ? 1 : Math.max(1, this.savedRows.length || 1);
+        this.visibleEmploymentCount = this.isFresher ? 1 : Math.max(this.configuredRequiredCount || 1, this.savedRows.length || 1);
         this.restoreVisibleEmploymentCount();
         this.refreshEmploymentState();
         this.applyEmploymentLayoutReset();

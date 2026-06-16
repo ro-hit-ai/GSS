@@ -242,6 +242,9 @@ try {
             $stmt = $pdo->prepare($sql);
             $stmt->execute($params);
             $types = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+            error_log("TRACE_TYPES: " . json_encode(array_map(function($t) {
+                return ['id' => $t['verification_type_id'], 'name' => $t['type_name'] ?? '', 'cat' => $t['type_category'] ?? '', 'count' => (int)($t['required_count'] ?? 1)];
+            }, $types)));
         } catch (Throwable $e) {
             try {
                 $stmt = $pdo->prepare('CALL SP_Vati_Payfiller_GetVerificationTypesByJobRole(?)');
@@ -291,6 +294,9 @@ try {
             }
         } catch (Throwable $e) {
         }
+        error_log("TRACE_AFTER_MERGE: types=" . json_encode(array_map(function($t) {
+            return ['id' => $t['verification_type_id'], 'name' => $t['type_name'] ?? '', 'count' => (int)($t['required_count'] ?? 1)];
+        }, $types ?? [])));
     }
 
     $shouldFallbackToAllPages = ($jobRoleId <= 0 || count($types) === 0);
@@ -309,6 +315,7 @@ try {
     } catch (Throwable $e) {
         $requiredCaseComponentSet = [];
     }
+    error_log("TRACE_COMPONENTS: requiredCaseComponentSet=" . json_encode(array_keys($requiredCaseComponentSet)));
 
     $enabledPages = [
         'review-confirmation',
@@ -405,6 +412,7 @@ try {
                 }
             }
             if (!$hasGateMatch) {
+                error_log("TRACE_GATE_SKIP: vtId=$vtId name=$name components=" . json_encode($resolvedComponents) . " available=" . json_encode(array_keys($requiredCaseComponentSet)) . " reqCount=" . ($reqCount ?? 1));
                 $enabledPagesSkipped[] = [
                     'verification_type_id' => $vtId,
                     'raw_type_name' => $name,
@@ -459,6 +467,7 @@ try {
             if (!isset($requiredCounts[$componentKey]) || (int)$requiredCounts[$componentKey] < $req) {
                 $requiredCounts[$componentKey] = $req;
             }
+            error_log("TRACE_COUNT_ADDED: componentKey=$componentKey name=$name req=$req current=" . json_encode($requiredCounts));
 
             $components[] = [
                 'verification_type_id' => $vtId,
@@ -664,6 +673,7 @@ try {
         ];
     }
 
+    error_log("TRACE_FINAL: required_counts=" . json_encode($requiredCounts) . " enabled_pages=" . json_encode($enabledPages) . " components=" . json_encode(array_map(function($c) { return $c['component_key'] . ':' . ($c['required_count'] ?? '?'); }, $components)));
     echo json_encode($response);
 
 } catch (PDOException $e) {
