@@ -3,7 +3,7 @@ header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../shared/operational_status_governance.php';
+require_once __DIR__ . '/../shared/governance/operational_status_governance.php';
 
 auth_require_login('validator');
 auth_session_start();

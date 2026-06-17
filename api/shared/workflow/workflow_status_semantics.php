@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 
 function wf_is_evaluated_status(string $status): bool
 {

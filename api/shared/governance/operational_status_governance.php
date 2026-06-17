@@ -1,6 +1,6 @@
-﻿<?php
+<?php
 
-require_once __DIR__ . '/../workflow_status_semantics.php';
+require_once __DIR__ . '/../workflow/workflow_status_semantics.php';
 
 function os_debug_log(string $event, array $data = []): void
 {

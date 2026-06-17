@@ -110,7 +110,7 @@
             }
 
             var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-            var url = base + '/api/shared/verification_docs_list.php?application_id=' + encodeURIComponent(applicationId);
+            var url = base + '/api/shared/reports/verification_docs_list.php?application_id=' + encodeURIComponent(applicationId);
             fetch(url, { credentials: 'same-origin' })
                 .then(function (res) { return res.json().catch(function () { return null; }); })
                 .then(function (data) {

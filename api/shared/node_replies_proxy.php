@@ -1,1 +1,1 @@
-﻿<?php require_once __DIR__ . '/communications/node_replies_proxy.php';
+<?php require_once __DIR__ . '/communications/node_replies_proxy.php';

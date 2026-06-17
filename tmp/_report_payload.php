@@ -6,6 +6,6 @@ $_SERVER['REQUEST_METHOD']='GET';
 $_GET['role']='gss_admin';
 $_GET['application_id']='APP-20260520075926356';
 ob_start();
-include 'api/shared/candidate_report_get.php';
+include 'api/shared/reports/candidate_report_get.php';
 $out=ob_get_clean();
 echo $out;

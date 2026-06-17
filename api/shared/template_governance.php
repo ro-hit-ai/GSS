@@ -1,1 +1,1 @@
-﻿<?php require_once __DIR__ . '/mail/template_governance.php';
+<?php require_once __DIR__ . '/mail/template_governance.php';

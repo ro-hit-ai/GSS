@@ -5,9 +5,9 @@ require_once __DIR__ . '/WorkflowGuardService.php';
 require_once __DIR__ . '/WorkflowProjectionService.php';
 require_once __DIR__ . '/WorkflowInvariantService.php';
 require_once __DIR__ . '/WorkflowLockService.php';
-require_once __DIR__ . '/../workflow_status_semantics.php';
-require_once __DIR__ . '/../workflow_stage_config.php';
-require_once __DIR__ . '/../workflow_semantics.php';
+require_once __DIR__ . '/workflow_status_semantics.php';
+require_once __DIR__ . '/workflow_stage_config.php';
+require_once __DIR__ . '/workflow_semantics.php';
 
 final class WorkflowTransitionService
 {

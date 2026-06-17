@@ -1,1 +1,1 @@
-﻿<?php require_once __DIR__ . '/clients/update_client.php';
+<?php require_once __DIR__ . '/clients/update_client.php';

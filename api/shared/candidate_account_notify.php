@@ -1,1 +1,1 @@
-﻿<?php require_once __DIR__ . '/services/candidate_account_notify.php';
+<?php require_once __DIR__ . '/services/candidate_account_notify.php';

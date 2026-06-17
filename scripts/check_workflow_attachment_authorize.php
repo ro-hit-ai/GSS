@@ -32,7 +32,7 @@ $token = getenv('MINTLEAF_SERVICE_TOKEN') ?: getenv('INTEGRATION_SERVICE_TOKEN')
 if (!$token) {
     $token = (string)(env_get('MINTLEAF_SERVICE_TOKEN', '') ?: env_get('INTEGRATION_SERVICE_TOKEN', ''));
 }
-$url = $base . '/api/shared/workflow_attachment_authorize.php';
+$url = $base . '/api/shared/authorization/workflow_attachment_authorize.php';
 
 if (trim((string)$token) === '') {
     echo "SKIP: MINTLEAF_SERVICE_TOKEN or INTEGRATION_SERVICE_TOKEN is required to run endpoint smoke tests.\n";

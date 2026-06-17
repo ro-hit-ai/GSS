@@ -1,1 +1,0 @@
-﻿<?php require_once __DIR__ . '/authorization/workflow_message_authorize.php';

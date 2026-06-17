@@ -1,15 +1,15 @@
-﻿<?php
+<?php
 
 require_once __DIR__ . '/../../../config/db.php';
 require_once __DIR__ . '/../../../config/env.php';
 require_once __DIR__ . '/../../../includes/integration.php';
-require_once __DIR__ . '/../case_component_binding.php';
-require_once __DIR__ . '/../reference_component_compat.php';
-require_once __DIR__ . '/../workflow_snapshot_service.php';
-require_once __DIR__ . '/../workflow_semantics.php';
-require_once __DIR__ . '/../workflow_status_semantics.php';
+require_once __DIR__ . '/../case_management/case_component_binding.php';
+require_once __DIR__ . '/../case_management/reference_component_compat.php';
+require_once __DIR__ . '/../workflow/workflow_snapshot_service.php';
+require_once __DIR__ . '/../workflow/workflow_semantics.php';
+require_once __DIR__ . '/../workflow/workflow_status_semantics.php';
 require_once __DIR__ . '/../workflow/WorkflowLockService.php';
-require_once __DIR__ . '/../workflow_mode.php';
+require_once __DIR__ . '/../authorization/workflow_mode.php';
 require_once __DIR__ . '/../verifier_case_queue.php';
 require_once __DIR__ . '/../../../services/candidate/ReferenceService.php';
 
@@ -232,7 +232,7 @@ function has_downstream_activity_db(PDO $pdo, int $caseId, string $componentKey,
              WHERE case_id = ? AND LOWER(TRIM(component_key)) = ? AND LOWER(TRIM(stage)) = ?
                AND (
                     COALESCE(updated_by_user_id,0) > 0
-                    OR LOWER(TRIM(COALESCE(status,''))) NOT IN ('', 'pending', 'in_progress', 'submitted')
+                    OR LOWER(TRIM(COALESCE(status,''))) NOT IN ('', 'pending', 'in_progress', 'submitted', 'correction_submitted')
                     OR completed_at IS NOT NULL
                )
              LIMIT 1"

@@ -78,7 +78,7 @@ class Review {
 
         try {
             const base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-            const url = `${base}/api/shared/candidate_report_get.php?application_id=${encodeURIComponent(appId)}&role=candidate&t=${Date.now()}`;
+            const url = `${base}/api/shared/reports/candidate_report_get.php?application_id=${encodeURIComponent(appId)}&role=candidate&t=${Date.now()}`;
             const res = await fetch(url, { credentials: 'same-origin' });
             const json = await res.json().catch(() => null);
 

@@ -1,1 +1,1 @@
-﻿<?php require_once __DIR__ . '/clients/client_allowed_sections.php';
+<?php require_once __DIR__ . '/clients/client_allowed_sections.php';

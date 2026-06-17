@@ -7,8 +7,8 @@ header('Expires: 0');
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/queue_visibility.php';
-require_once __DIR__ . '/../shared/workflow_status_semantics.php';
-require_once __DIR__ . '/../shared/operational_status_governance.php';
+require_once __DIR__ . '/../shared/workflow/workflow_status_semantics.php';
+require_once __DIR__ . '/../shared/governance/operational_status_governance.php';
 
 auth_require_login('verifier');
 

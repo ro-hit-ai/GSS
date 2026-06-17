@@ -1,7 +1,7 @@
 # Workflow Transition Engine Validation Matrix (P0)
 
 ## Scope
-- Endpoint under test: `api/shared/component_action.php`
+- Endpoint under test: `api/shared/case_management/component_action.php`
 - Engine flag: `WF_TRANSITION_ENGINE=1`
 - Out of scope (not migrated in this phase): `submit.php`, `queue_complete.php`, `store_authorization.php`
 

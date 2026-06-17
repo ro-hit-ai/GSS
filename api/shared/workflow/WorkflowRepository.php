@@ -1,7 +1,7 @@
 <?php
 
-require_once __DIR__ . '/../case_component_binding.php';
-require_once __DIR__ . '/../workflow_semantics.php';
+require_once __DIR__ . '/../case_management/case_component_binding.php';
+require_once __DIR__ . '/workflow_semantics.php';
 
 final class WorkflowRepository
 {
@@ -1153,7 +1153,7 @@ final class WorkflowRepository
                     AND LOWER(TRIM(stage)) = ?
                     AND (
                         COALESCE(updated_by_user_id,0) > 0
-                        OR LOWER(TRIM(COALESCE(status,''))) NOT IN ('', 'pending', 'in_progress', 'submitted')
+                        OR LOWER(TRIM(COALESCE(status,''))) NOT IN ('', 'pending', 'in_progress', 'submitted', 'correction_submitted')
                         OR completed_at IS NOT NULL
                     )
                   LIMIT 1"
@@ -1173,8 +1173,7 @@ final class WorkflowRepository
                     AND LOWER(TRIM(stage)) = ?
                     AND (
                         COALESCE(updated_by_user_id,0) > 0
-                        OR LOWER(TRIM(COALESCE(status,''))) NOT IN ('', 'pending', 'in_progress', 'submitted')
-                        OR completed_at IS NOT NULL
+                        OR LOWER(TRIM(COALESCE(status,''))) NOT IN ('', 'pending', 'in_progress', 'submitted', 'correction_submitted')
                     )
                   LIMIT 1"
             );

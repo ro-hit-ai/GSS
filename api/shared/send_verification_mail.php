@@ -1,1 +1,1 @@
-﻿<?php require_once __DIR__ . '/mail/send_verification_mail.php';
+<?php require_once __DIR__ . '/mail/send_verification_mail.php';

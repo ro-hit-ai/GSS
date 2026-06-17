@@ -1160,9 +1160,9 @@
                 setMessage('application_id is required.', 'danger');
                 return;
             }
-            var url = base + '/api/shared/candidate_report_get.php?role=gss_admin&application_id=' + encodeURIComponent(applicationId);
-            var docsUrl = base + '/api/shared/verification_docs_list.php?application_id=' + encodeURIComponent(applicationId);
-            var timelineUrl = base + '/api/shared/case_timeline_list.php?application_id=' + encodeURIComponent(applicationId) + '&limit=500';
+            var url = base + '/api/shared/reports/candidate_report_get.php?role=gss_admin&application_id=' + encodeURIComponent(applicationId);
+            var docsUrl = base + '/api/shared/reports/verification_docs_list.php?application_id=' + encodeURIComponent(applicationId);
+            var timelineUrl = base + '/api/shared/case_management/case_timeline_list.php?application_id=' + encodeURIComponent(applicationId) + '&limit=500';
             if (clientId > 0) {
                 url += '&client_id=' + encodeURIComponent(String(clientId));
                 timelineUrl += '&client_id=' + encodeURIComponent(String(clientId));

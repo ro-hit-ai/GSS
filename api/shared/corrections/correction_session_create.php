@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 header('Content-Type: application/json');
 
 require_once __DIR__ . '/candidate_correction_service.php';
@@ -190,6 +190,45 @@ try {
     ccs_insert_correction_cycles($pdo, $sessionId, $caseId, $applicationId, $components, $userId, $role, $reason);
     ccs_snapshot_document_versions($pdo, $caseId, $applicationId, $components, $sessionId);
     $changedRows = ccs_update_components_waiting_candidate($pdo, $caseId, $applicationId, $components, $userId, $role);
+
+    // When the requesting role has no mapped stage (gss_admin, client_admin), the call
+    // above skips silently and leaves any already-approved/rejected verifier-stage rows
+    // unchanged. That means the candidate submit later finds 0 matching rows and the
+    // verifier queue never reopens. Fix: for stageless roles, explicitly move evaluated
+    // verifier-stage rows to 'waiting_candidate' so the existing resume filter catches them.
+    if (ccs_component_stage_for_role($role) === '') {
+        $stagelesStmt = $pdo->prepare(
+            "UPDATE Vati_Payfiller_Case_Component_Workflow
+                SET status = 'waiting_candidate',
+                    updated_by_user_id = ?,
+                    updated_by_role = ?,
+                    completed_at = NULL,
+                    updated_at = NOW()
+              WHERE case_id = ?
+                AND application_id = ?
+                AND LOWER(TRIM(component_key)) = ?
+                AND LOWER(TRIM(stage)) = 'verifier'
+                AND LOWER(TRIM(COALESCE(status,''))) IN (
+                    'approved', 'rejected', 'hold', 'insufficient_documents',
+                    'completed', 'clear', 'verified'
+                )"
+        );
+        foreach ($components as $c) {
+            foreach (ccs_component_storage_candidates((string)$c) as $componentKey) {
+                $stagelesStmt->execute([
+                    $userId > 0 ? $userId : null,
+                    $role,
+                    $caseId,
+                    $applicationId,
+                    $componentKey,
+                ]);
+                if ((int)$stagelesStmt->rowCount() > 0) {
+                    $changedRows++;
+                    break;
+                }
+            }
+        }
+    }
     $svc = new WorkflowTransitionService($pdo);
     $reconcile = $svc->reconcileCorrectionLifecycle(
         $caseId,

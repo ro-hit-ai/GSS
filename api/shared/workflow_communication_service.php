@@ -1,1 +1,1 @@
-﻿<?php require_once __DIR__ . '/communications/workflow_communication_service.php';
+<?php require_once __DIR__ . '/communications/workflow_communication_service.php';

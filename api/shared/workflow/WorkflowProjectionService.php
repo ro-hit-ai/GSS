@@ -1,9 +1,9 @@
 <?php
 
-require_once __DIR__ . '/../workflow_status_semantics.php';
-require_once __DIR__ . '/../workflow_stage_config.php';
-require_once __DIR__ . '/../workflow_semantics.php';
-require_once __DIR__ . '/../case_component_binding.php';
+require_once __DIR__ . '/workflow_status_semantics.php';
+require_once __DIR__ . '/workflow_stage_config.php';
+require_once __DIR__ . '/workflow_semantics.php';
+require_once __DIR__ . '/../case_management/case_component_binding.php';
 require_once __DIR__ . '/../verifier_case_queue.php';
 
 final class WorkflowProjectionService

@@ -1,6 +1,6 @@
 <?php
 require 'config/db.php';
-require 'api/shared/workflow_communication_service.php';
+require 'api/shared/communications/workflow_communication_service.php';
 function normalize_component_key(string $value): string { $v = strtolower(trim($value)); if ($v==='identification') return 'id'; if ($v==='contact_information'||$v==='contact information') return 'contact'; if ($v==='education_details'||$v==='education details') return 'education'; if ($v==='employment_details'||$v==='employment details') return 'employment'; if ($v==='social_media'||$v==='social media') return 'socialmedia'; if ($v==='e-court'||$v==='e_court'||$v==='e court') return 'ecourt'; if ($v==='references') return 'reference'; return $v; }
 function row_matches_component_scope(array $row, string $componentKey): bool { $rowKey = normalize_component_key((string)($row['component_key'] ?? '')); if ($rowKey === $componentKey) return true; return false; }
 function normalize_role_key(string $role): string { $role = strtolower(trim($role)); if ($role === 'db verifier' || $role === 'db-verifier' || $role === 'db_verifier') return 'verifier'; return $role; }

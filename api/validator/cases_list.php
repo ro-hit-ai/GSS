@@ -3,11 +3,9 @@ header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../shared/workflow_status_semantics.php';
-require_once __DIR__ . '/../shared/workflow_stage_config.php';
-require_once __DIR__ . '/../shared/operational_status_governance.php';
-
-auth_require_login('validator');
+require_once __DIR__ . '/../shared/workflow/workflow_status_semantics.php';
+require_once __DIR__ . '/../shared/workflow/workflow_stage_config.php';
+require_once __DIR__ . '/../shared/governance/operational_status_governance.php';
 auth_session_start();
 
 header('Access-Control-Allow-Origin: *');
@@ -198,7 +196,7 @@ try {
                 if (wf_is_operationally_active_status($s)) $unresolved++;
             }
             $resp['debug'] = [
-                'helper_owner_file' => realpath(__DIR__ . '/../shared/workflow_stage_config.php') ?: (__DIR__ . '/../shared/workflow_stage_config.php'),
+                'helper_owner_file' => realpath(__DIR__ . '/../shared/workflow/workflow_stage_config.php') ?: (__DIR__ . '/../shared/workflow/workflow_stage_config.php'),
                 'helper_loaded' => function_exists('wf_stage_keys'),
                 'stage_keys_resolved' => function_exists('wf_stage_keys') ? wf_stage_keys() : [],
                 'selected_view' => $view,
@@ -291,7 +289,7 @@ try {
                 if (wf_is_operationally_active_status($s)) $unresolved++;
             }
             $resp['debug'] = [
-                'helper_owner_file' => realpath(__DIR__ . '/../shared/workflow_stage_config.php') ?: (__DIR__ . '/../shared/workflow_stage_config.php'),
+                'helper_owner_file' => realpath(__DIR__ . '/../shared/workflow/workflow_stage_config.php') ?: (__DIR__ . '/../shared/workflow/workflow_stage_config.php'),
                 'helper_loaded' => function_exists('wf_stage_keys'),
                 'stage_keys_resolved' => function_exists('wf_stage_keys') ? wf_stage_keys() : [],
                 'selected_view' => $view,
@@ -366,7 +364,7 @@ try {
                 if (wf_is_operationally_active_status($s)) $unresolved++;
             }
             $resp['debug'] = [
-                'helper_owner_file' => realpath(__DIR__ . '/../shared/workflow_stage_config.php') ?: (__DIR__ . '/../shared/workflow_stage_config.php'),
+                'helper_owner_file' => realpath(__DIR__ . '/../shared/workflow/workflow_stage_config.php') ?: (__DIR__ . '/../shared/workflow/workflow_stage_config.php'),
                 'helper_loaded' => function_exists('wf_stage_keys'),
                 'stage_keys_resolved' => function_exists('wf_stage_keys') ? wf_stage_keys() : [],
                 'selected_view' => $view,
@@ -436,7 +434,7 @@ try {
             if (wf_is_operationally_active_status($s)) $unresolved++;
         }
         $resp['debug'] = [
-            'helper_owner_file' => realpath(__DIR__ . '/../shared/workflow_stage_config.php') ?: (__DIR__ . '/../shared/workflow_stage_config.php'),
+            'helper_owner_file' => realpath(__DIR__ . '/../shared/workflow/workflow_stage_config.php') ?: (__DIR__ . '/../shared/workflow/workflow_stage_config.php'),
             'helper_loaded' => function_exists('wf_stage_keys'),
             'stage_keys_resolved' => function_exists('wf_stage_keys') ? wf_stage_keys() : [],
             'selected_view' => $view,

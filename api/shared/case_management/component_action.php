@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../../config/db.php';
@@ -10,7 +10,7 @@ require_once __DIR__ . '/../../../config/env.php';
 require_once __DIR__ . '/../application_status_guard.php';
 require_once __DIR__ . '/../workflow/WorkflowTransitionService.php';
 require_once __DIR__ . '/../workflow_communication_service.php';
-require_once __DIR__ . '/../workflow_mode.php';
+require_once __DIR__ . '/../authorization/workflow_mode.php';
 require_once __DIR__ . '/../verifier_case_queue.php';
 
 function projection_debug_log(string $event, array $data = []): void {

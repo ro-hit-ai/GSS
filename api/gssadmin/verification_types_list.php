@@ -1,1 +1,1 @@
-﻿<?php require_once __DIR__ . '/verification_types/verification_types_list.php';
+<?php require_once __DIR__ . '/verification_types/verification_types_list.php';

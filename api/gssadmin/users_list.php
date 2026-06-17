@@ -1,1 +1,1 @@
-﻿<?php require_once __DIR__ . '/users/users_list.php';
+<?php require_once __DIR__ . '/users/users_list.php';

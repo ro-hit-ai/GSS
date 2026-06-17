@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 
 function wf_valid_application_statuses(): array
 {

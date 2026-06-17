@@ -1,1 +1,1 @@
-﻿<?php require_once __DIR__ . '/corrections/correction_eligible_components.php';
+<?php require_once __DIR__ . '/corrections/correction_eligible_components.php';

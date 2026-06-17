@@ -26,13 +26,13 @@ session_start();
 $response = ['success' => false, 'message' => ''];
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/integration.php';
-require_once __DIR__ . '/../shared/case_component_binding.php';
+require_once __DIR__ . '/../shared/case_management/case_component_binding.php';
 require_once __DIR__ . '/../shared/candidate_account_notify.php';
 require_once __DIR__ . '/../shared/candidate_correction_service.php';
 require_once __DIR__ . '/../shared/workflow/WorkflowTransitionService.php';
-require_once __DIR__ . '/../shared/workflow_stage_config.php';
+require_once __DIR__ . '/../shared/workflow/workflow_stage_config.php';
 require_once __DIR__ . '/../shared/application_status_guard.php';
-require_once __DIR__ . '/../shared/workflow_mode.php';
+require_once __DIR__ . '/../shared/authorization/workflow_mode.php';
 
 function submission_mail_debug_log(string $message): void
 {

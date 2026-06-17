@@ -1,7 +1,7 @@
 <?php
 
 require_once __DIR__ . '/../config/db.php';
-require_once __DIR__ . '/../api/shared/workflow_mode.php';
+require_once __DIR__ . '/../api/shared/authorization/workflow_mode.php';
 
 if (PHP_SAPI !== 'cli') {
     fwrite(STDERR, "Run this script from CLI.\n");

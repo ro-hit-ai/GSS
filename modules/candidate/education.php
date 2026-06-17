@@ -170,17 +170,26 @@ $maxCount = 8;
                 <div class="form-field">
                     <div class="form-control double-border compact-control">
                         <label class="compact-label">Qualification *</label>
-                        <select name="qualification[]" class="compact-select">
+                        <select name="qualification[]" class="compact-select edu-qualification-select">
                             <option value="">Select qualification</option>
-                            <option value="PhD">PhD</option>
-                            <option value="PG">PG</option>
-                            <option value="UG">UG</option>
+                            <option value="10th">10th</option>
+                            <option value="12th">12th</option>
                             <option value="Diploma">Diploma</option>
                             <option value="International">International</option>
+                            <option value="PG">PG</option>
+                            <option value="PhD">PhD</option>
                             <option value="PUC">PUC</option>
                             <option value="SSLC">SSLC</option>
-                            <option value="12th">12th</option>
-                            <option value="10th">10th</option>
+                            <option value="UG">UG</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-field">
+                    <div class="form-control double-border compact-control">
+                        <label class="compact-label">University / Board *</label>
+                        <select name="university_board[]" class="compact-select edu-univ-board-select" data-university-board-select>
+                            <option value="">Select or type...</option>
                         </select>
                     </div>
                 </div>
@@ -201,15 +210,7 @@ $maxCount = 8;
                         <div class="institution-search-panel" data-institution-panel></div>
                     </div>
                 </div>
-
-                <div class="form-field">
-                    <div class="form-control double-border compact-control">
-                        <label class="compact-label">University / Board *</label>
-                        <input type="text" name="university_board[]" class="compact-input">
-                    </div>
-                </div>
             </div>
-
             <!-- ROW 2 -->
             <div class="form-row-4 compact-row mb-2 education-meta-row">
                 <div class="form-field">

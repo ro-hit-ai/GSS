@@ -1,1 +1,0 @@
-﻿<?php require_once __DIR__ . '/case_management/reference_component_compat.php';

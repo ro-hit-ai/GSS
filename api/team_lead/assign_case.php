@@ -3,8 +3,8 @@ header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../shared/workflow_semantics.php';
-require_once __DIR__ . '/../shared/workflow_mode.php';
+require_once __DIR__ . '/../shared/workflow/workflow_semantics.php';
+require_once __DIR__ . '/../shared/authorization/workflow_mode.php';
 require_once __DIR__ . '/../shared/verifier_case_queue.php';
 
 auth_require_login('team_lead');

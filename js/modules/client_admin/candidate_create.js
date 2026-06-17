@@ -167,7 +167,7 @@
 
         try {
             var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-            var url = base + '/api/shared/job_role_verification_preview.php?job_role_id=' + encodeURIComponent(jobRoleId);
+            var url = base + '/api/shared/case_management/job_role_verification_preview.php?job_role_id=' + encodeURIComponent(jobRoleId);
             if (selectedLevel) {
                 url += '&level_key=' + encodeURIComponent(selectedLevel);
             }

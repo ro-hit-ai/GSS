@@ -1,1 +1,1 @@
-﻿<?php require_once __DIR__ . '/../shared/reports/client_verification_summary.php';
+<?php require_once __DIR__ . '/../shared/reports/client_verification_summary.php';

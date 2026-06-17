@@ -1,1 +1,0 @@
-﻿<?php require_once __DIR__ . '/governance/operational_status_governance.php';

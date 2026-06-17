@@ -1,1 +1,0 @@
-﻿<?php require_once __DIR__ . '/workflow/workflow_stage_config.php';

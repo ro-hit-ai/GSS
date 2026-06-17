@@ -1,1 +1,0 @@
-﻿<?php require_once __DIR__ . '/governance/workflow_contract_check.php';

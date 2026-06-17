@@ -1,9 +1,9 @@
-﻿<?php
+<?php
 header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../../config/db.php';
 require_once __DIR__ . '/../../../includes/auth.php';
-require_once __DIR__ . '/../../shared/case_component_binding.php';
+require_once __DIR__ . '/../../shared/case_management/case_component_binding.php';
 
 auth_require_login('gss_admin');
 

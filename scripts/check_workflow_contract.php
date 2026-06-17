@@ -1,7 +1,7 @@
 <?php
 /**
  * Compare workflow contract fields between:
- *  - /api/shared/candidate_report_get.php
+ *  - /api/shared/reports/candidate_report_get.php
  *  - /api/shared/case_workflow_snapshot.php
  *
  * Usage:
@@ -106,7 +106,7 @@ foreach ($appIds as $appId) {
     $appId = trim($appId);
     if ($appId === '') continue;
 
-    $urlReport = $base . '/api/shared/candidate_report_get.php?application_id=' . rawurlencode($appId);
+    $urlReport = $base . '/api/shared/reports/candidate_report_get.php?application_id=' . rawurlencode($appId);
     $urlSnap = $base . '/api/shared/case_workflow_snapshot.php?application_id=' . rawurlencode($appId);
 
     $r1 = fetch_json($urlReport, $apiKey ?: null);

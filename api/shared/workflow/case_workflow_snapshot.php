@@ -1,10 +1,10 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/../../../config/db.php';
 require_once __DIR__ . '/../../../config/env.php';
 require_once __DIR__ . '/../../../includes/auth.php';
 require_once __DIR__ . '/../../../includes/integration.php';
 require_once __DIR__ . '/workflow_snapshot_service.php';
-require_once __DIR__ . '/../workflow_mode.php';
+require_once __DIR__ . '/../authorization/workflow_mode.php';
 
 integration_bootstrap_json_api();
 auth_session_start();

@@ -1,1 +1,1 @@
-﻿<?php require_once __DIR__ . '/users/create_user.php';
+<?php require_once __DIR__ . '/users/create_user.php';

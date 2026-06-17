@@ -1,1 +1,1 @@
-﻿<?php require_once __DIR__ . '/case_management/case_timeline_list.php';
+<?php require_once __DIR__ . '/case_management/case_timeline_list.php';

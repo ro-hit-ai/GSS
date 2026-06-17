@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 
 function wf_stage_config(): array
 {

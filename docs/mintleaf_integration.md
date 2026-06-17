@@ -59,7 +59,7 @@ Response fields:
 - `timelineUrl`
 - optional `workflowDebug` when `include_debug=1`
 
-### `GET /api/shared/candidate_report_get.php?application_id=<applicationId>`
+### `GET /api/shared/reports/candidate_report_get.php?application_id=<applicationId>`
 
 Stable integration fields in `data`:
 
@@ -75,7 +75,7 @@ Stable integration fields in `data`:
 
 Legacy payload fields are preserved for VATI UI compatibility.
 
-### `GET /api/shared/case_timeline_list.php?application_id=<applicationId>`
+### `GET /api/shared/case_management/case_timeline_list.php?application_id=<applicationId>`
 
 Response event shape:
 

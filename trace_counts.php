@@ -5,7 +5,7 @@
  */
 
 require_once __DIR__ . '/config/db.php';
-require_once __DIR__ . '/api/shared/case_component_binding.php';
+require_once __DIR__ . '/api/shared/case_management/case_component_binding.php';
 require_once __DIR__ . '/api/shared/candidate_correction_service.php';
 
 $pdo = getDB();

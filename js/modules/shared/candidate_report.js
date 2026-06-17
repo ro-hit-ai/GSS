@@ -881,7 +881,7 @@ function closeBsModal(id) {
         }
 
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-        var endpoint = base + '/api/shared/component_action.php';
+        var endpoint = base + '/api/shared/case_management/component_action.php';
         var caseId = REPORT_PAYLOAD && REPORT_PAYLOAD.case && REPORT_PAYLOAD.case.case_id ? parseInt(REPORT_PAYLOAD.case.case_id, 10) : 0;
         var role = getRole();
         var group = role === 'verifier' ? (getVerifierGroup() || null) : null;
@@ -1419,7 +1419,7 @@ if (uploadInput) {
             var role = getRole();
             var group = role === 'verifier' ? (getVerifierGroup() || null) : null;
 
-            var out = await postJson(base + '/api/shared/component_action.php', {
+            var out = await postJson(base + '/api/shared/case_management/component_action.php', {
                 application_id: applicationId,
                 case_id: caseId || null,
                 component_key: componentKey,
@@ -1665,7 +1665,7 @@ if (uploadInput) {
 
         async function loadHistory() {
             var ctx = getContext();
-            var url = base + '/api/shared/workflow_communications_history.php?application_id=' + encodeURIComponent(ctx.application_id || '') + '&component=' + encodeURIComponent(ctx.component || '');
+            var url = base + '/api/shared/communications/workflow_communications_history.php?application_id=' + encodeURIComponent(ctx.application_id || '') + '&component=' + encodeURIComponent(ctx.component || '');
             var out = await fetchJsonWithTimeout(url, { credentials: 'same-origin' }, 4500);
             var data = out.data;
             if (!out.ok || !data || data.status !== 1) return [];
@@ -1739,7 +1739,7 @@ if (uploadInput) {
             sendBtn.textContent = mode === 'draft' ? 'Saving...' : 'Sending...';
             try {
                 var reqId = 'wc-' + String(ctx.application_id || '') + '-' + String(ctx.component || '') + '-' + String(activeAction || '') + '-' + String(Date.now());
-                var res = await fetch(base + '/api/shared/workflow_communications_send.php', {
+                var res = await fetch(base + '/api/shared/communications/workflow_communications_send.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     credentials: 'same-origin',
@@ -2076,7 +2076,7 @@ if (uploadInput) {
                 btn.style.display = '';
                 if (!component || !appId) continue;
                 try {
-                    var res = await fetch(base + '/api/shared/send_verification_mail.php', {
+                    var res = await fetch(base + '/api/shared/mail/send_verification_mail.php', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         credentials: 'same-origin',
@@ -2126,7 +2126,7 @@ if (uploadInput) {
                             throw new Error('Workflow update failed.');
                         }
                     }
-                    var wfRes = await fetch(base + '/api/shared/workflow_communications_send.php', {
+                    var wfRes = await fetch(base + '/api/shared/communications/workflow_communications_send.php', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         credentials: 'same-origin',
@@ -2151,7 +2151,7 @@ if (uploadInput) {
                     if (!recipient) {
                         throw new Error('Recipient email is required.');
                     }
-                    var res = await fetch(base + '/api/shared/send_verification_mail.php', {
+                    var res = await fetch(base + '/api/shared/mail/send_verification_mail.php', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         credentials: 'same-origin',
@@ -2590,7 +2590,7 @@ if (uploadInput) {
     async function loadUploadedDocsForComponent(applicationId, docType, hostEl) {
         if (!hostEl) return;
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-        var url = base + '/api/shared/verification_docs_list.php?application_id=' + encodeURIComponent(applicationId);
+        var url = base + '/api/shared/reports/verification_docs_list.php?application_id=' + encodeURIComponent(applicationId);
         if (docType) url += '&doc_type=' + encodeURIComponent(docType);
 
         try {
@@ -4082,7 +4082,7 @@ if (uploadInput) {
         }
 
         async function fetchNodeReplies(baseUrl, forceCaseScope) {
-            var nodeUrl = baseUrl + '/api/shared/node_replies_proxy.php?application_id=' + encodeURIComponent(applicationId);
+            var nodeUrl = baseUrl + '/api/shared/communications/node_replies_proxy.php?application_id=' + encodeURIComponent(applicationId);
             if (componentKey && !forceCaseScope) {
                 nodeUrl += '&component_key=' + encodeURIComponent(componentKey);
             }
@@ -4373,7 +4373,7 @@ if (uploadInput) {
         host.innerHTML = '<div style="color:#6b7280; font-size:13px;">Loading timeline...</div>';
 
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-        var url = base + '/api/shared/case_timeline_list.php?application_id=' + encodeURIComponent(applicationId);
+        var url = base + '/api/shared/case_management/case_timeline_list.php?application_id=' + encodeURIComponent(applicationId);
 
         try {
             var res = await fetch(url, { credentials: 'same-origin' });
@@ -4683,7 +4683,7 @@ if (uploadInput) {
 
                 saveBtn.disabled = true;
                 var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-                fetch(base + '/api/shared/case_timeline_add.php', {
+                fetch(base + '/api/shared/case_management/case_timeline_add.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     credentials: 'same-origin',
@@ -4817,7 +4817,7 @@ if (uploadInput) {
 
                 btn.disabled = true;
                 var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-                fetch(base + '/api/shared/case_timeline_add.php', {
+                fetch(base + '/api/shared/case_management/case_timeline_add.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     credentials: 'same-origin',
@@ -5158,7 +5158,7 @@ if (uploadInput) {
 
                 btn.disabled = true;
                 var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-                fetch(base + '/api/shared/case_timeline_add.php', {
+                fetch(base + '/api/shared/case_management/case_timeline_add.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     credentials: 'same-origin',
@@ -5236,7 +5236,7 @@ if (uploadInput) {
             var section = String(activeComponentSectionKey() || CURRENT_SECTION_KEY || 'general').toLowerCase().trim();
             var msg = 'Escalation requested by Client Admin to ' + targetLabel + ' for section: ' + sectionLabel(section) + '.';
             var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-            fetch(base + '/api/shared/case_timeline_add.php', {
+            fetch(base + '/api/shared/case_management/case_timeline_add.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'same-origin',
@@ -6740,8 +6740,8 @@ if (uploadInput) {
 
     function initCaseActions(applicationId) {
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-        var url = base + '/api/shared/case_action.php';
-        var compUrl = base + '/api/shared/component_action.php';
+        var url = base + '/api/shared/case_management/case_action.php';
+        var compUrl = base + '/api/shared/case_management/component_action.php';
         var actionInFlight = false;
         var lastActionFingerprint = '';
         var lastActionTs = 0;
@@ -8004,7 +8004,7 @@ function askActionConfirm(label) {
                 var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
                 var approvalWarning = '';
 
-                fetch(base + '/api/shared/case_action.php', {
+                fetch(base + '/api/shared/case_management/case_action.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     credentials: 'same-origin',
@@ -8286,7 +8286,7 @@ function askActionConfirm(label) {
 
     async function loadUploadedDocs(applicationId, docType) {
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-        var url = base + '/api/shared/verification_docs_list.php?application_id=' + encodeURIComponent(applicationId);
+        var url = base + '/api/shared/reports/verification_docs_list.php?application_id=' + encodeURIComponent(applicationId);
         if (docType) url += '&doc_type=' + encodeURIComponent(docType);
 
         var res = await fetch(url, { credentials: 'same-origin' });
@@ -8600,9 +8600,9 @@ function askActionConfirm(label) {
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
         var url = '';
         if (applicationId) {
-            url = base + '/api/shared/candidate_report_get.php?application_id=' + encodeURIComponent(applicationId);
+            url = base + '/api/shared/reports/candidate_report_get.php?application_id=' + encodeURIComponent(applicationId);
         } else if (caseId) {
-            url = base + '/api/shared/candidate_report_get.php?case_id=' + encodeURIComponent(caseId);
+            url = base + '/api/shared/reports/candidate_report_get.php?case_id=' + encodeURIComponent(caseId);
         } else {
             setText('cvTopMessage', 'application_id is required in URL');
             if (root) root.setAttribute('data-ui-ready', '1');

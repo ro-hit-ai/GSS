@@ -1,8 +1,8 @@
 <?php
 
-require_once __DIR__ . '/workflow_semantics.php';
+require_once __DIR__ . '/workflow/workflow_semantics.php';
 require_once __DIR__ . '/verifier_routing.php';
-require_once __DIR__ . '/reference_component_compat.php';
+require_once __DIR__ . '/case_management/reference_component_compat.php';
 
 function verifier_case_queue_registered_components(): array
 {

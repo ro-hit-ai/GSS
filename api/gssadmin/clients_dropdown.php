@@ -1,1 +1,1 @@
-﻿<?php require_once __DIR__ . '/clients/clients_dropdown.php';
+<?php require_once __DIR__ . '/clients/clients_dropdown.php';

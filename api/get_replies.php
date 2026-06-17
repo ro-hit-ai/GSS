@@ -1,1 +1,1 @@
-﻿<?php require_once __DIR__ . '/shared/communications/get_replies.php';
+<?php require_once __DIR__ . '/shared/communications/get_replies.php';

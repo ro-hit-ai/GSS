@@ -4,8 +4,8 @@ declare(strict_types=1);
 $root = dirname(__DIR__);
 
 require_once $root . '/config/db.php';
-require_once $root . '/api/shared/case_component_binding.php';
-require_once $root . '/api/shared/workflow_semantics.php';
+require_once $root . '/api/shared/case_management/case_component_binding.php';
+require_once $root . '/api/shared/workflow/workflow_semantics.php';
 
 $pdo = getDB();
 $failures = [];

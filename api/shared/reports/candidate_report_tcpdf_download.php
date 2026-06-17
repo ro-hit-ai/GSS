@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 declare(strict_types=1);
 
 if (ob_get_level() === 0) {
@@ -2128,9 +2128,9 @@ try {
     if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
 
     $qsClient = $clientId > 0 ? ('&client_id=' . urlencode((string)$clientId)) : '';
-    $reportPayload = api_get_json('/api/shared/candidate_report_get.php?role=gss_admin&application_id=' . urlencode($applicationId) . $qsClient);
-    $docsPayload = api_get_json('/api/shared/verification_docs_list.php?application_id=' . urlencode($applicationId));
-    $timelinePayload = api_get_json('/api/shared/case_timeline_list.php?application_id=' . urlencode($applicationId) . '&limit=200' . $qsClient);
+    $reportPayload = api_get_json('/api/shared/reports/candidate_report_get.php?role=gss_admin&application_id=' . urlencode($applicationId) . $qsClient);
+    $docsPayload = api_get_json('/api/shared/reports/verification_docs_list.php?application_id=' . urlencode($applicationId));
+    $timelinePayload = api_get_json('/api/shared/case_management/case_timeline_list.php?application_id=' . urlencode($applicationId) . '&limit=200' . $qsClient);
 
     if ((int)($reportPayload['status'] ?? 0) !== 1 || !is_array($reportPayload['data'] ?? null)) {
         throw new RuntimeException((string)($reportPayload['message'] ?? 'Unable to load report data'));

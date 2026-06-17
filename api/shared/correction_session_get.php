@@ -1,1 +1,1 @@
-﻿<?php require_once __DIR__ . '/corrections/correction_session_get.php';
+<?php require_once __DIR__ . '/corrections/correction_session_get.php';

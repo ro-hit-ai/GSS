@@ -1,1 +1,1 @@
-﻿<?php require_once __DIR__ . '/job_roles/job_role_verification_types_get.php';
+<?php require_once __DIR__ . '/job_roles/job_role_verification_types_get.php';

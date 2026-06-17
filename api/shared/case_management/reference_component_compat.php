@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 
 if (!function_exists('reference_compat_norm_key')) {
     function reference_compat_norm_key(string $componentKey): string

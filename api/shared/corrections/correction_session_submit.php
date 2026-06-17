@@ -1,9 +1,9 @@
-﻿<?php
+<?php
 header('Content-Type: application/json');
 
 require_once __DIR__ . '/candidate_correction_service.php';
 require_once __DIR__ . '/../workflow/WorkflowTransitionService.php';
-require_once __DIR__ . '/../workflow_mode.php';
+require_once __DIR__ . '/../authorization/workflow_mode.php';
 
 function ccs_read_json_submit(): array {
     $raw = file_get_contents('php://input');

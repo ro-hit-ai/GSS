@@ -1,6 +1,6 @@
 <?php
 
-require_once __DIR__ . '/../shared/workflow_semantics.php';
+require_once __DIR__ . '/../shared/workflow/workflow_semantics.php';
 require_once __DIR__ . '/../shared/verifier_routing.php';
 
 function verifier_allowed_sections_set_from_session(?PDO $pdo = null): array {

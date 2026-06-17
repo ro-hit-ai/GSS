@@ -1,5 +1,5 @@
-﻿<?php
-require_once __DIR__ . '/../workflow_semantics.php';
+<?php
+require_once __DIR__ . '/../workflow/workflow_semantics.php';
 
 function case_component_binding_norm_stage_key(string $stage): string
 {

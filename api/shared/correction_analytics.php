@@ -1,1 +1,1 @@
-﻿<?php require_once __DIR__ . '/corrections/correction_analytics.php';
+<?php require_once __DIR__ . '/corrections/correction_analytics.php';

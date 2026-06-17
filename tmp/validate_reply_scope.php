@@ -1,6 +1,6 @@
 <?php
 require 'config/db.php';
-require 'api/shared/workflow_communication_service.php';
+require 'api/shared/communications/workflow_communication_service.php';
 $pdo = getDB();
 $app = 'APP-20260519120154998';
 wc_ingest_incoming_replies($pdo, $app);

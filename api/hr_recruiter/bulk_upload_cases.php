@@ -6,8 +6,8 @@ require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/mail.php';
 require_once __DIR__ . '/../shared/auth_client_snapshot.php';
-require_once __DIR__ . '/../shared/case_component_binding.php';
-require_once __DIR__ . '/../shared/workflow_mode.php';
+require_once __DIR__ . '/../shared/case_management/case_component_binding.php';
+require_once __DIR__ . '/../shared/authorization/workflow_mode.php';
 
 auth_require_login('company_recruiter');
 auth_session_start();

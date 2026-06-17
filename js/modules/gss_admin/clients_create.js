@@ -1519,6 +1519,7 @@ document.addEventListener('DOMContentLoaded', function () {
             var vtId = s && typeof s.verification_type_id !== 'undefined' ? (parseInt(s.verification_type_id || '0', 10) || 0) : 0;
             if (vtId <= 0) return;
             setTypeChecked(vtId, true);
+            setTypeRequiredCount(vtId, s.required_count || 1);
         });
 
         // Keep required-count and TAT/cost fields in sync while restoring from summary.

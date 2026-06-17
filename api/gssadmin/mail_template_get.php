@@ -1,1 +1,1 @@
-﻿<?php require_once __DIR__ . '/../shared/mail/mail_template_get.php';
+<?php require_once __DIR__ . '/../shared/mail/mail_template_get.php';

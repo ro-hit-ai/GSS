@@ -7,6 +7,24 @@ require_once __DIR__ . '/../../../services/master/InstitutionService.php';
 
 try {
     $pdo = getDB();
+
+    // List mode: return all distinct university + board values, alphabetical
+    if (isset($_GET['list']) && $_GET['list'] === 'university_board') {
+        $stmt = $pdo->query("
+            SELECT DISTINCT university_name AS value
+              FROM Vati_Payfiller_Institution_Master
+             WHERE is_active = 1 AND university_name IS NOT NULL AND university_name <> ''
+            UNION
+            SELECT DISTINCT board_name AS value
+              FROM Vati_Payfiller_Institution_Master
+             WHERE is_active = 1 AND board_name IS NOT NULL AND board_name <> ''
+            ORDER BY value ASC
+        ");
+        $values = array_values(array_filter($stmt->fetchAll(PDO::FETCH_COLUMN)));
+        echo json_encode(['success' => true, 'data' => $values]);
+        exit;
+    }
+
     $provider = InstitutionService::provider($pdo);
     $result = $provider->search([
         'q' => $_GET['q'] ?? '',

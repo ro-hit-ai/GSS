@@ -154,6 +154,7 @@
             this.deferVisibleEducationPersistence = false;
         }
 
+        await this.loadUniversityBoardOptions();
         await this.initCards();
         this.maxEducationCount = this.getMaxEducationCount();
         this.cards.forEach((card, index) => card && this.prepareExtendedInputs(card, index));
@@ -162,15 +163,16 @@
         this.setupFormHandlers();
         this.setupStateController();
         this.setupInstitutionSearch();
+        // await this.loadUniversityBoardOptions();
         this.loadFromLocalStorage();
         this.restoreVisibleEducationCount();
         this.setupFileHandlers();
         this.refreshEducationState();
 
-        console.log('Ã¢Å“â€¦ Education module initialized successfully');
-        console.log(`Ã°Å¸â€œÅ  Cards loaded: ${this.cards.length}, Data rows: ${this.savedRows.length}`);
+        console.log(' Education module initialized successfully');
+        console.log(` Cards loaded: ${this.cards.length}, Data rows: ${this.savedRows.length}`);
 
-        return this;
+        return this;  
     }
 
     getApiEndpoint() {
@@ -379,6 +381,10 @@
             matchStatus: data.institution_match_status || (data.institution_id ? 'verified_master' : 'manual_pending')
         });
 
+        // Apply university/board options then init Select2 on this card
+        this._applyUniversityBoardOptions(card);
+        this.initSelect2OnCard(card);
+
         // Set date fields
         if (data.year_from) {
             const yf = card.querySelector('[name="year_from[]"]');
@@ -498,11 +504,80 @@
         }
     }
 
+    // ── Select2 helpers ──────────────────────────────────────────────────────
+
+    async loadUniversityBoardOptions() {
+        try {
+            const base = (window.APP_BASE_URL || '').replace(/\/$/, '');
+            const res = await fetch(`${base}/api/master/institutions/search.php?list=university_board`, {
+                credentials: 'same-origin'
+            });
+            const json = await res.json();
+            if (!json.success || !Array.isArray(json.data)) return;
+            this._universityBoardOptions = json.data; // already alphabetical from server
+        } catch (_e) {
+            this._universityBoardOptions = [];
+        }
+    }
+
+    _applyUniversityBoardOptions(card) {
+        const sel = card.querySelector('[data-university-board-select]');
+        if (!sel) return;
+        const current = sel.value || '';
+        const opts = this._universityBoardOptions || [];
+        // If current saved value isn't in master list, include it so it restores correctly
+        const extra = current && !opts.includes(current) ? [current] : [];
+        const allValues = [...opts, ...extra];
+        sel.innerHTML = '<option value="">Select or type\u2026</option>' +
+            allValues.map(v => `<option value="${this._escOpt(v)}"${v === current ? ' selected' : ''}>${this._escOpt(v)}</option>`).join('');
+        if (typeof $ !== 'undefined' && $.fn && $.fn.select2) {
+            $(sel).val(current || null).trigger('change.select2');
+        }
+    }
+
+    _escOpt(v) {
+        return String(v ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    initSelect2OnCard(card) {
+        if (typeof $ === 'undefined' || !$.fn || !$.fn.select2) return;
+
+        // Qualification — static list, no search box needed
+        const qualSel = card.querySelector('select.edu-qualification-select');
+        if (qualSel && !$(qualSel).data('select2')) {
+            $(qualSel).select2({
+                width: '100%',
+                minimumResultsForSearch: Infinity,
+                placeholder: 'Select qualification',
+                allowClear: false,
+                dropdownParent: $(card)
+            });
+        }
+
+        // University / Board — free-text tags enabled
+        const univSel = card.querySelector('[data-university-board-select]');
+        if (univSel && !$(univSel).data('select2')) {
+            $(univSel).select2({
+                width: '100%',
+                tags: true,
+                placeholder: 'Select or type\u2026',
+                allowClear: true,
+                dropdownParent: $(card),
+                createTag: function (params) {
+                    const term = params.term.trim();
+                    if (!term) return null;
+                    return { id: term, text: term, newTag: true };
+                }
+            });
+        }
+    }
+
+    // ── End Select2 helpers ──────────────────────────────────────────────────
+
     setupInstitutionSearch() {
         this.institutionSearchTimers = this.institutionSearchTimers || new Map();
         this.institutionSearchControllers = this.institutionSearchControllers || new Map();
-        this.institutionSearchQueries = this.institutionSearchQueries || new Map();
-        this.addEventListener(document, 'input', (e) => {
+        this.institutionSearchQueries = this.institutionSearchQueries || new Map();        this.addEventListener(document, 'input', (e) => {
             const input = e.target.closest('[data-institution-search]');
             if (!input) return;
             this.handleInstitutionInput(input);
@@ -520,7 +595,7 @@
                 const input = card?.querySelector('[data-institution-search]');
                 if (input) {
                     input.focus();
-                    this.handleInstitutionFocus(input);
+                    this.openInstitutionDropdown(input);
                 }
                 return;
             }
@@ -559,6 +634,31 @@
 
         panel.style.display = 'block';
         this.scheduleInstitutionSearch(card, value);
+    }
+
+    openInstitutionDropdown(input) {
+        const card = input.closest('.education-card');
+        if (!card) return;
+        const panel = this.getInstitutionPanel(card, input);
+        if (!panel) return;
+
+        const value = input.value.trim();
+        panel.style.display = 'block';
+        if (value.length >= 2) {
+            this.clearInstitutionSearchState(card, value);
+            this.fetchInstitutionResults(card, value);
+            return;
+        }
+
+        const listQuery = '%%';
+        const key = this.getMarksheetCardKey(card);
+        this.clearInstitutionSearchState(card, listQuery);
+        this.institutionSearchQueries.set(key, listQuery);
+        this.fetchInstitutionResults(card, listQuery, {
+            expectedInputValue: value,
+            manualQuery: value,
+            showManualOption: false
+        });
     }
 
     handleInstitutionInput(input) {
@@ -623,7 +723,7 @@
         this.abortInstitutionSearch(key);
     }
 
-    async fetchInstitutionResults(card, query) {
+    async fetchInstitutionResults(card, query, options = {}) {
         const key = this.getMarksheetCardKey(card);
         if (this.institutionSearchQueries.get(key) !== query) return;
         const panel = card.querySelector('[data-institution-panel]');
@@ -648,12 +748,15 @@
             if (
                 this.institutionSearchControllers.get(key) !== controller ||
                 this.institutionSearchQueries.get(key) !== query ||
-                (card.querySelector('[data-institution-search]')?.value || '').trim() !== query
+                (card.querySelector('[data-institution-search]')?.value || '').trim() !== (options.expectedInputValue ?? query)
             ) {
                 return;
             }
             const rows = Array.isArray(data.data) ? data.data : [];
-            this.renderInstitutionResults(card, query, rows);
+            rows.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }));
+            this.renderInstitutionResults(card, options.manualQuery ?? query, rows, {
+                showManualOption: options.showManualOption !== false
+            });
         } catch (e) {
             if (e && e.name === 'AbortError') return;
             panel.innerHTML = '<div class="institution-search-empty">Institution search unavailable. You can enter manually.</div>';
@@ -664,11 +767,11 @@
         }
     }
 
-    renderInstitutionResults(card, query, rows) {
+    renderInstitutionResults(card, query, rows, options = {}) {
         const panel = card.querySelector('[data-institution-panel]');
         if (!panel) return;
         const safeQuery = this.escapeHtml(query);
-        const options = rows.map((row) => `
+        const optionMarkup = rows.map((row) => `
             <button type="button" class="institution-search-option" data-institution-option
                     data-id="${this.escapeAttr(row.id)}"
                     data-name="${this.escapeAttr(row.name)}"
@@ -677,12 +780,15 @@
                 <span class="institution-search-meta">${this.escapeHtml([row.city, row.state, row.university || row.board].filter(Boolean).join(' Â· '))}</span>
             </button>
         `).join('');
-
-        panel.innerHTML = `
-            ${options || '<div class="institution-search-empty">No matching institution found.</div>'}
+        const manualOption = options.showManualOption === false ? '' : `
             <button type="button" class="institution-search-manual" data-institution-manual data-name="${this.escapeAttr(query)}">
                 Institution not found? Use "${safeQuery}" manually
             </button>
+        `;
+
+        panel.innerHTML = `
+            ${optionMarkup || '<div class="institution-search-empty">No matching institution found.</div>'}
+            ${manualOption}
         `;
         panel.style.display = 'block';
     }
@@ -703,7 +809,15 @@
         });
         const universityInput = card.querySelector('[name="university_board[]"]');
         if (universityInput && !universityInput.value.trim() && university) {
-            universityInput.value = university;
+            if (typeof $ !== 'undefined' && $.fn && $.fn.select2 && $(universityInput).data('select2')) {
+                // Ensure the value exists as an option (may be a free-text value)
+                if (!$(universityInput).find(`option[value="${university.replace(/"/g, '\\"')}"]`).length) {
+                    $(universityInput).append(new Option(university, university, false, false));
+                }
+                $(universityInput).val(university).trigger('change');
+            } else {
+                universityInput.value = university;
+            }
         }
         const panel = card.querySelector('[data-institution-panel]');
         if (panel) panel.style.display = 'none';

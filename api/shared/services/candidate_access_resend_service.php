@@ -1,9 +1,9 @@
-﻿<?php
+<?php
 
 require_once __DIR__ . '/../../../config/db.php';
 require_once __DIR__ . '/../../../config/env.php';
 require_once __DIR__ . '/../../../includes/mail.php';
-require_once __DIR__ . '/../workflow_status_semantics.php';
+require_once __DIR__ . '/../workflow/workflow_status_semantics.php';
 require_once __DIR__ . '/../workflow_communication_service.php';
 
 function car_session_role_norm(): string {

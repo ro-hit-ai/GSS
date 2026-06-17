@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/../api/shared/workflow_communication_service.php';
+require_once __DIR__ . '/../api/shared/communications/workflow_communication_service.php';
 
 $applicationId = '';
 if (PHP_SAPI === 'cli') {

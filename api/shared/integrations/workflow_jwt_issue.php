@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/../../../includes/integration.php';
 require_once __DIR__ . '/../auth_client_snapshot.php';
 require_once __DIR__ . '/workflow_jwt_service.php';

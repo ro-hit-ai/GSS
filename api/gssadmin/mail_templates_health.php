@@ -1,1 +1,1 @@
-﻿<?php require_once __DIR__ . '/../shared/mail/mail_templates_health.php';
+<?php require_once __DIR__ . '/../shared/mail/mail_templates_health.php';

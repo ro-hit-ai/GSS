@@ -6,7 +6,7 @@ declare(strict_types=1);
 
 $root = dirname(__DIR__);
 
-require_once $root . '/api/shared/workflow_semantics.php';
+require_once $root . '/api/shared/workflow/workflow_semantics.php';
 require_once $root . '/api/verifier/queue_visibility.php';
 
 $failures = [];
@@ -34,7 +34,7 @@ $assert(
     'Verifier without ADDITIONAL sections must not be eligible for ADDITIONAL.'
 );
 
-$componentAction = file_get_contents($root . '/api/shared/component_action.php') ?: '';
+$componentAction = file_get_contents($root . '/api/shared/case_management/component_action.php') ?: '';
 $projectionService = file_get_contents($root . '/api/shared/workflow/WorkflowProjectionService.php') ?: '';
 
 $assert(

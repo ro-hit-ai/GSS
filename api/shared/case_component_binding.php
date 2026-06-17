@@ -1,1 +1,0 @@
-﻿<?php require_once __DIR__ . '/case_management/case_component_binding.php';

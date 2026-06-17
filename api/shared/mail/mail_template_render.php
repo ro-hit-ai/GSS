@@ -1,10 +1,10 @@
-﻿<?php
+<?php
 header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../../includes/auth.php';
 require_once __DIR__ . '/../../../config/db.php';
 require_once __DIR__ . '/template_governance.php';
-require_once __DIR__ . '/../workflow_semantics.php';
+require_once __DIR__ . '/../workflow/workflow_semantics.php';
 
 auth_require_login(null);
 

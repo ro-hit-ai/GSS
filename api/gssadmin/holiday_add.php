@@ -1,1 +1,1 @@
-﻿<?php require_once __DIR__ . '/holidays/holiday_add.php';
+<?php require_once __DIR__ . '/holidays/holiday_add.php';

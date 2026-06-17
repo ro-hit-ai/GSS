@@ -1,1 +1,1 @@
-﻿<?php require_once __DIR__ . '/../shared/reports/candidate_component_report.php';
+<?php require_once __DIR__ . '/../shared/reports/candidate_component_report.php';

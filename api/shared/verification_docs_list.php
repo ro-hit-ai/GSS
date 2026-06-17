@@ -1,1 +1,1 @@
-﻿<?php require_once __DIR__ . '/reports/verification_docs_list.php';
+<?php require_once __DIR__ . '/reports/verification_docs_list.php';

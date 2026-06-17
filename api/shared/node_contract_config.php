@@ -1,1 +1,1 @@
-﻿<?php require_once __DIR__ . '/integrations/node_contract_config.php';
+<?php require_once __DIR__ . '/integrations/node_contract_config.php';

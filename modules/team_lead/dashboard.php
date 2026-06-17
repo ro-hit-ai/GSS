@@ -2,7 +2,7 @@
 require_once __DIR__ . '/../../includes/layout.php';
 require_once __DIR__ . '/../../includes/menus.php';
 require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../../api/shared/workflow_semantics.php';
+require_once __DIR__ . '/../../api/shared/workflow/workflow_semantics.php';
 
 auth_require_login('team_lead');
 

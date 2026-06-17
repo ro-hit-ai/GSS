@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 session_start();
 
 $applicationId = trim((string)($_GET['application_id'] ?? ''));

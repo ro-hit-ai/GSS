@@ -10,7 +10,7 @@ require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../services/candidate/EducationService.php';
 require_once __DIR__ . '/../../services/candidate/EmploymentService.php';
 require_once __DIR__ . '/../../services/candidate/SidebarService.php';
-require_once __DIR__ . '/../shared/reference_component_compat.php';
+require_once __DIR__ . '/../shared/case_management/reference_component_compat.php';
 
 function sidebar_json(array $payload, int $code = 200): void {
     http_response_code($code);

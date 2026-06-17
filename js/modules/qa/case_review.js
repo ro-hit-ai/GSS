@@ -165,7 +165,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-        var url = base + '/api/shared/verification_docs_list.php?application_id=' + encodeURIComponent(appId) +
+        var url = base + '/api/shared/reports/verification_docs_list.php?application_id=' + encodeURIComponent(appId) +
             '&doc_type=' + encodeURIComponent(getEvidenceDocType());
 
         fetch(url, { credentials: 'same-origin' })
@@ -461,7 +461,7 @@ document.addEventListener('DOMContentLoaded', function () {
         renderTimeline(null);
 
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-        fetch(base + '/api/shared/case_timeline_list.php?application_id=' + encodeURIComponent(appId), { credentials: 'same-origin' })
+        fetch(base + '/api/shared/case_management/case_timeline_list.php?application_id=' + encodeURIComponent(appId), { credentials: 'same-origin' })
             .then(function (res) { return res.json(); })
             .then(function (data) {
                 if (!data || data.status !== 1) {
@@ -498,7 +498,7 @@ document.addEventListener('DOMContentLoaded', function () {
         };
 
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-        fetch(base + '/api/shared/case_timeline_add.php', {
+        fetch(base + '/api/shared/case_management/case_timeline_add.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'same-origin',
@@ -544,7 +544,7 @@ document.addEventListener('DOMContentLoaded', function () {
         var cid = getClientId();
         var approvalWarning = '';
 
-        fetch(base + '/api/shared/case_action.php', {
+        fetch(base + '/api/shared/case_management/case_action.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'same-origin',
