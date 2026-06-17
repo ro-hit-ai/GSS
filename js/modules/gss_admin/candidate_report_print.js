@@ -1,4 +1,12 @@
 ﻿(function () {
+    var currentWorkflowMode = 'validator_first';
+
+    function isVerifierFirstWorkflow() {
+        return String(currentWorkflowMode || '')
+            .toLowerCase()
+            .trim() === 'verifier_first';
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
         var root = document.getElementById('gssAdminPrintRoot');
         if (!root) return;
@@ -13,8 +21,7 @@
         var uploaderContext = {
             candidateName: ''
         };
-        var currentWorkflowMode = 'validator_first';
-
+        
         var applicationId = String(root.getAttribute('data-application-id') || '').trim();
         var clientId = parseInt(root.getAttribute('data-client-id') || '0', 10) || 0;
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
@@ -1197,6 +1204,4 @@
         loadReport();
     });
 })();
-        function isVerifierFirstWorkflow() {
-            return String(currentWorkflowMode || '').toLowerCase().trim() === 'verifier_first';
-        }
+       

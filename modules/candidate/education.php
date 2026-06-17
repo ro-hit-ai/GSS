@@ -170,26 +170,17 @@ $maxCount = 8;
                 <div class="form-field">
                     <div class="form-control double-border compact-control">
                         <label class="compact-label">Qualification *</label>
-                        <select name="qualification[]" class="compact-select edu-qualification-select">
+                        <select name="qualification[]" class="compact-select">
                             <option value="">Select qualification</option>
-                            <option value="10th">10th</option>
-                            <option value="12th">12th</option>
+                            <option value="PhD">PhD</option>
+                            <option value="PG">PG</option>
+                            <option value="UG">UG</option>
                             <option value="Diploma">Diploma</option>
                             <option value="International">International</option>
-                            <option value="PG">PG</option>
-                            <option value="PhD">PhD</option>
                             <option value="PUC">PUC</option>
                             <option value="SSLC">SSLC</option>
-                            <option value="UG">UG</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="form-field">
-                    <div class="form-control double-border compact-control">
-                        <label class="compact-label">University / Board *</label>
-                        <select name="university_board[]" class="compact-select edu-univ-board-select" data-university-board-select>
-                            <option value="">Select or type...</option>
+                            <option value="12th">12th</option>
+                            <option value="10th">10th</option>
                         </select>
                     </div>
                 </div>
@@ -197,20 +188,22 @@ $maxCount = 8;
                 <div class="form-field">
                     <div class="form-control double-border compact-control">
                         <label class="compact-label">College / Institution *</label>
-                        <div class="institution-select-shell">
-                            <input type="text" name="college_name[]" class="compact-input institution-search-input" autocomplete="off" placeholder="Search institution" data-institution-search>
-                            <button type="button" class="institution-select-trigger" data-institution-trigger aria-label="Search institution">
-                                <i class="fas fa-chevron-down"></i>
-                            </button>
-                        </div>
+                        <select name="college_name[]" class="compact-select" data-institution-select2></select>
                         <input type="hidden" name="institution_id[]" data-institution-id>
                         <input type="hidden" name="institution_display_name[]" data-institution-display-name>
                         <input type="hidden" name="manual_institution_name[]" data-manual-institution-name>
                         <input type="hidden" name="institution_match_status[]" data-institution-match-status value="manual_pending">
-                        <div class="institution-search-panel" data-institution-panel></div>
+                    </div>
+                </div>
+
+                <div class="form-field">
+                    <div class="form-control double-border compact-control">
+                        <label class="compact-label">University / Board *</label>
+                        <select name="university_board[]" class="compact-select" data-university-board-select></select>
                     </div>
                 </div>
             </div>
+
             <!-- ROW 2 -->
             <div class="form-row-4 compact-row mb-2 education-meta-row">
                 <div class="form-field">

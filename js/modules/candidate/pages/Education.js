@@ -1,4 +1,4 @@
-﻿class EducationManager extends TabManager {
+﻿﻿class EducationManager extends TabManager {
     constructor() {
         super(
             'education',
@@ -369,6 +369,9 @@
         Object.entries(fieldMap).forEach(([name, value]) => {
             const el = card.querySelector(`[name="${name}"]`);
             if (el && value !== null && value !== undefined) {
+                if (el.tagName === 'SELECT' && !el.querySelector(`option[value="${String(value).replace(/"/g, '\\"')}"]`)) {
+                    el.appendChild(new Option(value, value, true, true));
+                }
                 el.value = value;
                 console.log(`   Set ${name}: ${value}`);
             }
@@ -521,18 +524,23 @@
     }
 
     _applyUniversityBoardOptions(card) {
-        const sel = card.querySelector('[data-university-board-select]');
-        if (!sel) return;
-        const current = sel.value || '';
-        const opts = this._universityBoardOptions || [];
-        // If current saved value isn't in master list, include it so it restores correctly
-        const extra = current && !opts.includes(current) ? [current] : [];
-        const allValues = [...opts, ...extra];
-        sel.innerHTML = '<option value="">Select or type\u2026</option>' +
-            allValues.map(v => `<option value="${this._escOpt(v)}"${v === current ? ' selected' : ''}>${this._escOpt(v)}</option>`).join('');
-        if (typeof $ !== 'undefined' && $.fn && $.fn.select2) {
-            $(sel).val(current || null).trigger('change.select2');
-        }
+        const applyToSelect = (selector, currentVal) => {
+            const sel = card.querySelector(selector);
+            if (!sel) return;
+            const current = currentVal || sel.value || '';
+            const opts = this._universityBoardOptions || [];
+            const extra = current && !opts.includes(current) ? [current] : [];
+            const allValues = [...opts, ...extra].sort((a, b) => String(a).localeCompare(String(b)));
+            
+            sel.innerHTML = '<option value="">Select...</option>' +
+                allValues.map(v => `<option value="${this._escOpt(v)}"${v === current ? ' selected' : ''}>${this._escOpt(v)}</option>`).join('');
+            if (typeof $ !== 'undefined' && $.fn && $.fn.select2) {
+                $(sel).val(current || null).trigger('change.select2');
+            }
+        };
+
+        applyToSelect('[data-university-board-select]');
+        applyToSelect('[data-institution-select2]');
     }
 
     _escOpt(v) {
@@ -554,20 +562,35 @@
             });
         }
 
-        // University / Board — free-text tags enabled
+        // University / Board — traditional select
         const univSel = card.querySelector('[data-university-board-select]');
         if (univSel && !$(univSel).data('select2')) {
             $(univSel).select2({
                 width: '100%',
-                tags: true,
-                placeholder: 'Select or type\u2026',
+                minimumResultsForSearch: Infinity,
+                placeholder: 'Select University/Board',
                 allowClear: true,
-                dropdownParent: $(card),
-                createTag: function (params) {
-                    const term = params.term.trim();
-                    if (!term) return null;
-                    return { id: term, text: term, newTag: true };
-                }
+                dropdownParent: $(card)
+            });
+        }
+
+        // College / Institution — traditional select
+        const instSel = card.querySelector('[data-institution-select2]');
+        if (instSel && !$(instSel).data('select2')) {
+            $(instSel).select2({
+                width: '100%',
+                minimumResultsForSearch: Infinity,
+                placeholder: 'Select Institution',
+                allowClear: true,
+                dropdownParent: $(card)
+            }).on('change', (e) => {
+                const val = $(e.target).val() || '';
+                this.setInstitutionFields(card, {
+                    id: '',
+                    name: val,
+                    manualName: '',
+                    matchStatus: val ? 'verified_master' : ''
+                });
             });
         }
     }
@@ -595,7 +618,7 @@
                 const input = card?.querySelector('[data-institution-search]');
                 if (input) {
                     input.focus();
-                    this.openInstitutionDropdown(input);
+                    this.handleInstitutionFocus(input);
                 }
                 return;
             }
@@ -634,31 +657,6 @@
 
         panel.style.display = 'block';
         this.scheduleInstitutionSearch(card, value);
-    }
-
-    openInstitutionDropdown(input) {
-        const card = input.closest('.education-card');
-        if (!card) return;
-        const panel = this.getInstitutionPanel(card, input);
-        if (!panel) return;
-
-        const value = input.value.trim();
-        panel.style.display = 'block';
-        if (value.length >= 2) {
-            this.clearInstitutionSearchState(card, value);
-            this.fetchInstitutionResults(card, value);
-            return;
-        }
-
-        const listQuery = '%%';
-        const key = this.getMarksheetCardKey(card);
-        this.clearInstitutionSearchState(card, listQuery);
-        this.institutionSearchQueries.set(key, listQuery);
-        this.fetchInstitutionResults(card, listQuery, {
-            expectedInputValue: value,
-            manualQuery: value,
-            showManualOption: false
-        });
     }
 
     handleInstitutionInput(input) {
@@ -723,7 +721,7 @@
         this.abortInstitutionSearch(key);
     }
 
-    async fetchInstitutionResults(card, query, options = {}) {
+    async fetchInstitutionResults(card, query) {
         const key = this.getMarksheetCardKey(card);
         if (this.institutionSearchQueries.get(key) !== query) return;
         const panel = card.querySelector('[data-institution-panel]');
@@ -748,15 +746,12 @@
             if (
                 this.institutionSearchControllers.get(key) !== controller ||
                 this.institutionSearchQueries.get(key) !== query ||
-                (card.querySelector('[data-institution-search]')?.value || '').trim() !== (options.expectedInputValue ?? query)
+                (card.querySelector('[data-institution-search]')?.value || '').trim() !== query
             ) {
                 return;
             }
             const rows = Array.isArray(data.data) ? data.data : [];
-            rows.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }));
-            this.renderInstitutionResults(card, options.manualQuery ?? query, rows, {
-                showManualOption: options.showManualOption !== false
-            });
+            this.renderInstitutionResults(card, query, rows);
         } catch (e) {
             if (e && e.name === 'AbortError') return;
             panel.innerHTML = '<div class="institution-search-empty">Institution search unavailable. You can enter manually.</div>';
@@ -767,11 +762,11 @@
         }
     }
 
-    renderInstitutionResults(card, query, rows, options = {}) {
+    renderInstitutionResults(card, query, rows) {
         const panel = card.querySelector('[data-institution-panel]');
         if (!panel) return;
         const safeQuery = this.escapeHtml(query);
-        const optionMarkup = rows.map((row) => `
+        const options = rows.map((row) => `
             <button type="button" class="institution-search-option" data-institution-option
                     data-id="${this.escapeAttr(row.id)}"
                     data-name="${this.escapeAttr(row.name)}"
@@ -780,15 +775,12 @@
                 <span class="institution-search-meta">${this.escapeHtml([row.city, row.state, row.university || row.board].filter(Boolean).join(' Â· '))}</span>
             </button>
         `).join('');
-        const manualOption = options.showManualOption === false ? '' : `
+
+        panel.innerHTML = `
+            ${options || '<div class="institution-search-empty">No matching institution found.</div>'}
             <button type="button" class="institution-search-manual" data-institution-manual data-name="${this.escapeAttr(query)}">
                 Institution not found? Use "${safeQuery}" manually
             </button>
-        `;
-
-        panel.innerHTML = `
-            ${optionMarkup || '<div class="institution-search-empty">No matching institution found.</div>'}
-            ${manualOption}
         `;
         panel.style.display = 'block';
     }
@@ -1479,6 +1471,14 @@
         if (marksheetNameBtn && !marksheetNameBtn.dataset.hasValue) {
             marksheetNameBtn.textContent = rules.multiMarksheet ? 'No files chosen' : 'No file chosen';
         }
+
+        const universityField = card.querySelector('[name="university_board[]"]')?.closest('.form-field');
+        if (universityField) {
+            const qualificationInput = card.querySelector('select[name="qualification[]"]');
+            const qualification = this.normalizeQualification(qualificationInput ? qualificationInput.value : '');
+            const hideUniversity = ['SSLC', '10th', '12th', 'PUC', 'Diploma'].includes(qualification);
+            universityField.style.display = hideUniversity ? 'none' : '';
+        }
     }
 
     getDesiredVisibleEducationCount() {
@@ -2025,6 +2025,10 @@ validateForm(isFinalSubmit = false) {
         requiredFields.forEach(field => {
             const input = card.querySelector(field.selector);
             if (input && !input.value.trim()) {
+                const formField = input.closest('.form-field');
+                if (formField && formField.style.display === 'none') {
+                    return;
+                }
                 addError(input, `Education ${i + 1}: ${field.label} is required`);
             }
         });

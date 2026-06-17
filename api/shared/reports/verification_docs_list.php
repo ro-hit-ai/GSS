@@ -4,6 +4,7 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../../../config/env.php';
 require_once __DIR__ . '/../../../config/db.php';
 require_once __DIR__ . '/../../../includes/auth.php';
+require_once __DIR__ . '/../../../includes/integration.php';
 
 auth_require_login(null);
 
@@ -61,7 +62,7 @@ try {
         exit;
     }
 
-    $applicationId = get_str('application_id');
+    $applicationId = integration_normalize_application_id(get_str('application_id'));
     $docType = get_str('doc_type');
 
     if ($applicationId === '') {
@@ -74,20 +75,59 @@ try {
 
     enforce_client_admin_application_scope($pdo, $applicationId);
 
-    $sql = 'SELECT d.id, d.application_id, d.doc_type, d.file_path, d.original_name, d.mime_type, d.uploaded_by_user_id, d.uploaded_by_role, d.created_at, '
-        . "TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) AS uploaded_by_name, "
-        . 'u.username AS uploaded_by_username '
-        . 'FROM Vati_Payfiller_Verification_Documents d '
-        . 'LEFT JOIN Vati_Payfiller_Users u ON u.user_id = d.uploaded_by_user_id '
-        . 'WHERE d.application_id = ?';
-    $params = [$applicationId];
+ $sql = "SELECT * FROM (
+        SELECT d.id, d.application_id, d.doc_type, d.file_path, d.original_name, d.mime_type, d.uploaded_by_user_id, d.uploaded_by_role, d.created_at, 
+               TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) AS uploaded_by_name, 
+               u.username AS uploaded_by_username 
+        FROM Vati_Payfiller_Verification_Documents d 
+        LEFT JOIN Vati_Payfiller_Users u ON u.user_id = d.uploaded_by_user_id 
+        WHERE d.application_id = ?
+        
+        UNION ALL 
+        SELECT 0 AS id, application_id, 'id' AS doc_type, upload_document AS file_path, COALESCE(name, 'ID Document') AS original_name, '' AS mime_type, 0 AS uploaded_by_user_id, 'candidate' AS uploaded_by_role, created_at, 'Candidate' AS uploaded_by_name, '' AS uploaded_by_username 
+        FROM Vati_Payfiller_Candidate_Identification_details 
+        WHERE application_id = ? AND NULLIF(upload_document, '') IS NOT NULL
+        
+        UNION ALL 
+        SELECT 0 AS id, application_id, 'contact' AS doc_type, COALESCE(NULLIF(current_proof_file, ''), proof_file) AS file_path, COALESCE(current_proof_original_name, 'Address Proof') AS original_name, '' AS mime_type, 0 AS uploaded_by_user_id, 'candidate' AS uploaded_by_role, created_at, 'Candidate' AS uploaded_by_name, '' AS uploaded_by_username 
+        FROM Vati_Payfiller_Candidate_Contact_details 
+        WHERE application_id = ? AND (NULLIF(current_proof_file, '') IS NOT NULL OR NULLIF(proof_file, '') IS NOT NULL)
+        
+        UNION ALL 
+        SELECT 0 AS id, application_id, 'contact' AS doc_type, permanent_proof_file AS file_path, COALESCE(permanent_proof_original_name, 'Permanent Address Proof') AS original_name, '' AS mime_type, 0 AS uploaded_by_user_id, 'candidate' AS uploaded_by_role, created_at, 'Candidate' AS uploaded_by_name, '' AS uploaded_by_username 
+        FROM Vati_Payfiller_Candidate_Contact_details 
+        WHERE application_id = ? AND NULLIF(permanent_proof_file, '') IS NOT NULL
+        
+        UNION ALL 
+        SELECT 0 AS id, application_id, 'education' AS doc_type, marksheet_file AS file_path, 'Marksheet' AS original_name, '' AS mime_type, 0 AS uploaded_by_user_id, 'candidate' AS uploaded_by_role, created_at, 'Candidate' AS uploaded_by_name, '' AS uploaded_by_username 
+        FROM Vati_Payfiller_Candidate_Education_details 
+        WHERE application_id = ? AND NULLIF(marksheet_file, '') IS NOT NULL AND marksheet_file != 'INSUFFICIENT_DOCUMENTS'
+        
+        UNION ALL 
+        SELECT 0 AS id, application_id, 'education' AS doc_type, degree_file AS file_path, 'Degree' AS original_name, '' AS mime_type, 0 AS uploaded_by_user_id, 'candidate' AS uploaded_by_role, created_at, 'Candidate' AS uploaded_by_name, '' AS uploaded_by_username 
+        FROM Vati_Payfiller_Candidate_Education_details 
+        WHERE application_id = ? AND NULLIF(degree_file, '') IS NOT NULL AND degree_file != 'INSUFFICIENT_DOCUMENTS'
+        
+        UNION ALL 
+        SELECT 0 AS id, application_id, 'education' AS doc_type, file_name AS file_path, COALESCE(original_name, 'Education Document') AS original_name, '' AS mime_type, 0 AS uploaded_by_user_id, 'candidate' AS uploaded_by_role, created_at, 'Candidate' AS uploaded_by_name, '' AS uploaded_by_username 
+        FROM Vati_Payfiller_Candidate_Education_Documents 
+        WHERE application_id = ? AND NULLIF(file_name, '') IS NOT NULL
+        
+        UNION ALL 
+        SELECT 0 AS id, application_id, 'employment' AS doc_type, employment_doc AS file_path, 'Employment Proof' AS original_name, '' AS mime_type, 0 AS uploaded_by_user_id, 'candidate' AS uploaded_by_role, created_at, 'Candidate' AS uploaded_by_name, '' AS uploaded_by_username 
+        FROM Vati_Payfiller_Candidate_Employment_details 
+        WHERE application_id = ? AND NULLIF(employment_doc, '') IS NOT NULL AND employment_doc != 'INSUFFICIENT_DOCUMENTS'
+    ) AS all_docs WHERE application_id = ?";
+    
+    $params = array_fill(0, 9, $applicationId);
+ 
 
     if ($docType !== '') {
-        $sql .= ' AND d.doc_type = ?';
+        $sql .= ' AND doc_type = ?';
         $params[] = $docType;
     }
 
-    $sql .= ' ORDER BY d.created_at DESC, d.id DESC LIMIT 200';
+    $sql .= ' ORDER BY created_at DESC, id DESC LIMIT 200';
 
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
