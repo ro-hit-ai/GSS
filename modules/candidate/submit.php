@@ -27,8 +27,8 @@ $response = ['success' => false, 'message' => ''];
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/mail.php';
 require_once __DIR__ . '/../../api/shared/case_management/case_component_binding.php';
-require_once __DIR__ . '/../../api/shared/candidate_account_notify.php';
-require_once __DIR__ . '/../../api/shared/application_status_guard.php';
+require_once __DIR__ . '/../../api/shared/services/candidate_account_notify.php';
+require_once __DIR__ . '/../../api/shared/authorization/application_status_guard.php';
 require_once __DIR__ . '/../../api/shared/authorization/workflow_mode.php';
 try {
     $caseId = 0;

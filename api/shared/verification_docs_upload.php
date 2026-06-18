@@ -1,1 +1,0 @@
-<?php require_once __DIR__ . '/services/verification_docs_upload.php';

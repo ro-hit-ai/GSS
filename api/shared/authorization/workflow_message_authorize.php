@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/../../../config/db.php';
 require_once __DIR__ . '/../../../includes/integration.php';
-require_once __DIR__ . '/../workflow_communication_service.php';
+require_once __DIR__ . '/../communications/workflow_communication_service.php';
 
 if (!defined('WMA_LIBRARY_MODE')) {
     integration_bootstrap_json_api();

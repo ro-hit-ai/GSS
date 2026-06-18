@@ -1,1 +1,0 @@
-<?php require_once __DIR__ . '/reports/candidate_report_version.php';

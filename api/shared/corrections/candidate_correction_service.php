@@ -4,7 +4,7 @@ require_once __DIR__ . '/../../../config/db.php';
 require_once __DIR__ . '/../../../includes/auth.php';
 require_once __DIR__ . '/../../../includes/mail.php';
 require_once __DIR__ . '/../workflow/workflow_status_semantics.php';
-require_once __DIR__ . '/../workflow_communication_service.php';
+require_once __DIR__ . '/../communications/workflow_communication_service.php';
 require_once __DIR__ . '/../authorization/workflow_mode.php';
 require_once __DIR__ . '/../case_management/case_component_binding.php';
 

@@ -4,7 +4,7 @@ session_start();
 
 require_once __DIR__ . "/../../config/env.php";
 require_once __DIR__ . "/../../config/db.php";
-require_once __DIR__ . "/../shared/candidate_correction_service.php";
+require_once __DIR__ . "/../shared/corrections/candidate_correction_service.php";
 
 error_reporting(E_ALL);
 ini_set('display_errors', '0');

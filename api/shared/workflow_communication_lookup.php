@@ -1,1 +1,0 @@
-<?php require_once __DIR__ . '/communications/workflow_communication_lookup.php';

@@ -7,7 +7,7 @@ $fatalError = '';
 
 $envOk = @include_once __DIR__ . '/../../config/env.php';
 $dbOk = @include_once __DIR__ . '/../../config/db.php';
-$correctionServiceOk = @include_once __DIR__ . '/../../api/shared/candidate_correction_service.php';
+$correctionServiceOk = @include_once __DIR__ . '/../../api/shared/corrections/candidate_correction_service.php';
 
 if (!$envOk) {
     $fatalError = $fatalError !== '' ? $fatalError : 'Failed to load env.php';

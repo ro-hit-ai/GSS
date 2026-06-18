@@ -2,7 +2,7 @@
 require_once __DIR__ . '/../../../config/db.php';
 require_once __DIR__ . '/../../../includes/auth.php';
 require_once __DIR__ . '/../../../includes/mail.php';
-require_once __DIR__ . '/../template_governance.php';
+require_once __DIR__ . '/../mail/template_governance.php';
 
 function wc_norm_role(string $role): string {
     $r = strtolower(trim($role));

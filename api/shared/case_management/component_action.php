@@ -7,9 +7,9 @@ require_once __DIR__ . '/../../../includes/integration.php';
 require_once __DIR__ . '/../../../includes/mail.php';
 require_once __DIR__ . '/case_component_binding.php';
 require_once __DIR__ . '/../../../config/env.php';
-require_once __DIR__ . '/../application_status_guard.php';
+require_once __DIR__ . '/../authorization/application_status_guard.php';
 require_once __DIR__ . '/../workflow/WorkflowTransitionService.php';
-require_once __DIR__ . '/../workflow_communication_service.php';
+require_once __DIR__ . '/../communications/workflow_communication_service.php';
 require_once __DIR__ . '/../authorization/workflow_mode.php';
 require_once __DIR__ . '/../verifier_case_queue.php';
 

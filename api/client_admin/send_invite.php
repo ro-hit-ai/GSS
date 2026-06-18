@@ -5,7 +5,7 @@ require_once __DIR__ . '/../../config/env.php';
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/mail.php';
-require_once __DIR__ . '/../shared/candidate_access_resend_service.php';
+require_once __DIR__ . '/../shared/services/candidate_access_resend_service.php';
 
 auth_require_login('client_admin');
 

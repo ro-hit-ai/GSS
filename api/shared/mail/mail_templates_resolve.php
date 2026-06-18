@@ -1,6 +1,6 @@
 <?php
 header('Content-Type: application/json');
-require_once __DIR__ . '/../workflow_communication_service.php';
+require_once __DIR__ . '/../communications/workflow_communication_service.php';
 
 auth_require_login(null);
 auth_session_start();

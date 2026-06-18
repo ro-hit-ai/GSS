@@ -431,7 +431,7 @@ class EmploymentManager extends TabManager {
         
         const form = document.getElementById('employmentForm');
         if (!form) {
-            console.error('❌ Employment form not found');
+            console.error(' Employment form not found');
             return;
         }
 

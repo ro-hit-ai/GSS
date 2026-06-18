@@ -2,7 +2,7 @@
 require_once __DIR__ . '/../../../config/db.php';
 require_once __DIR__ . '/../../../includes/integration.php';
 require_once __DIR__ . '/../workflow/workflow_snapshot_service.php';
-require_once __DIR__ . '/../workflow_communication_service.php';
+require_once __DIR__ . '/../communications/workflow_communication_service.php';
 require_once __DIR__ . '/../verifier_routing.php';
 require_once __DIR__ . '/../case_management/reference_component_compat.php';
 

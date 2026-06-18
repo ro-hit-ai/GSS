@@ -4,9 +4,11 @@ ini_set('display_errors', '0');
 
 header('Content-Type: application/json');
 
+require_once __DIR__ . '/../../../config/env.php';
 require_once __DIR__ . '/../../../includes/auth.php';
 require_once __DIR__ . '/../../../includes/mail.php';
 require_once __DIR__ . '/../../../config/db.php';
+require_once __DIR__ . '/../../../includes/integration.php';
 require_once __DIR__ . '/workflow_communication_service.php';
 
 auth_require_login(null);

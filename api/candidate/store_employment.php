@@ -4,7 +4,7 @@ header("Content-Type: application/json");
 
 require_once __DIR__ . '/../../config/env.php';
 require_once __DIR__ . '/../../config/db.php';
-require_once __DIR__ . '/../shared/candidate_correction_service.php';
+require_once __DIR__ . '/../shared/corrections/candidate_correction_service.php';
 require_once __DIR__ . '/../../services/candidate/EmploymentService.php';
 
 class ValidationException extends Exception {}

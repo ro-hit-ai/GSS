@@ -1,1 +1,0 @@
-<?php require_once __DIR__ . '/integrations/workflow_jwt_issue.php';

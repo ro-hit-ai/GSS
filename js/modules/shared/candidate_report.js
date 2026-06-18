@@ -274,7 +274,7 @@ function closeBsModal(id) {
                     badge.style.display = 'none';
                     return;
                 }
-                var url = base + '/api/shared/candidate_access_resend_status.php?application_id=' + encodeURIComponent(applicationId || '') + '&case_id=' + encodeURIComponent(String(caseId || ''));
+                var url = base + '/api/shared/services/candidate_access_resend_status.php?application_id=' + encodeURIComponent(applicationId || '') + '&case_id=' + encodeURIComponent(String(caseId || ''));
                 var res = await fetch(url, { credentials: 'same-origin' });
                 var data = await res.json().catch(function () { return null; });
                 if (!res.ok || !data || data.status !== 1 || !data.data) {
@@ -369,7 +369,7 @@ function closeBsModal(id) {
         if (requestId === '') {
             requestId = 'corr-' + String(applicationId || caseId || 'case') + '-' + String(Date.now());
         }
-        var res = await fetch(baseUrl + '/api/shared/correction_session_create.php', {
+        var res = await fetch(baseUrl + '/api/shared/corrections/correction_session_create.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'same-origin',
@@ -417,7 +417,7 @@ function closeBsModal(id) {
             var html = [];
             var keys = [];
             try {
-                var url = base + '/api/shared/correction_eligible_components.php?application_id=' + encodeURIComponent(applicationId || '') + '&case_id=' + encodeURIComponent(String(caseId || ''));
+                var url = base + '/api/shared/corrections/correction_eligible_components.php?application_id=' + encodeURIComponent(applicationId || '') + '&case_id=' + encodeURIComponent(String(caseId || ''));
                 var res = await fetch(url, { credentials: 'same-origin' });
                 var data = await res.json().catch(function () { return null; });
                 if (res.ok && data && data.status === 1 && data.data && Array.isArray(data.data.components)) {
@@ -523,7 +523,7 @@ function closeBsModal(id) {
         host.innerHTML = 'Loading correction history...';
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
         try {
-            var url = base + '/api/shared/correction_history.php?application_id=' + encodeURIComponent(applicationId || '') + '&case_id=' + encodeURIComponent(String(caseId || ''));
+            var url = base + '/api/shared/corrections/correction_history.php?application_id=' + encodeURIComponent(applicationId || '') + '&case_id=' + encodeURIComponent(String(caseId || ''));
             var res = await fetch(url, { credentials: 'same-origin' });
             var data = await res.json().catch(function () { return null; });
             if (!res.ok || !data || data.status !== 1 || !Array.isArray(data.data)) {
@@ -1642,7 +1642,7 @@ if (uploadInput) {
         async function resolveTemplateContract(mode, action, componentKey, deadlineValue) {
             var ctx = getContext();
             var resolvedAction = resolverActionForMode(mode, action, componentKey);
-            var out = await fetchJsonWithTimeout(base + '/api/shared/mail_templates_resolve.php', {
+            var out = await fetchJsonWithTimeout(base + '/api/shared/mail/mail_templates_resolve.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'same-origin',
@@ -2626,7 +2626,7 @@ if (uploadInput) {
 
     async function uploadEvidenceForComponent(applicationId, docType, files) {
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-        var url = base + '/api/shared/verification_docs_upload.php';
+        var url = base + '/api/shared/sevices/verification_docs_upload.php';
 
         var fd = new FormData();
         fd.append('application_id', applicationId);
@@ -8326,7 +8326,7 @@ function askActionConfirm(label) {
 
         try {
             var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-            var url = base + '/api/shared/verification_docs_upload.php';
+            var url = base + '/api/shared/services/verification_docs_upload.php';
 
             var fd = new FormData();
             fd.append('application_id', applicationId);
@@ -8527,7 +8527,7 @@ function askActionConfirm(label) {
         REPORT_VERSION_POLL_IN_FLIGHT = true;
         try {
             var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-            var url = base + '/api/shared/candidate_report_version.php?';
+            var url = base + '/api/shared/reports/candidate_report_version.php?';
             url += applicationId ? ('application_id=' + encodeURIComponent(applicationId)) : ('case_id=' + encodeURIComponent(caseId));
             url += '&_=' + encodeURIComponent(String(Date.now()));
             var res = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });

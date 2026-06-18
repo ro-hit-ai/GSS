@@ -1,1 +1,0 @@
-<?php require_once __DIR__ . '/corrections/candidate_correction_service.php';

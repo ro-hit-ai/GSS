@@ -1,1 +1,0 @@
-<?php require_once __DIR__ . '/workflow/case_workflow_snapshot.php';

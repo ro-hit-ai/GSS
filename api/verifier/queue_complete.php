@@ -3,7 +3,7 @@ header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../shared/application_status_guard.php';
+require_once __DIR__ . '/../shared/authorization/application_status_guard.php';
 require_once __DIR__ . '/queue_visibility.php';
 require_once __DIR__ . '/../shared/verifier_case_queue.php';
 

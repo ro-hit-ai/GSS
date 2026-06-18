@@ -1,1 +1,0 @@
-<?php require_once __DIR__ . '/authorization/application_status_guard.php';

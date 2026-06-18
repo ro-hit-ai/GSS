@@ -206,7 +206,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         var base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-        var url = base + '/api/shared/verification_docs_upload.php';
+        var url = base + '/api/shared/services/verification_docs_upload.php';
 
         var fd = new FormData();
         fd.append('application_id', appId);
