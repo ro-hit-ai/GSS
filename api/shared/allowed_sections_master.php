@@ -1,1 +1,0 @@
-<?php require_once __DIR__ . '/authorization/allowed_sections_master.php';

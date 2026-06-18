@@ -3184,68 +3184,76 @@ body.candidate-page .candidate-form .file-upload-box.is-invalid {
 }
 
 /* Institution master async lookup */
-.candidate-form.create-like-spacing .education-card .institution-select-shell {
+body.candidate-page .candidate-form .institution-select-shell {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 34px;
+    grid-template-columns: minmax(0, 1fr) 32px;
     align-items: center;
     width: 100%;
-    border: 1px solid #d7dde5;
-    border-radius: 10px;
-    background: #ffffff;
+    border: 1px solid rgba(4, 20, 24, 0.14) !important;
+    border-radius: 10px !important;
+    background: #ffffff !important;
     overflow: visible;
     position: relative;
+    height: 34px !important;
+    min-height: 34px !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
 }
 
-.candidate-form.create-like-spacing .education-card .institution-search-input {
+body.candidate-page .candidate-form .institution-search-input {
     width: 100%;
     border: 0 !important;
-    border-radius: 0 !important;
+    border-radius: 10px 0 0 10px !important;
     box-shadow: none !important;
     background: transparent !important;
-    min-height: 38px !important;
+    height: 32px !important;
+    min-height: 32px !important;
+    padding: 6px 8px !important;
+    font-size: 13px !important;
+    color: var(--crm-text) !important;
+    outline: none !important;
 }
 
-.candidate-form.create-like-spacing .education-card .institution-search-input:focus {
-    outline: none;
+body.candidate-page .candidate-form .institution-search-input:focus {
+    outline: none !important;
+    border: 0 !important;
+    box-shadow: none !important;
 }
 
-.candidate-form.create-like-spacing .education-card .institution-select-trigger {
+body.candidate-page .candidate-form .institution-select-trigger {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 34px;
-    height: 100%;
-    min-height: 38px;
+    width: 32px;
+    height: 32px;
+    min-height: 32px;
     border: 0;
-    border-left: 1px solid #e5ebf2;
-    background: #f8fafc;
+    border-left: 1px solid rgba(4, 20, 24, 0.14);
+    border-radius: 0 10px 10px 0;
+    background: transparent;
     color: #64748b;
     cursor: pointer;
 }
 
-.candidate-form.create-like-spacing .education-card .institution-select-shell:focus-within {
-    border-color: #8ec5ff;
-    box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.08);
+body.candidate-page .candidate-form .institution-select-shell:focus-within {
+    border-color: rgba(5, 125, 219, 0.42) !important;
+    box-shadow: 0 0 0 3px rgba(5, 125, 219, 0.12) !important;
 }
 
 /* Institution search panel needs the form-field to be a positioning context */
-.candidate-form.create-like-spacing .education-card .form-field:has(.institution-select-shell) {
+body.candidate-page .candidate-form .form-field:has(.institution-select-shell) {
     position: relative;
     overflow: visible !important;
     z-index: 10;
 }
 
-/* Fallback for browsers without :has support */
-.candidate-form.create-like-spacing .education-card .institution-select-shell {
-    position: relative;
-}
-
-.candidate-form.create-like-spacing .education-card .institution-select-trigger:hover {
+body.candidate-page .candidate-form .institution-select-trigger:hover {
     background: #eef6ff;
     color: #075ea8;
 }
 
-.candidate-form.create-like-spacing .education-card .institution-search-panel {
+body.candidate-page .candidate-form .institution-search-panel {
     display: none;
     position: absolute;
     left: 0;
@@ -3255,15 +3263,15 @@ body.candidate-page .candidate-form .file-upload-box.is-invalid {
     margin-top: 2px;
     padding: 5px;
     overflow-y: auto;
-    border: 1px solid #d8e4f2;
+    border: 1px solid rgba(4, 20, 24, 0.14);
     border-radius: 10px;
     background: #ffffff;
     box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
     z-index: 200;
 }
 
-.candidate-form.create-like-spacing .education-card .institution-search-option,
-.candidate-form.create-like-spacing .education-card .institution-search-manual {
+body.candidate-page .candidate-form .institution-search-option,
+body.candidate-page .candidate-form .institution-search-manual {
     display: flex;
     width: 100%;
     flex-direction: column;
@@ -3272,40 +3280,40 @@ body.candidate-page .candidate-form .file-upload-box.is-invalid {
     border: 0;
     border-radius: 8px;
     background: transparent;
-    color: #132238;
+    color: var(--crm-text);
     text-align: left;
     cursor: pointer;
 }
 
-.candidate-form.create-like-spacing .education-card .institution-search-option:hover,
-.candidate-form.create-like-spacing .education-card .institution-search-manual:hover {
-    background: #f1f7ff;
+body.candidate-page .candidate-form .institution-search-option:hover,
+body.candidate-page .candidate-form .institution-search-manual:hover {
+    background: rgba(5, 125, 219, 0.08);
 }
 
-.candidate-form.create-like-spacing .education-card .institution-search-name {
+body.candidate-page .candidate-form .institution-search-name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 12px;
-    font-weight: 800;
+    font-size: 13px;
+    font-weight: 700;
 }
 
-.candidate-form.create-like-spacing .education-card .institution-search-meta,
-.candidate-form.create-like-spacing .education-card .institution-search-empty {
+body.candidate-page .candidate-form .institution-search-meta,
+body.candidate-page .candidate-form .institution-search-empty {
     color: #64748b;
     font-size: 11px;
 }
 
-.candidate-form.create-like-spacing .education-card .institution-search-empty {
+body.candidate-page .candidate-form .institution-search-empty {
     padding: 7px 9px;
 }
 
-.candidate-form.create-like-spacing .education-card .institution-search-manual {
+body.candidate-page .candidate-form .institution-search-manual {
     margin-top: 3px;
-    border-top: 1px solid #edf2f7;
-    color: #075ea8;
+    border-top: 1px solid rgba(4, 20, 24, 0.08);
+    color: var(--crm-primary);
     font-size: 12px;
-    font-weight: 800;
+    font-weight: 700;
 }
 
 /* ===== 75% FORM-WIDTH DOCUMENT PREVIEW ===== */
@@ -8533,4 +8541,54 @@ body.candidate-page .candidate-form.reference-create-compact .reference-section-
     body.candidate-page .candidate-form.reference-create-compact .reference-section-card .form-row-3 {
         grid-template-columns: 1fr !important;
     }
+}
+
+/* ============================================
+   SELECT2 CANDIDATE FORM STYLING
+============================================ */
+body.candidate-page .candidate-form .select2-container {
+    width: 100% !important;
+    display: block;
+}
+
+body.candidate-page .candidate-form .select2-container--default .select2-selection--single {
+    height: 34px !important;
+    min-height: 34px !important;
+    border: 1px solid rgba(4, 20, 24, 0.14) !important;
+    border-radius: 10px !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
+    display: flex !important;
+    align-items: center !important;
+    padding: 0 !important;
+}
+
+body.candidate-page .candidate-form.create-like-spacing .select2-container--default .select2-selection--single {
+    border: 1px solid #d1d5db !important;
+    border-radius: 5px !important;
+}
+
+body.candidate-page .candidate-form .select2-container--default .select2-selection--single .select2-selection__rendered {
+    color: var(--crm-text) !important;
+    font-size: 13px !important;
+    line-height: normal !important;
+    padding-left: 8px !important;
+    padding-right: 24px !important;
+    width: 100%;
+}
+
+body.candidate-page .candidate-form .select2-container--default .select2-selection--single .select2-selection__placeholder {
+    color: #6b7280 !important;
+}
+
+body.candidate-page .candidate-form .select2-container--default .select2-selection--single .select2-selection__arrow {
+    height: 32px !important;
+    right: 4px !important;
+}
+
+body.candidate-page .candidate-form .select2-container--default.select2-container--focus .select2-selection--single,
+body.candidate-page .candidate-form .select2-container--default.select2-container--open .select2-selection--single {
+    border-color: rgba(5, 125, 219, 0.42) !important;
+    box-shadow: 0 0 0 3px rgba(5, 125, 219, 0.12) !important;
+    outline: none;
 }

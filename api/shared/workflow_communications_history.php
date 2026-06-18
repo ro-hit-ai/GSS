@@ -1,1 +1,0 @@
-<?php require_once __DIR__ . '/communications/workflow_communications_history.php';

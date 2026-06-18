@@ -398,12 +398,16 @@ class EmploymentManager extends TabManager {
                 return;
             }
 
-            if (!this.cards[index + 1]) {
-                this.addCard(index + 1, null);
-                this.fullEmploymentCount = this.cards.filter(Boolean).length;
-            }
+            const nextCount = Math.max(index + 2, this.configuredRequiredCount || 1);
 
-            this.visibleEmploymentCount = Math.min(index + 2, this.maxEmploymentCount);
+            for (let i = index + 1; i < nextCount; i++) {
+                if (!this.cards[i]) {
+                    this.addCard(i, null);
+                }
+            }
+            this.fullEmploymentCount = this.cards.filter(Boolean).length;
+
+            this.visibleEmploymentCount = Math.min(nextCount, this.maxEmploymentCount);
             this.currentTab = this.visibleEmploymentCount - 1;
             this.persistVisibleEmploymentCount();
             this.refreshEmploymentState();
@@ -782,12 +786,13 @@ class EmploymentManager extends TabManager {
     }
 
     getDesiredVisibleEmploymentCount() {
+        const minReq = this.isFresher ? 1 : 1;
         let visibleCount = Math.max(
-            1,
+            minReq,
             Math.min(this.visibleEmploymentCount || this.fullEmploymentCount || 1, this.fullEmploymentCount || 1)
         );
 
-        return Math.max(1, Math.min(visibleCount || 1, this.fullEmploymentCount || 1));
+        return Math.max(minReq, Math.min(visibleCount || 1, this.fullEmploymentCount || 1));
     }
 
     refreshEmploymentState() {
@@ -864,7 +869,8 @@ class EmploymentManager extends TabManager {
     }
 
     applyVisibleEmploymentCount() {
-        const visibleCount = Math.max(1, this.visibleEmploymentCount || this.cards.filter(Boolean).length || 1);
+        const minReq = this.isFresher ? 1 : 1;
+        const visibleCount = Math.max(minReq, this.visibleEmploymentCount || this.cards.filter(Boolean).length || 1);
         const tabs = document.querySelectorAll('.employment-tab');
         const visibleCountInput = document.getElementById('visibleEmploymentCount');
 
@@ -1542,5 +1548,3 @@ if (typeof window !== 'undefined') {
 }
 
 console.log('✅ Employment.js module loaded');
-
-

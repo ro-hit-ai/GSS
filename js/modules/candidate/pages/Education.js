@@ -1,4 +1,4 @@
-﻿﻿class EducationManager extends TabManager {
+﻿﻿﻿﻿class EducationManager extends TabManager {
     constructor() {
         super(
             'education',
@@ -123,6 +123,9 @@
                 ? parseInt(window.CANDIDATE_CASE_CONFIG.required_counts.education || '0', 10) || 0
                 : 0);
 
+        // Fetch dropdown options BEFORE creating cards and Select2 instances
+        await this.loadDropdownOptions();
+
         await super.init();
 
         try {
@@ -154,7 +157,6 @@
             this.deferVisibleEducationPersistence = false;
         }
 
-        await this.loadUniversityBoardOptions();
         await this.initCards();
         this.maxEducationCount = this.getMaxEducationCount();
         this.cards.forEach((card, index) => card && this.prepareExtendedInputs(card, index));
@@ -303,6 +305,7 @@
     }
 
     populateCard(card, data = {}, index) {
+        console.log('populateCard', card);
         console.log(` EducationManager.populateCard() for card ${index}`, data);
         this.prepareExtendedInputs(card, index);
         
@@ -385,7 +388,7 @@
         });
 
         // Apply university/board options then init Select2 on this card
-        this._applyUniversityBoardOptions(card);
+        this._applyDropdownOptions(card);
         this.initSelect2OnCard(card);
 
         // Set date fields
@@ -509,38 +512,76 @@
 
     // ── Select2 helpers ──────────────────────────────────────────────────────
 
-    async loadUniversityBoardOptions() {
+    async loadDropdownOptions() {
         try {
             const base = (window.APP_BASE_URL || '').replace(/\/$/, '');
-            const res = await fetch(`${base}/api/master/institutions/search.php?list=university_board`, {
+            
+            // 1. Fetch Universities
+            const univUrl = `${base}/api/master/institutions/search.php?list=university_board`;
+            console.log('Fetching University API:', univUrl);
+            const resUniv = await fetch(univUrl, {
                 credentials: 'same-origin'
             });
-            const json = await res.json();
-            if (!json.success || !Array.isArray(json.data)) return;
-            this._universityBoardOptions = json.data; // already alphabetical from server
+            const jsonUniv = await resUniv.json();
+            console.log('University API response payload:', jsonUniv);
+            if (jsonUniv.success && Array.isArray(jsonUniv.data)) {
+                this._universityBoardOptions = jsonUniv.data.map(i => typeof i === 'string' ? i : (i.name || i));
+            } else {
+                this._universityBoardOptions = [];
+            }
+            console.log('University options loaded count:', this._universityBoardOptions.length);
+            
+            // 2. Fetch Institutions
+            const instUrl = `${base}/api/master/institutions/search.php?list=institutions`;
+            console.log('Fetching Institution API:', instUrl);
+            const resInst = await fetch(instUrl, {
+                credentials: 'same-origin'
+            });
+            const jsonInst = await resInst.json();
+            console.log('Institution API response payload:', jsonInst);
+            if (jsonInst.success && Array.isArray(jsonInst.data)) {
+                this._institutionOptions = jsonInst.data.map(i => typeof i === 'string' ? i : (i.name || i));
+            } else {
+                this._institutionOptions = [];
+            }
+            console.log('Institution options loaded count:', this._institutionOptions.length);
         } catch (_e) {
+            console.error('API Fetch failed', _e);
             this._universityBoardOptions = [];
+            this._institutionOptions = [];
         }
     }
 
-    _applyUniversityBoardOptions(card) {
-        const applyToSelect = (selector, currentVal) => {
+    _applyDropdownOptions(card) {
+        const applyToSelect = (selector, currentVal, optsList, notListedText) => {
             const sel = card.querySelector(selector);
             if (!sel) return;
             const current = currentVal || sel.value || '';
-            const opts = this._universityBoardOptions || [];
-            const extra = current && !opts.includes(current) ? [current] : [];
-            const allValues = [...opts, ...extra].sort((a, b) => String(a).localeCompare(String(b)));
+            const opts = optsList || [];
             
-            sel.innerHTML = '<option value="">Select...</option>' +
-                allValues.map(v => `<option value="${this._escOpt(v)}"${v === current ? ' selected' : ''}>${this._escOpt(v)}</option>`).join('');
+            if (current && !opts.includes(current) && current !== '__MANUAL__') {
+                sel.dataset.manualValue = current;
+            } else {
+                delete sel.dataset.manualValue;
+            }
+
+            const sortedValues = [...opts].sort((a, b) => String(a).localeCompare(String(b)));
+
+            let html = '<option value="">Select...</option>' +
+                sortedValues.map(v => `<option value="${this._escOpt(v)}"${v === current && opts.includes(current) ? ' selected' : ''}>${this._escOpt(v)}</option>`).join('');
+            
+            if (notListedText) {
+                html += `<option value="__MANUAL__">${notListedText}</option>`;
+            }
+
+            sel.innerHTML = html;
             if (typeof $ !== 'undefined' && $.fn && $.fn.select2) {
-                $(sel).val(current || null).trigger('change.select2');
+                $(sel).val(current && opts.includes(current) ? current : null).trigger('change.select2');
             }
         };
 
-        applyToSelect('[data-university-board-select]');
-        applyToSelect('[data-institution-select2]');
+        applyToSelect('[data-university-board-select]', null, this._universityBoardOptions, 'University/Board Not Listed');
+        applyToSelect('[name="college_name[]"]', null, this._institutionOptions, 'Institution Not Listed');
     }
 
     _escOpt(v) {
@@ -562,37 +603,74 @@
             });
         }
 
-        // University / Board — traditional select
-        const univSel = card.querySelector('[data-university-board-select]');
-        if (univSel && !$(univSel).data('select2')) {
-            $(univSel).select2({
-                width: '100%',
-                minimumResultsForSearch: Infinity,
-                placeholder: 'Select University/Board',
-                allowClear: true,
-                dropdownParent: $(card)
-            });
-        }
+        const setupDropdown = (selector, placeholderText) => {
+            const sel = card.querySelector(selector);
+            if (!sel || $(sel).data('select2')) return;
 
-        // College / Institution — traditional select
-        const instSel = card.querySelector('[data-institution-select2]');
-        if (instSel && !$(instSel).data('select2')) {
-            $(instSel).select2({
+            const originalName = sel.getAttribute('name');
+            let manualVal = sel.dataset.manualValue;
+
+            const convertToInput = (val) => {
+                if ($(sel).data('select2')) {
+                    $(sel).select2('destroy');
+                }
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.className = 'compact-input';
+                input.name = originalName;
+                input.placeholder = placeholderText;
+                if (val) input.value = val;
+                
+                Array.from(sel.attributes).forEach(attr => {
+                    if (!['name', 'class', 'style', 'id', 'data-select2-id'].includes(attr.name)) {
+                        input.setAttribute(attr.name, attr.value);
+                    }
+                });
+
+                sel.replaceWith(input);
+                if (!val) input.focus();
+
+                if (originalName === 'college_name[]') {
+                    input.addEventListener('input', (ev) => {
+                        this.setInstitutionFields(card, {
+                            id: '',
+                            name: ev.target.value,
+                            manualName: '',
+                            matchStatus: 'manual_pending'
+                        });
+                        this.applyQualificationRules(card);
+                    });
+                }
+            };
+
+            if (manualVal) {
+                convertToInput(manualVal);
+                return;
+            }
+
+            $(sel).select2({
                 width: '100%',
                 minimumResultsForSearch: Infinity,
-                placeholder: 'Select Institution',
+                placeholder: placeholderText,
                 allowClear: true,
                 dropdownParent: $(card)
             }).on('change', (e) => {
-                const val = $(e.target).val() || '';
-                this.setInstitutionFields(card, {
-                    id: '',
-                    name: val,
-                    manualName: '',
-                    matchStatus: val ? 'verified_master' : ''
-                });
+                if (e.target.value === '__MANUAL__') {
+                    convertToInput('');
+                } else if (originalName === 'college_name[]') {
+                    this.setInstitutionFields(card, {
+                        id: '',
+                        name: e.target.value,
+                        manualName: '',
+                        matchStatus: e.target.value ? 'verified_master' : 'manual_pending'
+                    });
+                    this.applyQualificationRules(card);
+                }
             });
-        }
+        };
+
+        setupDropdown('[data-university-board-select]', 'Select University/Board');
+        setupDropdown('[name="college_name[]"]', 'Select Institution');
     }
 
     // ── End Select2 helpers ──────────────────────────────────────────────────
@@ -1242,17 +1320,21 @@
                 return;
             }
 
-            if (!this.cards[index + 1]) {
-                this.addCard(index + 1, null);
-                this.fullEducationCount = this.cards.filter(Boolean).length;
+            const nextCount = Math.max(index + 2, this.requiredCount || 1);
+            
+            for (let i = index + 1; i < nextCount; i++) {
+                if (!this.cards[i]) {
+                    this.addCard(i, null);
+                }
             }
+            this.fullEducationCount = this.cards.filter(Boolean).length;
 
             this.cards.forEach((otherCard) => {
                 const otherCheckbox = otherCard?.querySelector('.no-further-education-checkbox');
                 if (otherCheckbox) otherCheckbox.checked = false;
             });
 
-            this.visibleEducationCount = Math.min(index + 2, this.maxEducationCount);
+            this.visibleEducationCount = Math.min(nextCount, this.maxEducationCount);
             this.currentTab = this.visibleEducationCount - 1;
             const nextLabel = this.cards[this.currentTab]?.querySelector('.no-further-education-row .compact-checkbox-label');
             if (nextLabel) {
@@ -1474,10 +1556,15 @@
 
         const universityField = card.querySelector('[name="university_board[]"]')?.closest('.form-field');
         if (universityField) {
-            const qualificationInput = card.querySelector('select[name="qualification[]"]');
-            const qualification = this.normalizeQualification(qualificationInput ? qualificationInput.value : '');
-            const hideUniversity = ['SSLC', '10th', '12th', 'PUC', 'Diploma'].includes(qualification);
-            universityField.style.display = hideUniversity ? 'none' : '';
+            // Ensure university is always visible for all qualifications
+            universityField.style.display = '';
+            
+            // Make university label optional in UI
+            const label = universityField.querySelector('.form-label');
+            if (label) {
+                const asterisk = label.querySelector('.text-danger');
+                if (asterisk) asterisk.style.display = '';
+            }
         }
     }
 

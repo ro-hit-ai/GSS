@@ -57,6 +57,7 @@ class TabManager {
     }
     
     renderTabs() {
+        console.log('renderTabs');
         if (!this.tabsContainer || !this.container || !this.template) {
             console.error(`❌ ${this.pageName} container elements not found`);
             return;
@@ -69,10 +70,12 @@ class TabManager {
         
         // Determine total cards
         let total = 1;
-       if (this.currentData.length > 0 && !(this.requiredCount > 0)) {
+        if (this.requiredCount > 0) {
+            total = Math.max(this.requiredCount, this.currentData.length || 1);
+        } else if (this.currentData.length > 0) {
             total = Math.max(this.currentData.length, 1);
         } else if (this.countSelect) {
-            total = Math.max(1, parseInt(this.countSelect.value || '1', 10));
+            total = Math.max(1, parseInt(this.countSelect.value, 10) || 1);
         }
         
         // Update count selector
@@ -85,10 +88,17 @@ class TabManager {
             this.addCard(i, this.currentData[i] || null);
         }
         
+        console.log('cards rendered', this.cards.length);
+        console.log(this.pageName, {
+            requiredCount: this.requiredCount,
+            savedRows: this.currentData?.length,
+            cards: this.cards?.length
+        });
         this.updateTabStatus();
     }
     
     addCard(index, row = null) {
+        console.log('addCard', index);
         if (!this.container || !this.template || !this.tabsContainer) {
             console.error(`❌ Required elements not found in addCard for ${this.pageName}`);
             return null;
